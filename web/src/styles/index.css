@@ -1,0 +1,29 @@
+@import "tailwindcss";
+
+:root {
+  font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+  color: #17212b;
+  background:
+    radial-gradient(circle at top left, rgba(15, 118, 110, 0.08), transparent 30%),
+    linear-gradient(180deg, #f8fbfc 0%, #f2f6f8 100%);
+  line-height: 1.5;
+  font-weight: 400;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, rgba(15, 118, 110, 0.08), transparent 30%),
+    linear-gradient(180deg, #f8fbfc 0%, #f2f6f8 100%);
+}
