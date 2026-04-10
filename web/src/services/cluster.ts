@@ -82,18 +82,24 @@ export async function getNamespaces() {
   return data.data;
 }
 
-export async function getOverviewSummary() {
-  const { data } = await http.get<Envelope<OverviewSummary>>('/overview/summary');
+export async function getOverviewSummary(namespace?: string) {
+  const { data } = await http.get<Envelope<OverviewSummary>>('/overview/summary', {
+    params: namespace ? { namespace } : undefined,
+  });
   return data.data;
 }
 
-export async function getOverviewWarnings() {
-  const { data } = await http.get<Envelope<WarningEvent[]>>('/overview/events/warnings');
+export async function getOverviewWarnings(namespace?: string) {
+  const { data } = await http.get<Envelope<WarningEvent[]>>('/overview/events/warnings', {
+    params: namespace ? { namespace } : undefined,
+  });
   return data.data;
 }
 
-export async function getNamespacePodTop() {
-  const { data } = await http.get<Envelope<NamespacePodStat[]>>('/overview/namespaces/pod-top');
+export async function getNamespacePodTop(namespace?: string) {
+  const { data } = await http.get<Envelope<NamespacePodStat[]>>('/overview/namespaces/pod-top', {
+    params: namespace ? { namespace } : undefined,
+  });
   return data.data;
 }
 

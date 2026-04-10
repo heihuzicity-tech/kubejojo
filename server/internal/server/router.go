@@ -92,7 +92,10 @@ func newRouter(clusterFactory *kube.Factory) *gin.Engine {
 			})
 
 			authorized.GET("/overview/summary", func(c *gin.Context) {
-				summary, err := mustClusterService(c).GetOverviewSummary(c.Request.Context())
+				summary, err := mustClusterService(c).GetOverviewSummary(
+					c.Request.Context(),
+					c.Query("namespace"),
+				)
 				if err != nil {
 					respondWithClusterError(c, "GET_OVERVIEW_FAILED", err)
 					return
@@ -102,7 +105,11 @@ func newRouter(clusterFactory *kube.Factory) *gin.Engine {
 			})
 
 			authorized.GET("/overview/events/warnings", func(c *gin.Context) {
-				items, err := mustClusterService(c).ListWarningEvents(c.Request.Context(), 10)
+				items, err := mustClusterService(c).ListWarningEvents(
+					c.Request.Context(),
+					c.Query("namespace"),
+					10,
+				)
 				if err != nil {
 					respondWithClusterError(c, "LIST_WARNING_EVENTS_FAILED", err)
 					return
@@ -112,7 +119,11 @@ func newRouter(clusterFactory *kube.Factory) *gin.Engine {
 			})
 
 			authorized.GET("/overview/namespaces/pod-top", func(c *gin.Context) {
-				items, err := mustClusterService(c).ListNamespacePodTop(c.Request.Context(), 5)
+				items, err := mustClusterService(c).ListNamespacePodTop(
+					c.Request.Context(),
+					c.Query("namespace"),
+					5,
+				)
 				if err != nil {
 					respondWithClusterError(c, "LIST_NAMESPACE_POD_TOP_FAILED", err)
 					return

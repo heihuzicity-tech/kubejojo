@@ -64,6 +64,15 @@ type NamespacePodStat struct {
 	Pods      int    `json:"pods"`
 }
 
+func normalizeNamespace(namespace string) string {
+	namespace = strings.TrimSpace(namespace)
+	if namespace == "" || namespace == "all" || namespace == "all-namespaces" {
+		return ""
+	}
+
+	return namespace
+}
+
 func NewClusterService(client *kube.Client) *ClusterService {
 	return &ClusterService{client: client}
 }
@@ -129,18 +138,24 @@ func (s *ClusterService) ListNodes(ctx context.Context) ([]NodeItem, error) {
 	return nodes, nil
 }
 
-func (s *ClusterService) GetOverviewSummary(ctx context.Context) (OverviewSummary, error) {
+func (s *ClusterService) GetOverviewSummary(ctx context.Context, namespace string) (OverviewSummary, error) {
+	namespace = normalizeNamespace(namespace)
+
 	nodes, err := s.client.Kubernetes.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return OverviewSummary{}, fmt.Errorf("list nodes: %w", err)
 	}
 
-	namespaces, err := s.client.Kubernetes.CoreV1().Namespaces().List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return OverviewSummary{}, fmt.Errorf("list namespaces: %w", err)
+	namespaceCount := 1
+	if namespace == "" {
+		namespaces, err := s.client.Kubernetes.CoreV1().Namespaces().List(ctx, metav1.ListOptions{})
+		if err != nil {
+			return OverviewSummary{}, fmt.Errorf("list namespaces: %w", err)
+		}
+		namespaceCount = len(namespaces.Items)
 	}
 
-	pods, err := s.client.Kubernetes.CoreV1().Pods("").List(ctx, metav1.ListOptions{})
+	pods, err := s.client.Kubernetes.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return OverviewSummary{}, fmt.Errorf("list pods: %w", err)
 	}
@@ -161,7 +176,7 @@ func (s *ClusterService) GetOverviewSummary(ctx context.Context) (OverviewSummar
 		KubernetesVersion: version.GitVersion,
 		ClusterStatus:     clusterStatus(readyCount, len(nodes.Items)),
 		NodesReady:        fmt.Sprintf("%d/%d", readyCount, len(nodes.Items)),
-		Namespaces:        len(namespaces.Items),
+		Namespaces:        namespaceCount,
 		PodsRunningTotal:  fmt.Sprintf("%d/%d", runningPods(pods.Items), len(pods.Items)),
 		MetricsAvailable:  false,
 	}
@@ -177,8 +192,10 @@ func (s *ClusterService) GetOverviewSummary(ctx context.Context) (OverviewSummar
 	return summary, nil
 }
 
-func (s *ClusterService) ListWarningEvents(ctx context.Context, limit int) ([]WarningEvent, error) {
-	items, err := s.client.Kubernetes.CoreV1().Events("").List(ctx, metav1.ListOptions{})
+func (s *ClusterService) ListWarningEvents(ctx context.Context, namespace string, limit int) ([]WarningEvent, error) {
+	namespace = normalizeNamespace(namespace)
+
+	items, err := s.client.Kubernetes.CoreV1().Events(namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("list events: %w", err)
 	}
@@ -214,8 +231,10 @@ func (s *ClusterService) ListWarningEvents(ctx context.Context, limit int) ([]Wa
 	return result, nil
 }
 
-func (s *ClusterService) ListNamespacePodTop(ctx context.Context, limit int) ([]NamespacePodStat, error) {
-	items, err := s.client.Kubernetes.CoreV1().Pods("").List(ctx, metav1.ListOptions{})
+func (s *ClusterService) ListNamespacePodTop(ctx context.Context, namespace string, limit int) ([]NamespacePodStat, error) {
+	namespace = normalizeNamespace(namespace)
+
+	items, err := s.client.Kubernetes.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("list pods: %w", err)
 	}

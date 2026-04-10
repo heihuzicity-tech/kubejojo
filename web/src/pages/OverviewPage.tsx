@@ -291,14 +291,14 @@ export function OverviewPage() {
   const enabled = sessionMode === 'token';
 
   const summaryQuery = useQuery({
-    queryKey: ['overview-summary'],
-    queryFn: getOverviewSummary,
+    queryKey: ['overview-summary', namespace],
+    queryFn: () => getOverviewSummary(namespace),
     enabled,
   });
 
   const warningQuery = useQuery({
-    queryKey: ['overview-warning-events'],
-    queryFn: getOverviewWarnings,
+    queryKey: ['overview-warning-events', namespace],
+    queryFn: () => getOverviewWarnings(namespace),
     enabled,
   });
 
@@ -309,8 +309,8 @@ export function OverviewPage() {
   });
 
   const namespaceQuery = useQuery({
-    queryKey: ['overview-namespace-pod-top'],
-    queryFn: getNamespacePodTop,
+    queryKey: ['overview-namespace-pod-top', namespace],
+    queryFn: () => getNamespacePodTop(namespace),
     enabled,
   });
 
@@ -362,7 +362,7 @@ export function OverviewPage() {
     {
       title: 'Pods Running',
       value: `${podStats.running}/${podStats.total}`,
-      meta: `${summary.namespaces} 个命名空间`,
+      meta: `${namespace} 范围内运行中 Pod`,
       icon: <DeploymentUnitOutlined />,
       accentClass: 'bg-cyan-50 text-cyan-700',
     },
@@ -438,8 +438,8 @@ export function OverviewPage() {
 
       <section className="grid gap-4 2xl:grid-cols-[1.05fr_0.95fr]">
         <Panel
-          title="命名空间 Pod 分布"
-          extra={<Tag color="blue">{namespaceStats.length} namespaces</Tag>}
+          title={namespace ? `${namespace} Pod 概览` : '命名空间 Pod 分布'}
+          extra={<Tag color="blue">{namespaceStats.length} items</Tag>}
           className="min-h-[380px]"
         >
           <div className="space-y-2.5">
