@@ -5,18 +5,16 @@ import (
 
 	"github.com/zhangya/k8s-admin/server/internal/config"
 	"github.com/zhangya/k8s-admin/server/internal/kube"
-	"github.com/zhangya/k8s-admin/server/internal/service"
 )
 
 func Run() error {
 	cfg := config.Load()
 
-	clusterClient, err := kube.New(cfg.KubeconfigPath)
+	clusterFactory, err := kube.NewFactory(cfg.KubeconfigPath)
 	if err != nil {
-		return fmt.Errorf("initialize kubernetes client: %w", err)
+		return fmt.Errorf("initialize kubernetes client factory: %w", err)
 	}
 
-	clusterService := service.NewClusterService(clusterClient)
-	router := newRouter(clusterService)
+	router := newRouter(clusterFactory)
 	return router.Run(cfg.HTTPAddr)
 }

@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
+	authv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -38,13 +40,13 @@ type NodeItem struct {
 
 type OverviewSummary struct {
 	KubernetesVersion string `json:"kubernetesVersion"`
-	ClusterStatus    string `json:"clusterStatus"`
-	NodesReady       string `json:"nodesReady"`
-	Namespaces       int    `json:"namespaces"`
-	PodsRunningTotal string `json:"podsRunningTotal"`
-	MetricsAvailable bool   `json:"metricsAvailable"`
-	CPUUsage         string `json:"cpuUsage,omitempty"`
-	MemoryUsage      string `json:"memoryUsage,omitempty"`
+	ClusterStatus     string `json:"clusterStatus"`
+	NodesReady        string `json:"nodesReady"`
+	Namespaces        int    `json:"namespaces"`
+	PodsRunningTotal  string `json:"podsRunningTotal"`
+	MetricsAvailable  bool   `json:"metricsAvailable"`
+	CPUUsage          string `json:"cpuUsage,omitempty"`
+	MemoryUsage       string `json:"memoryUsage,omitempty"`
 }
 
 type WarningEvent struct {
@@ -66,15 +68,25 @@ func NewClusterService(client *kube.Client) *ClusterService {
 	return &ClusterService{client: client}
 }
 
-func (s *ClusterService) GetAuthMe(_ context.Context) AuthMe {
+func (s *ClusterService) GetAuthMe(ctx context.Context) AuthMe {
 	name := s.client.RawConfig.AuthInfoName
+	if review, err := s.client.Kubernetes.AuthenticationV1().SelfSubjectReviews().Create(
+		ctx,
+		&authv1.SelfSubjectReview{},
+		metav1.CreateOptions{},
+	); err == nil {
+		if value := strings.TrimSpace(review.Status.UserInfo.Username); value != "" {
+			name = value
+		}
+	}
+
 	if name == "" {
-		name = "unknown"
+		name = "token-user"
 	}
 
 	return AuthMe{
 		Name:           name,
-		AuthMode:       "kubeconfig",
+		AuthMode:       s.client.AuthMode,
 		CurrentContext: s.client.RawConfig.CurrentContext,
 		KubeconfigPath: s.client.ConfigPath,
 	}
@@ -147,11 +159,11 @@ func (s *ClusterService) GetOverviewSummary(ctx context.Context) (OverviewSummar
 
 	summary := OverviewSummary{
 		KubernetesVersion: version.GitVersion,
-		ClusterStatus:    clusterStatus(readyCount, len(nodes.Items)),
-		NodesReady:       fmt.Sprintf("%d/%d", readyCount, len(nodes.Items)),
-		Namespaces:       len(namespaces.Items),
-		PodsRunningTotal: fmt.Sprintf("%d/%d", runningPods(pods.Items), len(pods.Items)),
-		MetricsAvailable: false,
+		ClusterStatus:     clusterStatus(readyCount, len(nodes.Items)),
+		NodesReady:        fmt.Sprintf("%d/%d", readyCount, len(nodes.Items)),
+		Namespaces:        len(namespaces.Items),
+		PodsRunningTotal:  fmt.Sprintf("%d/%d", runningPods(pods.Items), len(pods.Items)),
+		MetricsAvailable:  false,
 	}
 
 	nodeMetrics, err := s.client.Metrics.MetricsV1beta1().NodeMetricses().List(ctx, metav1.ListOptions{})

@@ -1,5 +1,6 @@
 import { LogoutOutlined, MenuOutlined } from '@ant-design/icons';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { AxiosError } from 'axios';
 import { Button, Drawer, Grid, Select, Space, Tag, Typography } from 'antd';
 import { PropsWithChildren, startTransition, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -140,6 +141,7 @@ function NavigationPanel({
 export function AppLayout({ children }: PropsWithChildren) {
   const location = useLocation();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const screens = Grid.useBreakpoint();
   const [drawerOpen, setDrawerOpen] = useState(false);
 
@@ -169,6 +171,15 @@ export function AppLayout({ children }: PropsWithChildren) {
     }
   }, [authQuery.data?.name, setUserName]);
 
+  useEffect(() => {
+    const status = authQuery.error instanceof AxiosError ? authQuery.error.response?.status : undefined;
+    if (sessionMode === 'token' && (status === 401 || status === 403)) {
+      queryClient.clear();
+      clearToken();
+      navigate('/login', { replace: true });
+    }
+  }, [authQuery.error, clearToken, navigate, queryClient, sessionMode]);
+
   const namespaceOptions =
     sessionMode === 'demo' ? demoNamespaces : namespacesQuery.data ?? [];
 
@@ -197,6 +208,7 @@ export function AppLayout({ children }: PropsWithChildren) {
   };
 
   const handleLogout = () => {
+    queryClient.clear();
     clearToken();
     navigate('/login', { replace: true });
   };

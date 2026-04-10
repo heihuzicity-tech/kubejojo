@@ -7,6 +7,15 @@ export type AuthMe = {
   kubeconfigPath: string;
 };
 
+export type TokenLoginResult = {
+  name: string;
+  authMode: string;
+  currentContext: string;
+  kubeconfigPath: string;
+  namespaces: string[];
+  defaultNamespace: string;
+};
+
 export type OverviewSummary = {
   kubernetesVersion: string;
   clusterStatus: string;
@@ -52,6 +61,19 @@ type Envelope<T> = {
 
 export async function getAuthMe() {
   const { data } = await http.get<Envelope<AuthMe>>('/auth/me');
+  return data.data;
+}
+
+export async function loginWithToken(token: string) {
+  const { data } = await http.post<Envelope<TokenLoginResult>>(
+    '/auth/login',
+    { token },
+    {
+      headers: {
+        'X-Skip-Auth': 'true',
+      },
+    },
+  );
   return data.data;
 }
 
