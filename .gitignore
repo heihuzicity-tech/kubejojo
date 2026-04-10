@@ -1,0 +1,36 @@
+# macOS
+.DS_Store
+
+# Logs
+*.log
+logs/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Editor
+.idea/
+.vscode/
+
+# Frontend
+web/node_modules/
+web/dist/
+web/.vite/
+web/coverage/
+
+# Backend
+server/bin/
+server/dist/
+server/.cache/
+server/coverage/
+
+# Go
+*.test
+*.out
+vendor/
+
+# Temporary files
+tmp/
+temp/
