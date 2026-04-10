@@ -1,16 +1,14 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 
 import { AppLayout } from '../layouts/AppLayout';
+import { navigationItems } from '../layouts/navigation';
 import { useAppStore } from '../stores/appStore';
-import { AuditPage } from '../pages/AuditPage';
-import { ConfigPage } from '../pages/ConfigPage';
 import { LoginPage } from '../pages/LoginPage';
-import { NetworkPage } from '../pages/NetworkPage';
 import { NodesPage } from '../pages/NodesPage';
 import { OverviewPage } from '../pages/OverviewPage';
-import { PodsPage } from '../pages/PodsPage';
-import { StoragePage } from '../pages/StoragePage';
-import { WorkloadsPage } from '../pages/WorkloadsPage';
+import { PlaceholderPage } from '../pages/PlaceholderPage';
+
+const placeholderItems = navigationItems.filter((item) => !item.implemented);
 
 function ProtectedRoutes() {
   const token = useAppStore((state) => state.token);
@@ -22,15 +20,30 @@ function ProtectedRoutes() {
   return (
     <AppLayout>
       <Routes>
-        <Route path="/overview" element={<OverviewPage />} />
-        <Route path="/nodes" element={<NodesPage />} />
-        <Route path="/workloads" element={<WorkloadsPage />} />
-        <Route path="/pods" element={<PodsPage />} />
-        <Route path="/network" element={<NetworkPage />} />
-        <Route path="/config" element={<ConfigPage />} />
-        <Route path="/storage/pvcs" element={<StoragePage />} />
-        <Route path="/audit" element={<AuditPage />} />
-        <Route path="*" element={<Navigate to="/overview" replace />} />
+        <Route path="/cluster/overview" element={<OverviewPage />} />
+        <Route path="/cluster/nodes" element={<NodesPage />} />
+
+        {placeholderItems.map((item) => (
+          <Route
+            key={item.key}
+            path={item.path}
+            element={<PlaceholderPage title={item.label} description={item.description} />}
+          />
+        ))}
+
+        <Route path="/overview" element={<Navigate to="/cluster/overview" replace />} />
+        <Route path="/nodes" element={<Navigate to="/cluster/nodes" replace />} />
+        <Route path="/workloads" element={<Navigate to="/workloads/pods" replace />} />
+        <Route path="/workloads/overview" element={<Navigate to="/workloads/pods" replace />} />
+        <Route path="/pods" element={<Navigate to="/workloads/pods" replace />} />
+        <Route path="/network" element={<Navigate to="/network/services" replace />} />
+        <Route path="/config" element={<Navigate to="/config/configmaps" replace />} />
+        <Route
+          path="/storage/pvcs"
+          element={<Navigate to="/storage/persistentvolumeclaims" replace />}
+        />
+
+        <Route path="*" element={<Navigate to="/cluster/overview" replace />} />
       </Routes>
     </AppLayout>
   );

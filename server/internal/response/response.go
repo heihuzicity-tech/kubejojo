@@ -13,3 +13,10 @@ func Success(data any) Envelope {
 		Data:    data,
 	}
 }
+
+func Failure(code string, message string) Envelope {
+	return Envelope{
+		Code:    code,
+		Message: message,
+	}
+}

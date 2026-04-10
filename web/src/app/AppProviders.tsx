@@ -22,8 +22,16 @@ export function AppProviders({ children }: PropsWithChildren) {
       theme={{
         algorithm: theme.defaultAlgorithm,
         token: {
-          colorPrimary: '#1d4ed8',
-          borderRadius: 10,
+          colorPrimary: '#0f766e',
+          colorInfo: '#0f766e',
+          colorSuccess: '#15803d',
+          colorWarning: '#d97706',
+          colorError: '#dc2626',
+          colorBgLayout: '#f3f6f8',
+          colorBgContainer: '#ffffff',
+          colorBorderSecondary: '#dbe4ea',
+          borderRadius: 16,
+          fontFamily: '"PingFang SC", "Microsoft YaHei", sans-serif',
         },
       }}
     >
