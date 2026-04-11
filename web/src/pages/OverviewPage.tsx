@@ -1,7 +1,9 @@
 import {
   Alert,
   Button,
+  Empty,
   Progress,
+  Statistic,
   Skeleton,
   Space,
   Table,
@@ -189,6 +191,31 @@ function SummaryCard({
   );
 }
 
+function CompactMetricCard({
+  title,
+  value,
+  suffix,
+  extra,
+}: {
+  title: string;
+  value: string | number;
+  suffix?: string;
+  extra?: string;
+}) {
+  return (
+    <section className="rounded-[18px] border border-slate-200 bg-white px-4 py-3 shadow-[0_8px_22px_rgba(15,23,42,0.05)]">
+      <div className="text-xs font-medium uppercase tracking-[0.08em] text-slate-400">{title}</div>
+      <div className="mt-2 flex items-end gap-2">
+        <div className="text-[1.75rem] font-semibold leading-none tracking-[-0.03em] text-slate-950">
+          {value}
+        </div>
+        {suffix ? <div className="pb-0.5 text-sm font-medium text-slate-500">{suffix}</div> : null}
+      </div>
+      {extra ? <div className="mt-1.5 text-xs text-slate-500">{extra}</div> : null}
+    </section>
+  );
+}
+
 function parseReadyCount(nodesReady: string) {
   const [ready = '0', total = '0'] = nodesReady.split('/');
   return {
@@ -348,46 +375,33 @@ export function OverviewPage() {
     {
       title: 'Cluster Status',
       value: summary.clusterStatus,
-      meta: `Kubernetes ${summary.kubernetesVersion}`,
-      icon: <ClusterOutlined />,
-      accentClass: 'bg-teal-50 text-teal-700',
+      extra: `Kubernetes ${summary.kubernetesVersion}`,
     },
     {
       title: 'Nodes Ready',
-      value: `${readyStats.ready}/${readyStats.total}`,
-      meta: `${nodes.length} 个节点已纳入监控`,
-      icon: <CheckCircleOutlined />,
-      accentClass: 'bg-emerald-50 text-emerald-700',
+      value: readyStats.ready,
+      suffix: `/ ${readyStats.total}`,
+      extra: `${nodes.length} 个节点已纳入监控`,
     },
     {
       title: 'Pods Running',
-      value: `${podStats.running}/${podStats.total}`,
-      meta: `${namespace} 范围内运行中 Pod`,
-      icon: <DeploymentUnitOutlined />,
-      accentClass: 'bg-cyan-50 text-cyan-700',
+      value: podStats.running,
+      suffix: `/ ${podStats.total}`,
+      extra: `${namespace} 范围内运行中 Pod`,
     },
     {
       title: 'Warning Events',
-      value: String(warningCount),
-      meta: warningCount > 0 ? '需要优先排查异常资源' : '当前没有告警事件',
-      icon: <WarningOutlined />,
-      accentClass: 'bg-amber-50 text-amber-700',
-    },
-    {
-      title: 'CPU Usage',
-      value: summary.metricsAvailable ? summary.cpuUsage ?? '0%' : '--',
-      meta: summary.metricsAvailable ? '来自 Metrics API' : 'Metrics API 不可用',
-      icon: <FireOutlined />,
-      accentClass: 'bg-violet-50 text-violet-700',
-    },
-    {
-      title: 'Memory Usage',
-      value: summary.metricsAvailable ? summary.memoryUsage ?? '0%' : '--',
-      meta: summary.metricsAvailable ? '当前集群内存使用率' : '等待 Metrics 恢复',
-      icon: <DatabaseOutlined />,
-      accentClass: 'bg-blue-50 text-blue-700',
+      value: warningCount,
+      extra: warningCount > 0 ? '需要优先排查异常资源' : '当前没有告警事件',
     },
   ];
+
+  const podOverviewItems =
+    namespaceStats.length > 0
+      ? namespaceStats
+      : [{ namespace, pods: podStats.running }];
+
+  const recentWarnings = warnings.slice(0, 4);
 
   return (
     <section className="space-y-4">
@@ -399,15 +413,14 @@ export function OverviewPage() {
         />
       ) : null}
 
-      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         {summaryCards.map((item) => (
-          <SummaryCard
+          <CompactMetricCard
             key={item.title}
             title={item.title}
             value={item.value}
-            meta={item.meta}
-            icon={item.icon}
-            accentClass={item.accentClass}
+            suffix={item.suffix}
+            extra={item.extra}
           />
         ))}
       </section>
@@ -436,138 +449,182 @@ export function OverviewPage() {
         </div>
       </section>
 
-      <section className="grid gap-4 2xl:grid-cols-[1.05fr_0.95fr]">
+      <section className="grid gap-4 xl:grid-cols-2">
         <Panel
-          title={namespace ? `${namespace} Pod 概览` : '命名空间 Pod 分布'}
-          extra={<Tag color="blue">{namespaceStats.length} items</Tag>}
-          className="min-h-[380px]"
+          title="Pod 状态概览"
+          extra={<Tag color="blue">{podStats.running}/{podStats.total}</Tag>}
         >
-          <div className="space-y-2.5">
-            {namespaceStats.map((item) => {
-              const percent = Math.round((item.pods / maxNamespacePods) * 100);
+          {podStats.total > 0 ? (
+            <div className="space-y-2.5">
+              {podOverviewItems.map((item) => {
+                const percent = podStats.total > 0 ? Math.round((item.pods / podStats.total) * 100) : 0;
 
-              return (
-                <section
-                  key={item.namespace}
-                  className="rounded-[16px] border border-slate-200 bg-slate-50 px-3 py-2.5"
-                >
-                  <div className="mb-1.5 flex items-center justify-between gap-4">
-                    <div className="min-w-0">
-                      <div className="truncate text-sm font-semibold text-slate-950">
-                        {item.namespace}
-                      </div>
-                      <div className="mt-0.5 text-xs text-slate-500">Pod 数量占比</div>
-                    </div>
-                    <div className="shrink-0 text-right">
-                      <div className="text-base font-semibold text-slate-950">{item.pods}</div>
-                      <div className="text-xs text-slate-500">Pods</div>
-                    </div>
-                  </div>
-                  <Progress
-                    percent={percent}
-                    size="small"
-                    showInfo={false}
-                    strokeColor="#0f766e"
-                    trailColor="#dbe7ec"
-                  />
-                </section>
-              );
-            })}
-          </div>
-        </Panel>
-
-        <div className="grid gap-4">
-          <Panel
-            title="资源使用"
-            extra={
-              <Tag color={summary.metricsAvailable ? 'cyan' : 'default'}>
-                {summary.metricsAvailable ? 'Live Metrics' : 'Unavailable'}
-              </Tag>
-            }
-          >
-            {summary.metricsAvailable ? (
-              <div className="space-y-3">
-                {[
-                  {
-                    label: 'CPU Usage',
-                    value: summary.cpuUsage ?? '0%',
-                    percent: parsePercent(summary.cpuUsage),
-                    strokeColor: '#0f766e',
-                  },
-                  {
-                    label: 'Memory Usage',
-                    value: summary.memoryUsage ?? '0%',
-                    percent: parsePercent(summary.memoryUsage),
-                    strokeColor: '#2563eb',
-                  },
-                ].map((item) => (
+                return (
                   <section
-                    key={item.label}
-                    className="rounded-[16px] border border-slate-200 bg-slate-50 px-3 py-3"
+                    key={item.namespace}
+                    className="rounded-[16px] border border-slate-200 bg-slate-50 px-3 py-2.5"
                   >
-                    <div className="mb-2 flex items-center justify-between gap-3">
-                      <Typography.Text strong className="!text-sm">
-                        {item.label}
-                      </Typography.Text>
-                      <span className="text-sm font-semibold text-slate-950">{item.value}</span>
+                    <div className="mb-1.5 flex items-center justify-between gap-4">
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-semibold text-slate-950">
+                          {item.namespace}
+                        </div>
+                        <div className="mt-0.5 text-xs text-slate-500">当前范围内 Pod 数量</div>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <div className="text-base font-semibold text-slate-950">{item.pods}</div>
+                        <div className="text-xs text-slate-500">Pods</div>
+                      </div>
                     </div>
                     <Progress
-                      percent={item.percent}
-                      strokeColor={item.strokeColor}
+                      percent={percent}
+                      size="small"
+                      showInfo={false}
+                      strokeColor="#0f766e"
                       trailColor="#dbe7ec"
                     />
                   </section>
-                ))}
-              </div>
-            ) : (
-              <div className="rounded-[16px] border border-dashed border-slate-300 bg-slate-50 px-3 py-4 text-sm text-slate-500">
-                当前集群 Metrics API 不可用，资源使用率暂时无法展示。后续接通 metrics-server 后，该区域直接承接实时数据。
-              </div>
-            )}
-          </Panel>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="rounded-[16px] border border-dashed border-slate-300 bg-slate-50 px-4 py-8">
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description={
+                  <span className="text-sm text-slate-500">
+                    当前命名空间没有可展示的 Pod 数据
+                  </span>
+                }
+              />
+            </div>
+          )}
+        </Panel>
 
-          <Panel title="集群健康摘要">
-            <div className="grid gap-2.5 sm:grid-cols-2">
+        <Panel
+          title="资源使用"
+          extra={
+            <Tag color={summary.metricsAvailable ? 'cyan' : 'default'}>
+              {summary.metricsAvailable ? 'Live Metrics' : 'Unavailable'}
+            </Tag>
+          }
+        >
+          {summary.metricsAvailable ? (
+            <div className="space-y-3">
               {[
                 {
-                  label: '控制面版本',
-                  value: summary.kubernetesVersion,
-                  icon: <ClusterOutlined />,
+                  label: 'CPU Usage',
+                  value: summary.cpuUsage ?? '0%',
+                  percent: parsePercent(summary.cpuUsage),
+                  strokeColor: '#0f766e',
                 },
                 {
-                  label: 'Node Ready',
-                  value: `${readyStats.ready}/${readyStats.total}`,
-                  icon: <CheckCircleOutlined />,
-                },
-                {
-                  label: '运行中 Pods',
-                  value: `${podStats.running}/${podStats.total}`,
-                  icon: <AppstoreOutlined />,
-                },
-                {
-                  label: 'Warning 数量',
-                  value: String(warningCount),
-                  icon: <WarningOutlined />,
+                  label: 'Memory Usage',
+                  value: summary.memoryUsage ?? '0%',
+                  percent: parsePercent(summary.memoryUsage),
+                  strokeColor: '#2563eb',
                 },
               ].map((item) => (
                 <section
                   key={item.label}
+                  className="rounded-[16px] border border-slate-200 bg-slate-50 px-3 py-3"
+                >
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <Typography.Text strong className="!text-sm">
+                      {item.label}
+                    </Typography.Text>
+                    <span className="text-sm font-semibold text-slate-950">{item.value}</span>
+                  </div>
+                  <Progress
+                    percent={item.percent}
+                    strokeColor={item.strokeColor}
+                    trailColor="#dbe7ec"
+                  />
+                </section>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-[16px] border border-dashed border-slate-300 bg-slate-50 px-3 py-4 text-sm text-slate-500">
+              当前集群 Metrics API 不可用，资源使用率暂时无法展示。
+            </div>
+          )}
+        </Panel>
+      </section>
+
+      <section className="grid gap-4 xl:grid-cols-2">
+        <Panel title="最近异常">
+          {recentWarnings.length > 0 ? (
+            <div className="space-y-2.5">
+              {recentWarnings.map((item) => (
+                <section
+                  key={`${item.namespace}-${item.kind}-${item.name}-${item.reason}`}
                   className="rounded-[16px] border border-slate-200 bg-slate-50 px-3 py-2.5"
                 >
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-slate-600 shadow-[inset_0_0_0_1px_rgba(226,232,240,1)]">
-                      {item.icon}
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-semibold text-slate-950">
+                        {item.name}
+                      </div>
+                      <div className="mt-1 text-xs text-slate-500">
+                        {item.namespace} / {item.reason}
+                      </div>
                     </div>
-                    <div>
-                      <div className="text-xs text-slate-500">{item.label}</div>
-                      <div className="mt-0.5 text-base font-semibold text-slate-950">{item.value}</div>
-                    </div>
+                    <Tag color="orange">{item.count}</Tag>
                   </div>
                 </section>
               ))}
             </div>
-          </Panel>
-        </div>
+          ) : (
+            <div className="rounded-[16px] border border-dashed border-slate-300 bg-slate-50 px-4 py-8">
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description={<span className="text-sm text-slate-500">当前没有 Warning 事件</span>}
+              />
+            </div>
+          )}
+        </Panel>
+
+        <Panel title="健康摘要">
+          <div className="grid gap-2.5 sm:grid-cols-2">
+            {[
+              {
+                label: '控制面版本',
+                value: summary.kubernetesVersion,
+                icon: <ClusterOutlined />,
+              },
+              {
+                label: 'Node Ready',
+                value: `${readyStats.ready}/${readyStats.total}`,
+                icon: <CheckCircleOutlined />,
+              },
+              {
+                label: '运行中 Pods',
+                value: `${podStats.running}/${podStats.total}`,
+                icon: <AppstoreOutlined />,
+              },
+              {
+                label: 'Warning 数量',
+                value: String(warningCount),
+                icon: <WarningOutlined />,
+              },
+            ].map((item) => (
+              <section
+                key={item.label}
+                className="rounded-[16px] border border-slate-200 bg-slate-50 px-3 py-2.5"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-slate-600 shadow-[inset_0_0_0_1px_rgba(226,232,240,1)]">
+                    {item.icon}
+                  </div>
+                  <div>
+                    <div className="text-xs text-slate-500">{item.label}</div>
+                    <div className="mt-0.5 text-base font-semibold text-slate-950">{item.value}</div>
+                  </div>
+                </div>
+              </section>
+            ))}
+          </div>
+        </Panel>
       </section>
 
       <Panel
