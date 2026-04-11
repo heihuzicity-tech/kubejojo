@@ -78,6 +78,11 @@ type FocusContext = {
   focusedIDs: Set<string>;
   relatedIDs: Set<string>;
 };
+type CanvasMotionPreset = 'none' | 'boot';
+
+const canvasMotionDurationMs: Record<Exclude<CanvasMotionPreset, 'none'>, number> = {
+  boot: 680,
+};
 
 const sourceFilterOptions: Array<{ label: string; value: SourceFocusMode }> = [
   { label: '全部', value: 'all' },
@@ -239,6 +244,24 @@ function connectedGraph(graph: TopologyGraph): TopologyGraph {
   };
 }
 
+function getCanvasMotionClass(motionPreset: CanvasMotionPreset) {
+  switch (motionPreset) {
+    case 'boot':
+      return 'topology-canvas-motion topology-canvas-motion--boot';
+    default:
+      return '';
+  }
+}
+
+function getOverlayMotionClass(motionPreset: Exclude<CanvasMotionPreset, 'none'> | null) {
+  switch (motionPreset) {
+    case 'boot':
+      return 'topology-overlay-motion topology-overlay-motion--boot';
+    default:
+      return '';
+  }
+}
+
 function DetailsPanel({
   resource,
   graph,
@@ -362,6 +385,8 @@ function TopologyWorkspace() {
   const viewportMovedRef = useRef(false);
   const layoutRequestRef = useRef(0);
   const initialViewportSettledRef = useRef(false);
+  const motionFrameRef = useRef<number | null>(null);
+  const motionTimeoutRef = useRef<number | null>(null);
 
   const [sourceFocus, setSourceFocus] = useState<SourceFocusMode>('all');
   const [groupMode, setGroupMode] = useState<GroupByMode>('instance');
@@ -370,6 +395,10 @@ function TopologyWorkspace() {
   const [focusedID, setFocusedID] = useState<string>();
   const [detailResourceID, setDetailResourceID] = useState<string>();
   const [canvasReady, setCanvasReady] = useState(false);
+  const [canvasMotionPreset, setCanvasMotionPreset] = useState<CanvasMotionPreset>('none');
+  const [overlayMotionPreset, setOverlayMotionPreset] = useState<
+    Exclude<CanvasMotionPreset, 'none'> | null
+  >(null);
   const [layoutedGraph, setLayoutedGraph] = useState<{
     nodes: Node<TopologyFlowNodeData>[];
     edges: Edge[];
@@ -382,6 +411,35 @@ function TopologyWorkspace() {
     queryFn: () => getTopologyGraph(namespace, defaultSources),
     enabled: sessionMode === 'token',
   });
+
+  const clearCanvasMotion = () => {
+    if (motionFrameRef.current) {
+      window.cancelAnimationFrame(motionFrameRef.current);
+      motionFrameRef.current = null;
+    }
+
+    if (motionTimeoutRef.current) {
+      window.clearTimeout(motionTimeoutRef.current);
+      motionTimeoutRef.current = null;
+    }
+  };
+
+  const triggerCanvasMotion = (preset: Exclude<CanvasMotionPreset, 'none'>) => {
+    clearCanvasMotion();
+    setCanvasMotionPreset('none');
+    setOverlayMotionPreset(null);
+
+    motionFrameRef.current = window.requestAnimationFrame(() => {
+      setCanvasMotionPreset(preset);
+      setOverlayMotionPreset(preset);
+      motionTimeoutRef.current = window.setTimeout(() => {
+        setCanvasMotionPreset('none');
+        setOverlayMotionPreset(null);
+        motionTimeoutRef.current = null;
+      }, canvasMotionDurationMs[preset]);
+      motionFrameRef.current = null;
+    });
+  };
 
   const graph = useMemo<TopologyGraph>(() => {
     if (!topologyQuery.data) {
@@ -470,17 +528,27 @@ function TopologyWorkspace() {
 
   useEffect(() => {
     if (topologyQuery.isLoading) {
+      clearCanvasMotion();
       setCanvasReady(false);
+      setCanvasMotionPreset('none');
+      setOverlayMotionPreset(null);
     }
   }, [topologyQuery.isLoading]);
+
+  useEffect(
+    () => () => {
+      clearCanvasMotion();
+    },
+    [],
+  );
 
   useEffect(() => {
     let active = true;
     const requestId = layoutRequestRef.current + 1;
     layoutRequestRef.current = requestId;
-    const shouldHideCanvasDuringLayout = initialViewportSettledRef.current;
+    const isInitialReveal = !initialViewportSettledRef.current;
 
-    if (shouldHideCanvasDuringLayout) {
+    if (isInitialReveal) {
       setCanvasReady(false);
     }
 
@@ -511,6 +579,9 @@ function TopologyWorkspace() {
           }
 
           setCanvasReady(true);
+          if (isInitialReveal) {
+            triggerCanvasMotion('boot');
+          }
         });
       });
     });
@@ -764,10 +835,9 @@ function TopologyWorkspace() {
             <>
               <div
                 className={[
-                  'h-full origin-center transition-[opacity,transform,filter] duration-[360ms] ease-[cubic-bezier(0.22,1,0.36,1)]',
-                  canvasReady
-                    ? 'translate-y-0 scale-100 blur-0 opacity-100'
-                    : 'pointer-events-none translate-y-3 scale-[0.978] blur-[3px] opacity-0',
+                  'h-full origin-center',
+                  canvasReady ? 'opacity-100' : 'pointer-events-none opacity-0',
+                  getCanvasMotionClass(canvasMotionPreset),
                 ].join(' ')}
               >
                 <ReactFlow<Node<TopologyFlowNodeData>, Edge>
@@ -794,9 +864,9 @@ function TopologyWorkspace() {
               {!canvasReady ? (
                 <div
                   className={[
-                    'pointer-events-none absolute inset-0 transition-[opacity,backdrop-filter,background-color] duration-[320ms] ease-[cubic-bezier(0.22,1,0.36,1)]',
+                    'pointer-events-none absolute inset-0',
                     initialViewportSettledRef.current
-                      ? 'bg-white/26 opacity-100 backdrop-blur-[3px]'
+                      ? 'bg-white/30 backdrop-blur-[4px]'
                       : 'flex items-center justify-center bg-white/92 opacity-100',
                   ].join(' ')}
                 >
@@ -805,6 +875,12 @@ function TopologyWorkspace() {
                       <Skeleton active title={false} paragraph={{ rows: 5 }} />
                     </div>
                   ) : null}
+                </div>
+              ) : null}
+
+              {canvasReady && overlayMotionPreset ? (
+                <div className={['pointer-events-none absolute inset-0', getOverlayMotionClass(overlayMotionPreset)].join(' ')}>
+                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_34%,rgba(255,255,255,0.92),rgba(255,255,255,0.42)_42%,rgba(255,255,255,0.12)_68%,transparent_84%)]" />
                 </div>
               ) : null}
             </>
