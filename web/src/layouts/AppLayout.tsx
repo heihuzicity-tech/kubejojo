@@ -6,14 +6,13 @@ import { PropsWithChildren, startTransition, useEffect, useMemo, useState } from
 import { useLocation, useNavigate } from 'react-router-dom';
 
 import { PageErrorBoundary } from '../app/PageErrorBoundary';
+import { BrandLogo } from '../components/brand/BrandLogo';
 import { getAuthMe, getNamespaces } from '../services/cluster';
 import { useAppStore } from '../stores/appStore';
 import { findNavigationItem, navigationSections } from './navigation';
 
 type NavigationPanelProps = {
   currentPath: string;
-  currentContext?: string;
-  sessionMode: 'demo' | 'token';
   expandedSection: string | null;
   onNavigate: (path: string) => void;
   onToggleSection: (key: string, defaultPath: string, isActive: boolean) => void;
@@ -23,34 +22,19 @@ const demoNamespaces = ['default', 'kube-system', 'kube-public', 'kube-node-leas
 
 function NavigationPanel({
   currentPath,
-  currentContext,
-  sessionMode,
   expandedSection,
   onNavigate,
   onToggleSection,
 }: NavigationPanelProps) {
   return (
     <div className="flex h-full flex-col bg-white">
-      <div className="border-b border-slate-200 px-5 py-4">
-        <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-teal-700">
-          Single Cluster
+      <div className="border-b border-slate-200 px-5 py-5">
+        <div className="flex items-center gap-3">
+          <BrandLogo size={42} />
+          <Typography.Title level={4} className="!mb-0">
+            K8s Admin
+          </Typography.Title>
         </div>
-        <div className="mt-2 flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <Typography.Title level={4} className="!mb-0">
-              K8s Admin
-            </Typography.Title>
-            <div className="mt-1 text-xs text-slate-500">Kubernetes 管理控制台</div>
-          </div>
-          <Tag color={sessionMode === 'demo' ? 'gold' : 'cyan'} className="rounded-full px-2 py-0.5">
-            {sessionMode === 'demo' ? 'Demo' : 'Token'}
-          </Tag>
-        </div>
-        {currentContext ? (
-          <div className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-500">
-            Context: <span className="font-medium text-slate-700">{currentContext}</span>
-          </div>
-        ) : null}
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
@@ -220,8 +204,6 @@ export function AppLayout({ children }: PropsWithChildren) {
         <aside className="fixed inset-y-0 left-0 z-30 w-[256px] border-r border-slate-200 bg-white">
           <NavigationPanel
             currentPath={location.pathname}
-            currentContext={authQuery.data?.currentContext}
-            sessionMode={sessionMode}
             expandedSection={expandedSection}
             onNavigate={handleNavigate}
             onToggleSection={handleToggleSection}
@@ -238,8 +220,6 @@ export function AppLayout({ children }: PropsWithChildren) {
         >
           <NavigationPanel
             currentPath={location.pathname}
-            currentContext={authQuery.data?.currentContext}
-            sessionMode={sessionMode}
             expandedSection={expandedSection}
             onNavigate={handleNavigate}
             onToggleSection={handleToggleSection}
