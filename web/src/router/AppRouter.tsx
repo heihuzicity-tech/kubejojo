@@ -4,9 +4,17 @@ import { AppLayout } from '../layouts/AppLayout';
 import { navigationItems } from '../layouts/navigation';
 import { useAppStore } from '../stores/appStore';
 import { LoginPage } from '../pages/LoginPage';
+import { DaemonSetsPage } from '../pages/DaemonSetsPage';
+import { CronJobsPage } from '../pages/CronJobsPage';
+import { DeploymentsPage } from '../pages/DeploymentsPage';
+import { JobsPage } from '../pages/JobsPage';
+import { NamespacesPage } from '../pages/NamespacesPage';
 import { NodesPage } from '../pages/NodesPage';
 import { OverviewPage } from '../pages/OverviewPage';
 import { PlaceholderPage } from '../pages/PlaceholderPage';
+import { PodsPage } from '../pages/PodsPage';
+import { ReplicaSetsPage } from '../pages/ReplicaSetsPage';
+import { StatefulSetsPage } from '../pages/StatefulSetsPage';
 import { TopologyPage } from '../pages/TopologyPage';
 
 const placeholderItems = navigationItems.filter((item) => !item.implemented);
@@ -22,7 +30,15 @@ function ProtectedRoutes() {
     <AppLayout>
       <Routes>
         <Route path="/cluster/overview" element={<OverviewPage />} />
+        <Route path="/cluster/namespaces" element={<NamespacesPage />} />
         <Route path="/cluster/nodes" element={<NodesPage />} />
+        <Route path="/workloads/pods" element={<PodsPage />} />
+        <Route path="/workloads/deployments" element={<DeploymentsPage />} />
+        <Route path="/workloads/statefulsets" element={<StatefulSetsPage />} />
+        <Route path="/workloads/daemonsets" element={<DaemonSetsPage />} />
+        <Route path="/workloads/replicasets" element={<ReplicaSetsPage />} />
+        <Route path="/workloads/jobs" element={<JobsPage />} />
+        <Route path="/workloads/cronjobs" element={<CronJobsPage />} />
         <Route path="/topology" element={<TopologyPage />} />
 
         {placeholderItems.map((item) => (

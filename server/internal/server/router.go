@@ -92,6 +92,16 @@ func newRouter(clusterFactory *kube.Factory) *gin.Engine {
 				c.JSON(http.StatusOK, response.Success(items))
 			})
 
+			authorized.GET("/namespaces/items", func(c *gin.Context) {
+				items, err := mustClusterService(c).ListNamespaceItems(c.Request.Context())
+				if err != nil {
+					respondWithClusterError(c, "LIST_NAMESPACE_ITEMS_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(items))
+			})
+
 			authorized.GET("/overview/summary", func(c *gin.Context) {
 				summary, err := mustClusterService(c).GetOverviewSummary(
 					c.Request.Context(),
@@ -137,6 +147,97 @@ func newRouter(clusterFactory *kube.Factory) *gin.Engine {
 				items, err := mustClusterService(c).ListNodes(c.Request.Context())
 				if err != nil {
 					respondWithClusterError(c, "LIST_NODES_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(items))
+			})
+
+			authorized.GET("/pods", func(c *gin.Context) {
+				items, err := mustClusterService(c).ListPods(
+					c.Request.Context(),
+					c.Query("namespace"),
+				)
+				if err != nil {
+					respondWithClusterError(c, "LIST_PODS_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(items))
+			})
+
+			authorized.GET("/deployments", func(c *gin.Context) {
+				items, err := mustClusterService(c).ListDeployments(
+					c.Request.Context(),
+					c.Query("namespace"),
+				)
+				if err != nil {
+					respondWithClusterError(c, "LIST_DEPLOYMENTS_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(items))
+			})
+
+			authorized.GET("/statefulsets", func(c *gin.Context) {
+				items, err := mustClusterService(c).ListStatefulSets(
+					c.Request.Context(),
+					c.Query("namespace"),
+				)
+				if err != nil {
+					respondWithClusterError(c, "LIST_STATEFULSETS_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(items))
+			})
+
+			authorized.GET("/jobs", func(c *gin.Context) {
+				items, err := mustClusterService(c).ListJobs(
+					c.Request.Context(),
+					c.Query("namespace"),
+				)
+				if err != nil {
+					respondWithClusterError(c, "LIST_JOBS_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(items))
+			})
+
+			authorized.GET("/cronjobs", func(c *gin.Context) {
+				items, err := mustClusterService(c).ListCronJobs(
+					c.Request.Context(),
+					c.Query("namespace"),
+				)
+				if err != nil {
+					respondWithClusterError(c, "LIST_CRONJOBS_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(items))
+			})
+
+			authorized.GET("/replicasets", func(c *gin.Context) {
+				items, err := mustClusterService(c).ListReplicaSets(
+					c.Request.Context(),
+					c.Query("namespace"),
+				)
+				if err != nil {
+					respondWithClusterError(c, "LIST_REPLICASETS_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(items))
+			})
+
+			authorized.GET("/daemonsets", func(c *gin.Context) {
+				items, err := mustClusterService(c).ListDaemonSets(
+					c.Request.Context(),
+					c.Query("namespace"),
+				)
+				if err != nil {
+					respondWithClusterError(c, "LIST_DAEMONSETS_FAILED", err)
 					return
 				}
 

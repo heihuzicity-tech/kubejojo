@@ -7,12 +7,16 @@ import (
 	"strings"
 	"time"
 
+	appsv1 "k8s.io/api/apps/v1"
 	authv1 "k8s.io/api/authentication/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	metricsv1beta1 "k8s.io/metrics/pkg/apis/metrics/v1beta1"
 
+	"github.com/zhangya/k8s-admin/server/internal/jsonx"
 	"github.com/zhangya/k8s-admin/server/internal/kube"
 )
 
@@ -28,14 +32,44 @@ type AuthMe struct {
 }
 
 type NodeItem struct {
-	Name        string `json:"name"`
-	Role        string `json:"role"`
-	IP          string `json:"ip"`
-	Status      string `json:"status"`
-	Kubelet     string `json:"kubeletVersion"`
-	OSImage     string `json:"osImage"`
-	Kernel      string `json:"kernelVersion"`
-	ContainerRT string `json:"containerRuntime"`
+	Name               string                         `json:"name"`
+	Role               string                         `json:"role"`
+	IP                 string                         `json:"ip"`
+	Status             string                         `json:"status"`
+	Ready              bool                           `json:"ready"`
+	Schedulable        bool                           `json:"schedulable"`
+	Kubelet            string                         `json:"kubeletVersion"`
+	OSImage            string                         `json:"osImage"`
+	Kernel             string                         `json:"kernelVersion"`
+	ContainerRT        string                         `json:"containerRuntime"`
+	Architecture       string                         `json:"architecture"`
+	PodCount           int                            `json:"podCount"`
+	Age                string                         `json:"age"`
+	CreatedAt          string                         `json:"createdAt"`
+	MetricsAvailable   bool                           `json:"metricsAvailable"`
+	CPUUsage           string                         `json:"cpuUsage,omitempty"`
+	CPUUsagePercent    float64                        `json:"cpuUsagePercent"`
+	MemoryUsage        string                         `json:"memoryUsage,omitempty"`
+	MemoryUsagePercent float64                        `json:"memoryUsagePercent"`
+	CPUAllocatable     string                         `json:"cpuAllocatable"`
+	MemoryAllocatable  string                         `json:"memoryAllocatable"`
+	Conditions         jsonx.Slice[NodeConditionItem] `json:"conditions"`
+	Taints             jsonx.Slice[NodeTaintItem]     `json:"taints"`
+	Labels             jsonx.Slice[string]            `json:"labels"`
+}
+
+type NodeConditionItem struct {
+	Type               string `json:"type"`
+	Status             string `json:"status"`
+	Reason             string `json:"reason,omitempty"`
+	Message            string `json:"message,omitempty"`
+	LastTransitionTime string `json:"lastTransitionTime,omitempty"`
+}
+
+type NodeTaintItem struct {
+	Key    string `json:"key"`
+	Value  string `json:"value,omitempty"`
+	Effect string `json:"effect"`
 }
 
 type OverviewSummary struct {
@@ -62,6 +96,254 @@ type WarningEvent struct {
 type NamespacePodStat struct {
 	Namespace string `json:"namespace"`
 	Pods      int    `json:"pods"`
+}
+
+type NamespaceItem struct {
+	Name      string              `json:"name"`
+	Status    string              `json:"status"`
+	Labels    jsonx.Slice[string] `json:"labels"`
+	Pods      int                 `json:"pods"`
+	Services  int                 `json:"services"`
+	Age       string              `json:"age"`
+	CreatedAt string              `json:"createdAt"`
+}
+
+type PodItem struct {
+	Name             string                        `json:"name"`
+	Namespace        string                        `json:"namespace"`
+	Status           string                        `json:"status"`
+	Phase            string                        `json:"phase"`
+	ReadyContainers  int                           `json:"readyContainers"`
+	TotalContainers  int                           `json:"totalContainers"`
+	RestartCount     int                           `json:"restartCount"`
+	NodeName         string                        `json:"nodeName"`
+	PodIP            string                        `json:"podIP"`
+	QOSClass         string                        `json:"qosClass"`
+	Age              string                        `json:"age"`
+	CreatedAt        string                        `json:"createdAt"`
+	MetricsAvailable bool                          `json:"metricsAvailable"`
+	CPUUsage         string                        `json:"cpuUsage,omitempty"`
+	MemoryUsage      string                        `json:"memoryUsage,omitempty"`
+	OwnerKind        string                        `json:"ownerKind,omitempty"`
+	OwnerName        string                        `json:"ownerName,omitempty"`
+	Labels           jsonx.Slice[string]           `json:"labels"`
+	Containers       jsonx.Slice[PodContainerItem] `json:"containers"`
+	Conditions       jsonx.Slice[PodConditionItem] `json:"conditions"`
+}
+
+type PodContainerItem struct {
+	Name         string `json:"name"`
+	Ready        bool   `json:"ready"`
+	RestartCount int    `json:"restartCount"`
+	State        string `json:"state"`
+	Image        string `json:"image,omitempty"`
+	CPUUsage     string `json:"cpuUsage,omitempty"`
+	MemoryUsage  string `json:"memoryUsage,omitempty"`
+}
+
+type PodConditionItem struct {
+	Type    string `json:"type"`
+	Status  string `json:"status"`
+	Reason  string `json:"reason,omitempty"`
+	Message string `json:"message,omitempty"`
+}
+
+type DeploymentItem struct {
+	Name                string                               `json:"name"`
+	Namespace           string                               `json:"namespace"`
+	Status              string                               `json:"status"`
+	DesiredReplicas     int32                                `json:"desiredReplicas"`
+	UpdatedReplicas     int32                                `json:"updatedReplicas"`
+	ReadyReplicas       int32                                `json:"readyReplicas"`
+	AvailableReplicas   int32                                `json:"availableReplicas"`
+	UnavailableReplicas int32                                `json:"unavailableReplicas"`
+	PodCount            int                                  `json:"podCount"`
+	RestartCount        int                                  `json:"restartCount"`
+	Strategy            string                               `json:"strategy"`
+	Age                 string                               `json:"age"`
+	CreatedAt           string                               `json:"createdAt"`
+	MetricsAvailable    bool                                 `json:"metricsAvailable"`
+	CPUUsage            string                               `json:"cpuUsage,omitempty"`
+	MemoryUsage         string                               `json:"memoryUsage,omitempty"`
+	Selector            jsonx.Slice[string]                  `json:"selector"`
+	Labels              jsonx.Slice[string]                  `json:"labels"`
+	Images              jsonx.Slice[string]                  `json:"images"`
+	Conditions          jsonx.Slice[DeploymentConditionItem] `json:"conditions"`
+	Pods                jsonx.Slice[DeploymentPodItem]       `json:"pods"`
+}
+
+type DeploymentConditionItem struct {
+	Type           string `json:"type"`
+	Status         string `json:"status"`
+	Reason         string `json:"reason,omitempty"`
+	Message        string `json:"message,omitempty"`
+	LastUpdateTime string `json:"lastUpdateTime,omitempty"`
+}
+
+type DeploymentPodItem struct {
+	Name             string `json:"name"`
+	Status           string `json:"status"`
+	ReadyContainers  int    `json:"readyContainers"`
+	TotalContainers  int    `json:"totalContainers"`
+	RestartCount     int    `json:"restartCount"`
+	NodeName         string `json:"nodeName"`
+	MetricsAvailable bool   `json:"metricsAvailable"`
+	CPUUsage         string `json:"cpuUsage,omitempty"`
+	MemoryUsage      string `json:"memoryUsage,omitempty"`
+}
+
+type StatefulSetConditionItem = DeploymentConditionItem
+type StatefulSetPodItem = DeploymentPodItem
+type ReplicaSetConditionItem = DeploymentConditionItem
+type ReplicaSetPodItem = DeploymentPodItem
+type DaemonSetConditionItem = DeploymentConditionItem
+type DaemonSetPodItem = DeploymentPodItem
+type JobConditionItem = DeploymentConditionItem
+type JobPodItem = DeploymentPodItem
+
+type StatefulSetItem struct {
+	Name                string                                `json:"name"`
+	Namespace           string                                `json:"namespace"`
+	Status              string                                `json:"status"`
+	ServiceName         string                                `json:"serviceName"`
+	PodManagementPolicy string                                `json:"podManagementPolicy"`
+	UpdateStrategy      string                                `json:"updateStrategy"`
+	DesiredReplicas     int32                                 `json:"desiredReplicas"`
+	ReadyReplicas       int32                                 `json:"readyReplicas"`
+	CurrentReplicas     int32                                 `json:"currentReplicas"`
+	UpdatedReplicas     int32                                 `json:"updatedReplicas"`
+	AvailableReplicas   int32                                 `json:"availableReplicas"`
+	PodCount            int                                   `json:"podCount"`
+	RestartCount        int                                   `json:"restartCount"`
+	Age                 string                                `json:"age"`
+	CreatedAt           string                                `json:"createdAt"`
+	MetricsAvailable    bool                                  `json:"metricsAvailable"`
+	CPUUsage            string                                `json:"cpuUsage,omitempty"`
+	MemoryUsage         string                                `json:"memoryUsage,omitempty"`
+	CurrentRevision     string                                `json:"currentRevision,omitempty"`
+	UpdateRevision      string                                `json:"updateRevision,omitempty"`
+	Selector            jsonx.Slice[string]                   `json:"selector"`
+	Labels              jsonx.Slice[string]                   `json:"labels"`
+	Images              jsonx.Slice[string]                   `json:"images"`
+	Conditions          jsonx.Slice[StatefulSetConditionItem] `json:"conditions"`
+	Pods                jsonx.Slice[StatefulSetPodItem]       `json:"pods"`
+}
+
+type ReplicaSetItem struct {
+	Name              string                               `json:"name"`
+	Namespace         string                               `json:"namespace"`
+	Status            string                               `json:"status"`
+	DesiredReplicas   int32                                `json:"desiredReplicas"`
+	CurrentReplicas   int32                                `json:"currentReplicas"`
+	ReadyReplicas     int32                                `json:"readyReplicas"`
+	AvailableReplicas int32                                `json:"availableReplicas"`
+	FullyLabeled      int32                                `json:"fullyLabeledReplicas"`
+	PodCount          int                                  `json:"podCount"`
+	RestartCount      int                                  `json:"restartCount"`
+	Age               string                               `json:"age"`
+	CreatedAt         string                               `json:"createdAt"`
+	MetricsAvailable  bool                                 `json:"metricsAvailable"`
+	CPUUsage          string                               `json:"cpuUsage,omitempty"`
+	MemoryUsage       string                               `json:"memoryUsage,omitempty"`
+	OwnerKind         string                               `json:"ownerKind,omitempty"`
+	OwnerName         string                               `json:"ownerName,omitempty"`
+	Selector          jsonx.Slice[string]                  `json:"selector"`
+	Labels            jsonx.Slice[string]                  `json:"labels"`
+	Images            jsonx.Slice[string]                  `json:"images"`
+	Conditions        jsonx.Slice[ReplicaSetConditionItem] `json:"conditions"`
+	Pods              jsonx.Slice[ReplicaSetPodItem]       `json:"pods"`
+}
+
+type DaemonSetItem struct {
+	Name                   string                              `json:"name"`
+	Namespace              string                              `json:"namespace"`
+	Status                 string                              `json:"status"`
+	UpdateStrategy         string                              `json:"updateStrategy"`
+	DesiredNumberScheduled int32                               `json:"desiredNumberScheduled"`
+	CurrentNumberScheduled int32                               `json:"currentNumberScheduled"`
+	UpdatedNumberScheduled int32                               `json:"updatedNumberScheduled"`
+	NumberReady            int32                               `json:"numberReady"`
+	NumberAvailable        int32                               `json:"numberAvailable"`
+	NumberUnavailable      int32                               `json:"numberUnavailable"`
+	NumberMisscheduled     int32                               `json:"numberMisscheduled"`
+	PodCount               int                                 `json:"podCount"`
+	RestartCount           int                                 `json:"restartCount"`
+	Age                    string                              `json:"age"`
+	CreatedAt              string                              `json:"createdAt"`
+	MetricsAvailable       bool                                `json:"metricsAvailable"`
+	CPUUsage               string                              `json:"cpuUsage,omitempty"`
+	MemoryUsage            string                              `json:"memoryUsage,omitempty"`
+	Selector               jsonx.Slice[string]                 `json:"selector"`
+	Labels                 jsonx.Slice[string]                 `json:"labels"`
+	Images                 jsonx.Slice[string]                 `json:"images"`
+	Conditions             jsonx.Slice[DaemonSetConditionItem] `json:"conditions"`
+	Pods                   jsonx.Slice[DaemonSetPodItem]       `json:"pods"`
+}
+
+type JobItem struct {
+	Name               string                        `json:"name"`
+	Namespace          string                        `json:"namespace"`
+	Status             string                        `json:"status"`
+	Parallelism        int32                         `json:"parallelism"`
+	DesiredCompletions int32                         `json:"desiredCompletions"`
+	Active             int32                         `json:"active"`
+	Succeeded          int32                         `json:"succeeded"`
+	Failed             int32                         `json:"failed"`
+	CompletionMode     string                        `json:"completionMode,omitempty"`
+	PodCount           int                           `json:"podCount"`
+	RestartCount       int                           `json:"restartCount"`
+	Age                string                        `json:"age"`
+	CreatedAt          string                        `json:"createdAt"`
+	MetricsAvailable   bool                          `json:"metricsAvailable"`
+	CPUUsage           string                        `json:"cpuUsage,omitempty"`
+	MemoryUsage        string                        `json:"memoryUsage,omitempty"`
+	StartTime          string                        `json:"startTime,omitempty"`
+	CompletionTime     string                        `json:"completionTime,omitempty"`
+	OwnerKind          string                        `json:"ownerKind,omitempty"`
+	OwnerName          string                        `json:"ownerName,omitempty"`
+	Labels             jsonx.Slice[string]           `json:"labels"`
+	Images             jsonx.Slice[string]           `json:"images"`
+	Conditions         jsonx.Slice[JobConditionItem] `json:"conditions"`
+	Pods               jsonx.Slice[JobPodItem]       `json:"pods"`
+}
+
+type CronJobJobItem struct {
+	Name             string `json:"name"`
+	Status           string `json:"status"`
+	Active           int32  `json:"active"`
+	Succeeded        int32  `json:"succeeded"`
+	Failed           int32  `json:"failed"`
+	StartTime        string `json:"startTime,omitempty"`
+	CompletionTime   string `json:"completionTime,omitempty"`
+	MetricsAvailable bool   `json:"metricsAvailable"`
+	CPUUsage         string `json:"cpuUsage,omitempty"`
+	MemoryUsage      string `json:"memoryUsage,omitempty"`
+}
+
+type CronJobItem struct {
+	Name                  string                      `json:"name"`
+	Namespace             string                      `json:"namespace"`
+	Status                string                      `json:"status"`
+	Schedule              string                      `json:"schedule"`
+	TimeZone              string                      `json:"timeZone,omitempty"`
+	Suspend               bool                        `json:"suspend"`
+	ConcurrencyPolicy     string                      `json:"concurrencyPolicy"`
+	ActiveJobs            int                         `json:"activeJobs"`
+	JobCount              int                         `json:"jobCount"`
+	PodCount              int                         `json:"podCount"`
+	RestartCount          int                         `json:"restartCount"`
+	SuccessfulJobsHistory int32                       `json:"successfulJobsHistory"`
+	FailedJobsHistory     int32                       `json:"failedJobsHistory"`
+	Age                   string                      `json:"age"`
+	CreatedAt             string                      `json:"createdAt"`
+	MetricsAvailable      bool                        `json:"metricsAvailable"`
+	CPUUsage              string                      `json:"cpuUsage,omitempty"`
+	MemoryUsage           string                      `json:"memoryUsage,omitempty"`
+	LastScheduleTime      string                      `json:"lastScheduleTime,omitempty"`
+	LastSuccessfulTime    string                      `json:"lastSuccessfulTime,omitempty"`
+	Labels                jsonx.Slice[string]         `json:"labels"`
+	Images                jsonx.Slice[string]         `json:"images"`
+	Jobs                  jsonx.Slice[CronJobJobItem] `json:"jobs"`
 }
 
 func normalizeNamespace(namespace string) string {
@@ -112,7 +394,55 @@ func (s *ClusterService) ListNamespaces(ctx context.Context) ([]string, error) {
 		namespaces = append(namespaces, item.Name)
 	}
 
+	sort.Strings(namespaces)
+
 	return namespaces, nil
+}
+
+func (s *ClusterService) ListNamespaceItems(ctx context.Context) ([]NamespaceItem, error) {
+	namespaces, err := s.client.Kubernetes.CoreV1().Namespaces().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list namespaces: %w", err)
+	}
+
+	pods, err := s.client.Kubernetes.CoreV1().Pods("").List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list pods for namespaces: %w", err)
+	}
+
+	services, err := s.client.Kubernetes.CoreV1().Services("").List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list services for namespaces: %w", err)
+	}
+
+	podCounts := make(map[string]int)
+	for _, item := range pods.Items {
+		podCounts[item.Namespace]++
+	}
+
+	serviceCounts := make(map[string]int)
+	for _, item := range services.Items {
+		serviceCounts[item.Namespace]++
+	}
+
+	result := make([]NamespaceItem, 0, len(namespaces.Items))
+	for _, item := range namespaces.Items {
+		result = append(result, NamespaceItem{
+			Name:      item.Name,
+			Status:    namespaceStatus(item),
+			Labels:    jsonx.Slice[string](labelPairs(item.Labels)),
+			Pods:      podCounts[item.Name],
+			Services:  serviceCounts[item.Name],
+			Age:       ageString(item.CreationTimestamp.Time),
+			CreatedAt: item.CreationTimestamp.Time.Format("2006-01-02 15:04:05"),
+		})
+	}
+
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Name < result[j].Name
+	})
+
+	return result, nil
 }
 
 func (s *ClusterService) ListNodes(ctx context.Context) ([]NodeItem, error) {
@@ -121,21 +451,610 @@ func (s *ClusterService) ListNodes(ctx context.Context) ([]NodeItem, error) {
 		return nil, fmt.Errorf("list nodes: %w", err)
 	}
 
+	podCounts := make(map[string]int)
+	if pods, err := s.client.Kubernetes.CoreV1().Pods("").List(ctx, metav1.ListOptions{}); err == nil {
+		podCounts = nodePodCounts(pods.Items)
+	}
+
+	metricsByNodeName := make(map[string]metricsv1beta1.NodeMetrics)
+	if nodeMetrics, err := s.client.Metrics.MetricsV1beta1().NodeMetricses().List(ctx, metav1.ListOptions{}); err == nil {
+		metricsByNodeName = nodeMetricsIndex(nodeMetrics.Items)
+	}
+
 	nodes := make([]NodeItem, 0, len(items.Items))
 	for _, item := range items.Items {
-		nodes = append(nodes, NodeItem{
-			Name:        item.Name,
-			Role:        nodeRole(item),
-			IP:          internalIP(item),
-			Status:      readyStatus(item),
-			Kubelet:     item.Status.NodeInfo.KubeletVersion,
-			OSImage:     item.Status.NodeInfo.OSImage,
-			Kernel:      item.Status.NodeInfo.KernelVersion,
-			ContainerRT: item.Status.NodeInfo.ContainerRuntimeVersion,
+		allocatableCPUQuantity := item.Status.Allocatable.Cpu()
+		allocatableMemoryQuantity := item.Status.Allocatable.Memory()
+		allocatableCPU := formatMilliCPUQuantity(allocatableCPUQuantity)
+		allocatableMemory := formatBinaryQuantity(allocatableMemoryQuantity)
+		ready := isNodeReady(item)
+		schedulable := !item.Spec.Unschedulable
+		nodeItem := NodeItem{
+			Name:              item.Name,
+			Role:              nodeRole(item),
+			IP:                internalIP(item),
+			Status:            readyStatus(item),
+			Ready:             ready,
+			Schedulable:       schedulable,
+			Kubelet:           item.Status.NodeInfo.KubeletVersion,
+			OSImage:           item.Status.NodeInfo.OSImage,
+			Kernel:            item.Status.NodeInfo.KernelVersion,
+			ContainerRT:       item.Status.NodeInfo.ContainerRuntimeVersion,
+			Architecture:      item.Status.NodeInfo.Architecture,
+			PodCount:          podCounts[item.Name],
+			Age:               ageString(item.CreationTimestamp.Time),
+			CreatedAt:         item.CreationTimestamp.Time.Format("2006-01-02 15:04:05"),
+			CPUAllocatable:    allocatableCPU,
+			MemoryAllocatable: allocatableMemory,
+			Conditions:        jsonx.Slice[NodeConditionItem](collectNodeConditions(item)),
+			Taints:            jsonx.Slice[NodeTaintItem](collectNodeTaints(item)),
+			Labels:            jsonx.Slice[string](labelPairs(item.Labels)),
+		}
+
+		if metrics, ok := metricsByNodeName[item.Name]; ok {
+			nodeItem.MetricsAvailable = true
+			nodeItem.CPUUsage = fmt.Sprintf(
+				"%s / %s",
+				formatMilliCPUQuantity(metrics.Usage.Cpu()),
+				allocatableCPU,
+			)
+			nodeItem.CPUUsagePercent = percentageValue(
+				metrics.Usage.Cpu().MilliValue(),
+				quantityMilliValue(allocatableCPUQuantity),
+			)
+			nodeItem.MemoryUsage = fmt.Sprintf(
+				"%s / %s",
+				formatBinaryQuantity(metrics.Usage.Memory()),
+				allocatableMemory,
+			)
+			nodeItem.MemoryUsagePercent = percentageValue(
+				metrics.Usage.Memory().Value(),
+				quantityValue(allocatableMemoryQuantity),
+			)
+		}
+
+		nodes = append(nodes, nodeItem)
+	}
+
+	sort.Slice(nodes, func(i, j int) bool {
+		if nodes[i].Role != nodes[j].Role {
+			return nodeRoleOrder(nodes[i].Role) < nodeRoleOrder(nodes[j].Role)
+		}
+		return nodes[i].Name < nodes[j].Name
+	})
+
+	return nodes, nil
+}
+
+func (s *ClusterService) ListPods(ctx context.Context, namespace string) ([]PodItem, error) {
+	namespace = normalizeNamespace(namespace)
+
+	items, err := s.client.Kubernetes.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list pods: %w", err)
+	}
+
+	metricsByPod := make(map[string]metricsv1beta1.PodMetrics)
+	if podMetrics, err := s.client.Metrics.MetricsV1beta1().PodMetricses(namespace).List(ctx, metav1.ListOptions{}); err == nil {
+		metricsByPod = podMetricsIndex(podMetrics.Items)
+	}
+
+	pods := make([]PodItem, 0, len(items.Items))
+	for _, item := range items.Items {
+		ownerKind, ownerName := podOwner(item)
+		podMetrics := metricsByPod[podMetricsKey(item.Namespace, item.Name)]
+		containers, cpuUsage, memoryUsage, metricsAvailable := collectPodContainers(item, podMetrics)
+
+		pods = append(pods, PodItem{
+			Name:             item.Name,
+			Namespace:        item.Namespace,
+			Status:           podListStatus(item),
+			Phase:            string(item.Status.Phase),
+			ReadyContainers:  podReadyContainerCount(item),
+			TotalContainers:  len(item.Spec.Containers),
+			RestartCount:     podListRestartCount(item),
+			NodeName:         item.Spec.NodeName,
+			PodIP:            item.Status.PodIP,
+			QOSClass:         string(item.Status.QOSClass),
+			Age:              ageString(item.CreationTimestamp.Time),
+			CreatedAt:        item.CreationTimestamp.Time.Format("2006-01-02 15:04:05"),
+			MetricsAvailable: metricsAvailable,
+			CPUUsage:         cpuUsage,
+			MemoryUsage:      memoryUsage,
+			OwnerKind:        ownerKind,
+			OwnerName:        ownerName,
+			Labels:           jsonx.Slice[string](labelPairs(item.Labels)),
+			Containers:       jsonx.Slice[PodContainerItem](containers),
+			Conditions:       jsonx.Slice[PodConditionItem](collectPodConditions(item)),
 		})
 	}
 
-	return nodes, nil
+	sort.Slice(pods, func(i, j int) bool {
+		leftOrder := podStatusOrder(pods[i].Status)
+		rightOrder := podStatusOrder(pods[j].Status)
+		if leftOrder != rightOrder {
+			return leftOrder < rightOrder
+		}
+		if pods[i].Namespace != pods[j].Namespace {
+			return pods[i].Namespace < pods[j].Namespace
+		}
+		return pods[i].Name < pods[j].Name
+	})
+
+	return pods, nil
+}
+
+func (s *ClusterService) ListDeployments(ctx context.Context, namespace string) ([]DeploymentItem, error) {
+	namespace = normalizeNamespace(namespace)
+
+	items, err := s.client.Kubernetes.AppsV1().Deployments(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list deployments: %w", err)
+	}
+
+	pods, err := s.client.Kubernetes.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list pods for deployments: %w", err)
+	}
+
+	metricsByPod := make(map[string]metricsv1beta1.PodMetrics)
+	if podMetrics, err := s.client.Metrics.MetricsV1beta1().PodMetricses(namespace).List(ctx, metav1.ListOptions{}); err == nil {
+		metricsByPod = podMetricsIndex(podMetrics.Items)
+	}
+
+	deployments := make([]DeploymentItem, 0, len(items.Items))
+	for _, item := range items.Items {
+		selector, err := metav1.LabelSelectorAsSelector(item.Spec.Selector)
+		if err != nil {
+			return nil, fmt.Errorf("build deployment selector for %s/%s: %w", item.Namespace, item.Name, err)
+		}
+
+		matchedPods := filterPodsBySelector(pods.Items, item.Namespace, selector)
+		deploymentPods, cpuUsage, memoryUsage, metricsAvailable, restartCount := aggregateWorkloadPods(
+			matchedPods,
+			metricsByPod,
+		)
+
+		deployments = append(deployments, DeploymentItem{
+			Name:                item.Name,
+			Namespace:           item.Namespace,
+			Status:              deploymentListStatus(item),
+			DesiredReplicas:     desiredReplicas(item.Spec.Replicas),
+			UpdatedReplicas:     item.Status.UpdatedReplicas,
+			ReadyReplicas:       item.Status.ReadyReplicas,
+			AvailableReplicas:   item.Status.AvailableReplicas,
+			UnavailableReplicas: item.Status.UnavailableReplicas,
+			PodCount:            len(matchedPods),
+			RestartCount:        restartCount,
+			Strategy:            string(item.Spec.Strategy.Type),
+			Age:                 ageString(item.CreationTimestamp.Time),
+			CreatedAt:           item.CreationTimestamp.Time.Format("2006-01-02 15:04:05"),
+			MetricsAvailable:    metricsAvailable,
+			CPUUsage:            cpuUsage,
+			MemoryUsage:         memoryUsage,
+			Selector:            jsonx.Slice[string](selectorPairs(item.Spec.Selector)),
+			Labels:              jsonx.Slice[string](labelPairs(item.Labels)),
+			Images:              jsonx.Slice[string](deploymentImages(item.Spec.Template.Spec.Containers)),
+			Conditions:          jsonx.Slice[DeploymentConditionItem](collectDeploymentConditions(item)),
+			Pods:                jsonx.Slice[DeploymentPodItem](deploymentPods),
+		})
+	}
+
+	sort.Slice(deployments, func(i, j int) bool {
+		leftOrder := deploymentStatusOrder(deployments[i].Status)
+		rightOrder := deploymentStatusOrder(deployments[j].Status)
+		if leftOrder != rightOrder {
+			return leftOrder < rightOrder
+		}
+		if deployments[i].Namespace != deployments[j].Namespace {
+			return deployments[i].Namespace < deployments[j].Namespace
+		}
+		return deployments[i].Name < deployments[j].Name
+	})
+
+	return deployments, nil
+}
+
+func (s *ClusterService) ListStatefulSets(ctx context.Context, namespace string) ([]StatefulSetItem, error) {
+	namespace = normalizeNamespace(namespace)
+
+	items, err := s.client.Kubernetes.AppsV1().StatefulSets(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list statefulsets: %w", err)
+	}
+
+	pods, err := s.client.Kubernetes.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list pods for statefulsets: %w", err)
+	}
+
+	metricsByPod := make(map[string]metricsv1beta1.PodMetrics)
+	if podMetrics, err := s.client.Metrics.MetricsV1beta1().PodMetricses(namespace).List(ctx, metav1.ListOptions{}); err == nil {
+		metricsByPod = podMetricsIndex(podMetrics.Items)
+	}
+
+	statefulSets := make([]StatefulSetItem, 0, len(items.Items))
+	for _, item := range items.Items {
+		selector, err := metav1.LabelSelectorAsSelector(item.Spec.Selector)
+		if err != nil {
+			return nil, fmt.Errorf("build statefulset selector for %s/%s: %w", item.Namespace, item.Name, err)
+		}
+
+		matchedPods := filterPodsBySelector(pods.Items, item.Namespace, selector)
+		statefulSetPods, cpuUsage, memoryUsage, metricsAvailable, restartCount := aggregateWorkloadPods(
+			matchedPods,
+			metricsByPod,
+		)
+
+		statefulSets = append(statefulSets, StatefulSetItem{
+			Name:                item.Name,
+			Namespace:           item.Namespace,
+			Status:              statefulSetListStatus(item),
+			ServiceName:         item.Spec.ServiceName,
+			PodManagementPolicy: string(item.Spec.PodManagementPolicy),
+			UpdateStrategy:      string(item.Spec.UpdateStrategy.Type),
+			DesiredReplicas:     desiredReplicas(item.Spec.Replicas),
+			ReadyReplicas:       item.Status.ReadyReplicas,
+			CurrentReplicas:     item.Status.CurrentReplicas,
+			UpdatedReplicas:     item.Status.UpdatedReplicas,
+			AvailableReplicas:   item.Status.AvailableReplicas,
+			PodCount:            len(matchedPods),
+			RestartCount:        restartCount,
+			Age:                 ageString(item.CreationTimestamp.Time),
+			CreatedAt:           item.CreationTimestamp.Time.Format("2006-01-02 15:04:05"),
+			MetricsAvailable:    metricsAvailable,
+			CPUUsage:            cpuUsage,
+			MemoryUsage:         memoryUsage,
+			CurrentRevision:     item.Status.CurrentRevision,
+			UpdateRevision:      item.Status.UpdateRevision,
+			Selector:            jsonx.Slice[string](selectorPairs(item.Spec.Selector)),
+			Labels:              jsonx.Slice[string](labelPairs(item.Labels)),
+			Images:              jsonx.Slice[string](deploymentImages(item.Spec.Template.Spec.Containers)),
+			Conditions:          jsonx.Slice[StatefulSetConditionItem](collectStatefulSetConditions(item)),
+			Pods:                jsonx.Slice[StatefulSetPodItem](statefulSetPods),
+		})
+	}
+
+	sort.Slice(statefulSets, func(i, j int) bool {
+		leftOrder := statefulSetStatusOrder(statefulSets[i].Status)
+		rightOrder := statefulSetStatusOrder(statefulSets[j].Status)
+		if leftOrder != rightOrder {
+			return leftOrder < rightOrder
+		}
+		if statefulSets[i].Namespace != statefulSets[j].Namespace {
+			return statefulSets[i].Namespace < statefulSets[j].Namespace
+		}
+		return statefulSets[i].Name < statefulSets[j].Name
+	})
+
+	return statefulSets, nil
+}
+
+func (s *ClusterService) ListReplicaSets(ctx context.Context, namespace string) ([]ReplicaSetItem, error) {
+	namespace = normalizeNamespace(namespace)
+
+	items, err := s.client.Kubernetes.AppsV1().ReplicaSets(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list replicasets: %w", err)
+	}
+
+	pods, err := s.client.Kubernetes.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list pods for replicasets: %w", err)
+	}
+
+	metricsByPod := make(map[string]metricsv1beta1.PodMetrics)
+	if podMetrics, err := s.client.Metrics.MetricsV1beta1().PodMetricses(namespace).List(ctx, metav1.ListOptions{}); err == nil {
+		metricsByPod = podMetricsIndex(podMetrics.Items)
+	}
+
+	replicaSets := make([]ReplicaSetItem, 0, len(items.Items))
+	for _, item := range items.Items {
+		selector, err := metav1.LabelSelectorAsSelector(item.Spec.Selector)
+		if err != nil {
+			return nil, fmt.Errorf("build replicaset selector for %s/%s: %w", item.Namespace, item.Name, err)
+		}
+
+		matchedPods := filterPodsBySelector(pods.Items, item.Namespace, selector)
+		replicaSetPods, cpuUsage, memoryUsage, metricsAvailable, restartCount := aggregateWorkloadPods(
+			matchedPods,
+			metricsByPod,
+		)
+		ownerKind, ownerName := controllerOwner(item.OwnerReferences)
+
+		replicaSets = append(replicaSets, ReplicaSetItem{
+			Name:              item.Name,
+			Namespace:         item.Namespace,
+			Status:            replicaSetListStatus(item),
+			DesiredReplicas:   desiredReplicas(item.Spec.Replicas),
+			CurrentReplicas:   item.Status.Replicas,
+			ReadyReplicas:     item.Status.ReadyReplicas,
+			AvailableReplicas: item.Status.AvailableReplicas,
+			FullyLabeled:      item.Status.FullyLabeledReplicas,
+			PodCount:          len(matchedPods),
+			RestartCount:      restartCount,
+			Age:               ageString(item.CreationTimestamp.Time),
+			CreatedAt:         item.CreationTimestamp.Time.Format("2006-01-02 15:04:05"),
+			MetricsAvailable:  metricsAvailable,
+			CPUUsage:          cpuUsage,
+			MemoryUsage:       memoryUsage,
+			OwnerKind:         ownerKind,
+			OwnerName:         ownerName,
+			Selector:          jsonx.Slice[string](selectorPairs(item.Spec.Selector)),
+			Labels:            jsonx.Slice[string](labelPairs(item.Labels)),
+			Images:            jsonx.Slice[string](deploymentImages(item.Spec.Template.Spec.Containers)),
+			Conditions:        jsonx.Slice[ReplicaSetConditionItem](collectReplicaSetConditions(item)),
+			Pods:              jsonx.Slice[ReplicaSetPodItem](replicaSetPods),
+		})
+	}
+
+	sort.Slice(replicaSets, func(i, j int) bool {
+		leftOrder := replicaSetStatusOrder(replicaSets[i].Status)
+		rightOrder := replicaSetStatusOrder(replicaSets[j].Status)
+		if leftOrder != rightOrder {
+			return leftOrder < rightOrder
+		}
+		if replicaSets[i].Namespace != replicaSets[j].Namespace {
+			return replicaSets[i].Namespace < replicaSets[j].Namespace
+		}
+		return replicaSets[i].Name < replicaSets[j].Name
+	})
+
+	return replicaSets, nil
+}
+
+func (s *ClusterService) ListDaemonSets(ctx context.Context, namespace string) ([]DaemonSetItem, error) {
+	namespace = normalizeNamespace(namespace)
+
+	items, err := s.client.Kubernetes.AppsV1().DaemonSets(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list daemonsets: %w", err)
+	}
+
+	pods, err := s.client.Kubernetes.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list pods for daemonsets: %w", err)
+	}
+
+	metricsByPod := make(map[string]metricsv1beta1.PodMetrics)
+	if podMetrics, err := s.client.Metrics.MetricsV1beta1().PodMetricses(namespace).List(ctx, metav1.ListOptions{}); err == nil {
+		metricsByPod = podMetricsIndex(podMetrics.Items)
+	}
+
+	daemonSets := make([]DaemonSetItem, 0, len(items.Items))
+	for _, item := range items.Items {
+		selector, err := metav1.LabelSelectorAsSelector(item.Spec.Selector)
+		if err != nil {
+			return nil, fmt.Errorf("build daemonset selector for %s/%s: %w", item.Namespace, item.Name, err)
+		}
+
+		matchedPods := filterPodsBySelector(pods.Items, item.Namespace, selector)
+		daemonSetPods, cpuUsage, memoryUsage, metricsAvailable, restartCount := aggregateWorkloadPods(
+			matchedPods,
+			metricsByPod,
+		)
+
+		daemonSets = append(daemonSets, DaemonSetItem{
+			Name:                   item.Name,
+			Namespace:              item.Namespace,
+			Status:                 daemonSetListStatus(item),
+			UpdateStrategy:         string(item.Spec.UpdateStrategy.Type),
+			DesiredNumberScheduled: item.Status.DesiredNumberScheduled,
+			CurrentNumberScheduled: item.Status.CurrentNumberScheduled,
+			UpdatedNumberScheduled: item.Status.UpdatedNumberScheduled,
+			NumberReady:            item.Status.NumberReady,
+			NumberAvailable:        item.Status.NumberAvailable,
+			NumberUnavailable:      item.Status.NumberUnavailable,
+			NumberMisscheduled:     item.Status.NumberMisscheduled,
+			PodCount:               len(matchedPods),
+			RestartCount:           restartCount,
+			Age:                    ageString(item.CreationTimestamp.Time),
+			CreatedAt:              item.CreationTimestamp.Time.Format("2006-01-02 15:04:05"),
+			MetricsAvailable:       metricsAvailable,
+			CPUUsage:               cpuUsage,
+			MemoryUsage:            memoryUsage,
+			Selector:               jsonx.Slice[string](selectorPairs(item.Spec.Selector)),
+			Labels:                 jsonx.Slice[string](labelPairs(item.Labels)),
+			Images:                 jsonx.Slice[string](deploymentImages(item.Spec.Template.Spec.Containers)),
+			Conditions:             jsonx.Slice[DaemonSetConditionItem](collectDaemonSetConditions(item)),
+			Pods:                   jsonx.Slice[DaemonSetPodItem](daemonSetPods),
+		})
+	}
+
+	sort.Slice(daemonSets, func(i, j int) bool {
+		leftOrder := daemonSetStatusOrder(daemonSets[i].Status)
+		rightOrder := daemonSetStatusOrder(daemonSets[j].Status)
+		if leftOrder != rightOrder {
+			return leftOrder < rightOrder
+		}
+		if daemonSets[i].Namespace != daemonSets[j].Namespace {
+			return daemonSets[i].Namespace < daemonSets[j].Namespace
+		}
+		return daemonSets[i].Name < daemonSets[j].Name
+	})
+
+	return daemonSets, nil
+}
+
+func (s *ClusterService) ListJobs(ctx context.Context, namespace string) ([]JobItem, error) {
+	namespace = normalizeNamespace(namespace)
+
+	items, err := s.client.Kubernetes.BatchV1().Jobs(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list jobs: %w", err)
+	}
+
+	pods, err := s.client.Kubernetes.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list pods for jobs: %w", err)
+	}
+
+	metricsByPod := make(map[string]metricsv1beta1.PodMetrics)
+	if podMetrics, err := s.client.Metrics.MetricsV1beta1().PodMetricses(namespace).List(ctx, metav1.ListOptions{}); err == nil {
+		metricsByPod = podMetricsIndex(podMetrics.Items)
+	}
+
+	podsByJob := podsByController(pods.Items, "Job")
+	jobs := make([]JobItem, 0, len(items.Items))
+	for _, item := range items.Items {
+		matchedPods := podsByJob[namespacedName(item.Namespace, item.Name)]
+		jobPods, cpuUsage, memoryUsage, metricsAvailable, restartCount := aggregateWorkloadPods(
+			matchedPods,
+			metricsByPod,
+		)
+		ownerKind, ownerName := controllerOwner(item.OwnerReferences)
+
+		jobs = append(jobs, JobItem{
+			Name:               item.Name,
+			Namespace:          item.Namespace,
+			Status:             jobListStatus(item),
+			Parallelism:        desiredReplicas(item.Spec.Parallelism),
+			DesiredCompletions: desiredReplicas(item.Spec.Completions),
+			Active:             item.Status.Active,
+			Succeeded:          item.Status.Succeeded,
+			Failed:             item.Status.Failed,
+			CompletionMode:     jobCompletionMode(item.Spec.CompletionMode),
+			PodCount:           len(matchedPods),
+			RestartCount:       restartCount,
+			Age:                ageString(item.CreationTimestamp.Time),
+			CreatedAt:          item.CreationTimestamp.Time.Format("2006-01-02 15:04:05"),
+			MetricsAvailable:   metricsAvailable,
+			CPUUsage:           cpuUsage,
+			MemoryUsage:        memoryUsage,
+			StartTime:          timeString(item.Status.StartTime),
+			CompletionTime:     timeString(item.Status.CompletionTime),
+			OwnerKind:          ownerKind,
+			OwnerName:          ownerName,
+			Labels:             jsonx.Slice[string](labelPairs(item.Labels)),
+			Images:             jsonx.Slice[string](deploymentImages(item.Spec.Template.Spec.Containers)),
+			Conditions:         jsonx.Slice[JobConditionItem](collectJobConditions(item)),
+			Pods:               jsonx.Slice[JobPodItem](jobPods),
+		})
+	}
+
+	sort.Slice(jobs, func(i, j int) bool {
+		leftOrder := jobStatusOrder(jobs[i].Status)
+		rightOrder := jobStatusOrder(jobs[j].Status)
+		if leftOrder != rightOrder {
+			return leftOrder < rightOrder
+		}
+		if jobs[i].Namespace != jobs[j].Namespace {
+			return jobs[i].Namespace < jobs[j].Namespace
+		}
+		return jobs[i].Name < jobs[j].Name
+	})
+
+	return jobs, nil
+}
+
+func (s *ClusterService) ListCronJobs(ctx context.Context, namespace string) ([]CronJobItem, error) {
+	namespace = normalizeNamespace(namespace)
+
+	items, err := s.client.Kubernetes.BatchV1().CronJobs(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list cronjobs: %w", err)
+	}
+
+	jobs, err := s.client.Kubernetes.BatchV1().Jobs(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list jobs for cronjobs: %w", err)
+	}
+
+	pods, err := s.client.Kubernetes.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list pods for cronjobs: %w", err)
+	}
+
+	metricsByPod := make(map[string]metricsv1beta1.PodMetrics)
+	if podMetrics, err := s.client.Metrics.MetricsV1beta1().PodMetricses(namespace).List(ctx, metav1.ListOptions{}); err == nil {
+		metricsByPod = podMetricsIndex(podMetrics.Items)
+	}
+
+	jobsByCronJob := jobsByController(jobs.Items, "CronJob")
+	podsByJob := podsByController(pods.Items, "Job")
+	cronJobs := make([]CronJobItem, 0, len(items.Items))
+	for _, item := range items.Items {
+		childJobs := jobsByCronJob[namespacedName(item.Namespace, item.Name)]
+		cronJobJobs := make([]CronJobJobItem, 0, len(childJobs))
+		allPods := make([]corev1.Pod, 0)
+
+		for _, job := range childJobs {
+			matchedPods := podsByJob[namespacedName(job.Namespace, job.Name)]
+			allPods = append(allPods, matchedPods...)
+
+			_, cpuUsage, memoryUsage, metricsAvailable, _ := aggregateWorkloadPods(
+				matchedPods,
+				metricsByPod,
+			)
+
+			cronJobJobs = append(cronJobJobs, CronJobJobItem{
+				Name:             job.Name,
+				Status:           jobListStatus(job),
+				Active:           job.Status.Active,
+				Succeeded:        job.Status.Succeeded,
+				Failed:           job.Status.Failed,
+				StartTime:        timeString(job.Status.StartTime),
+				CompletionTime:   timeString(job.Status.CompletionTime),
+				MetricsAvailable: metricsAvailable,
+				CPUUsage:         cpuUsage,
+				MemoryUsage:      memoryUsage,
+			})
+		}
+
+		sort.Slice(cronJobJobs, func(i, j int) bool {
+			leftOrder := jobStatusOrder(cronJobJobs[i].Status)
+			rightOrder := jobStatusOrder(cronJobJobs[j].Status)
+			if leftOrder != rightOrder {
+				return leftOrder < rightOrder
+			}
+			return cronJobJobs[i].Name > cronJobJobs[j].Name
+		})
+
+		_, cpuUsage, memoryUsage, metricsAvailable, restartCount := aggregateWorkloadPods(
+			allPods,
+			metricsByPod,
+		)
+
+		cronJobs = append(cronJobs, CronJobItem{
+			Name:                  item.Name,
+			Namespace:             item.Namespace,
+			Status:                cronJobListStatus(item, childJobs),
+			Schedule:              item.Spec.Schedule,
+			TimeZone:              cronJobTimeZone(item),
+			Suspend:               item.Spec.Suspend != nil && *item.Spec.Suspend,
+			ConcurrencyPolicy:     string(item.Spec.ConcurrencyPolicy),
+			ActiveJobs:            len(item.Status.Active),
+			JobCount:              len(childJobs),
+			PodCount:              len(allPods),
+			RestartCount:          restartCount,
+			SuccessfulJobsHistory: optionalInt32(item.Spec.SuccessfulJobsHistoryLimit),
+			FailedJobsHistory:     optionalInt32(item.Spec.FailedJobsHistoryLimit),
+			Age:                   ageString(item.CreationTimestamp.Time),
+			CreatedAt:             item.CreationTimestamp.Time.Format("2006-01-02 15:04:05"),
+			MetricsAvailable:      metricsAvailable,
+			CPUUsage:              cpuUsage,
+			MemoryUsage:           memoryUsage,
+			LastScheduleTime:      timeString(item.Status.LastScheduleTime),
+			LastSuccessfulTime:    timeString(item.Status.LastSuccessfulTime),
+			Labels:                jsonx.Slice[string](labelPairs(item.Labels)),
+			Images:                jsonx.Slice[string](deploymentImages(item.Spec.JobTemplate.Spec.Template.Spec.Containers)),
+			Jobs:                  jsonx.Slice[CronJobJobItem](cronJobJobs),
+		})
+	}
+
+	sort.Slice(cronJobs, func(i, j int) bool {
+		leftOrder := cronJobStatusOrder(cronJobs[i].Status)
+		rightOrder := cronJobStatusOrder(cronJobs[j].Status)
+		if leftOrder != rightOrder {
+			return leftOrder < rightOrder
+		}
+		if cronJobs[i].Namespace != cronJobs[j].Namespace {
+			return cronJobs[i].Namespace < cronJobs[j].Namespace
+		}
+		return cronJobs[i].Name < cronJobs[j].Name
+	})
+
+	return cronJobs, nil
 }
 
 func (s *ClusterService) GetOverviewSummary(ctx context.Context, namespace string) (OverviewSummary, error) {
@@ -373,6 +1292,14 @@ func percentage(usage int64, capacity int64) string {
 	return fmt.Sprintf("%.1f%%", float64(usage)/float64(capacity)*100)
 }
 
+func percentageValue(usage int64, capacity int64) float64 {
+	if capacity == 0 {
+		return 0
+	}
+
+	return float64(usage) / float64(capacity) * 100
+}
+
 func eventTimestamp(item corev1.Event) time.Time {
 	switch {
 	case !item.EventTime.IsZero():
@@ -384,4 +1311,1001 @@ func eventTimestamp(item corev1.Event) time.Time {
 	default:
 		return item.CreationTimestamp.Time
 	}
+}
+
+func namespaceStatus(namespace corev1.Namespace) string {
+	if namespace.DeletionTimestamp != nil {
+		return "Terminating"
+	}
+
+	switch namespace.Status.Phase {
+	case corev1.NamespaceTerminating:
+		return "Terminating"
+	case corev1.NamespaceActive:
+		return "Active"
+	default:
+		return string(namespace.Status.Phase)
+	}
+}
+
+func labelPairs(labels map[string]string) []string {
+	if len(labels) == 0 {
+		return nil
+	}
+
+	keys := make([]string, 0, len(labels))
+	for key := range labels {
+		keys = append(keys, key)
+	}
+
+	sort.Strings(keys)
+
+	pairs := make([]string, 0, len(keys))
+	for _, key := range keys {
+		pairs = append(pairs, fmt.Sprintf("%s=%s", key, labels[key]))
+	}
+
+	return pairs
+}
+
+func nodeRoleOrder(role string) int {
+	switch role {
+	case "control-plane":
+		return 0
+	default:
+		return 1
+	}
+}
+
+func podOwner(pod corev1.Pod) (string, string) {
+	for _, item := range pod.OwnerReferences {
+		if item.Controller != nil && *item.Controller {
+			return item.Kind, item.Name
+		}
+	}
+
+	if len(pod.OwnerReferences) > 0 {
+		return pod.OwnerReferences[0].Kind, pod.OwnerReferences[0].Name
+	}
+
+	return "", ""
+}
+
+func controllerOwner(items []metav1.OwnerReference) (string, string) {
+	for _, item := range items {
+		if item.Controller != nil && *item.Controller {
+			return item.Kind, item.Name
+		}
+	}
+
+	if len(items) > 0 {
+		return items[0].Kind, items[0].Name
+	}
+
+	return "", ""
+}
+
+func namespacedName(namespace string, name string) string {
+	return namespace + "/" + name
+}
+
+func podsByController(items []corev1.Pod, kind string) map[string][]corev1.Pod {
+	index := make(map[string][]corev1.Pod)
+	for _, item := range items {
+		ownerKind, ownerName := controllerOwner(item.OwnerReferences)
+		if ownerKind != kind || ownerName == "" {
+			continue
+		}
+
+		key := namespacedName(item.Namespace, ownerName)
+		index[key] = append(index[key], item)
+	}
+
+	return index
+}
+
+func jobsByController(items []batchv1.Job, kind string) map[string][]batchv1.Job {
+	index := make(map[string][]batchv1.Job)
+	for _, item := range items {
+		ownerKind, ownerName := controllerOwner(item.OwnerReferences)
+		if ownerKind != kind || ownerName == "" {
+			continue
+		}
+
+		key := namespacedName(item.Namespace, ownerName)
+		index[key] = append(index[key], item)
+	}
+
+	return index
+}
+
+func deploymentListStatus(item appsv1.Deployment) string {
+	desired := desiredReplicas(item.Spec.Replicas)
+
+	switch {
+	case desired == 0:
+		return "ScaledDown"
+	case item.Status.AvailableReplicas == 0:
+		return "Degraded"
+	case item.Status.AvailableReplicas >= desired && item.Status.UpdatedReplicas >= desired:
+		return "Healthy"
+	default:
+		return "Progressing"
+	}
+}
+
+func statefulSetListStatus(item appsv1.StatefulSet) string {
+	desired := desiredReplicas(item.Spec.Replicas)
+
+	switch {
+	case desired == 0:
+		return "ScaledDown"
+	case item.Status.ReadyReplicas == 0:
+		return "Degraded"
+	case item.Status.ReadyReplicas >= desired && item.Status.UpdatedReplicas >= desired:
+		return "Healthy"
+	default:
+		return "Progressing"
+	}
+}
+
+func replicaSetListStatus(item appsv1.ReplicaSet) string {
+	desired := desiredReplicas(item.Spec.Replicas)
+
+	switch {
+	case desired == 0:
+		return "ScaledDown"
+	case item.Status.ReadyReplicas == 0:
+		return "Degraded"
+	case item.Status.ReadyReplicas >= desired && item.Status.AvailableReplicas >= desired:
+		return "Healthy"
+	default:
+		return "Progressing"
+	}
+}
+
+func daemonSetListStatus(item appsv1.DaemonSet) string {
+	switch {
+	case item.Status.DesiredNumberScheduled == 0:
+		return "ScaledDown"
+	case item.Status.NumberReady == 0:
+		return "Degraded"
+	case item.Status.NumberReady >= item.Status.DesiredNumberScheduled && item.Status.NumberUnavailable == 0:
+		return "Healthy"
+	default:
+		return "Progressing"
+	}
+}
+
+func deploymentStatusOrder(status string) int {
+	switch status {
+	case "Degraded":
+		return 0
+	case "Progressing":
+		return 1
+	case "Healthy", "ScaledDown":
+		return 2
+	default:
+		return 3
+	}
+}
+
+func statefulSetStatusOrder(status string) int {
+	switch status {
+	case "Degraded":
+		return 0
+	case "Progressing":
+		return 1
+	case "Healthy", "ScaledDown":
+		return 2
+	default:
+		return 3
+	}
+}
+
+func replicaSetStatusOrder(status string) int {
+	switch status {
+	case "Degraded":
+		return 0
+	case "Progressing":
+		return 1
+	case "Healthy", "ScaledDown":
+		return 2
+	default:
+		return 3
+	}
+}
+
+func daemonSetStatusOrder(status string) int {
+	switch status {
+	case "Degraded":
+		return 0
+	case "Progressing":
+		return 1
+	case "Healthy", "ScaledDown":
+		return 2
+	default:
+		return 3
+	}
+}
+
+func jobListStatus(item batchv1.Job) string {
+	switch {
+	case jobSuspended(item):
+		return "Suspended"
+	case jobFinishedFailed(item):
+		return "Failed"
+	case jobFinishedComplete(item):
+		return "Completed"
+	case item.Status.Active > 0:
+		return "Running"
+	case item.Status.Failed > 0:
+		return "Retrying"
+	default:
+		return "Pending"
+	}
+}
+
+func cronJobListStatus(item batchv1.CronJob, jobs []batchv1.Job) string {
+	switch {
+	case item.Spec.Suspend != nil && *item.Spec.Suspend:
+		return "Suspended"
+	case len(item.Status.Active) > 0:
+		return "Running"
+	case hasFailedJob(jobs):
+		return "Failed"
+	case hasCompletedJob(jobs):
+		return "Healthy"
+	default:
+		return "Scheduled"
+	}
+}
+
+func jobStatusOrder(status string) int {
+	switch status {
+	case "Failed":
+		return 0
+	case "Retrying":
+		return 1
+	case "Running":
+		return 2
+	case "Pending":
+		return 3
+	case "Suspended":
+		return 4
+	case "Completed", "Healthy", "Scheduled":
+		return 5
+	default:
+		return 6
+	}
+}
+
+func cronJobStatusOrder(status string) int {
+	switch status {
+	case "Failed":
+		return 0
+	case "Running":
+		return 1
+	case "Suspended":
+		return 2
+	case "Scheduled":
+		return 3
+	case "Healthy":
+		return 4
+	default:
+		return 5
+	}
+}
+
+func podListStatus(pod corev1.Pod) string {
+	if pod.DeletionTimestamp != nil {
+		return "Terminating"
+	}
+
+	if reason := strings.TrimSpace(pod.Status.Reason); reason != "" {
+		return reason
+	}
+
+	for _, status := range pod.Status.InitContainerStatuses {
+		if reason := containerStatusReason(status); reason != "" {
+			return reason
+		}
+	}
+
+	for _, status := range pod.Status.ContainerStatuses {
+		if reason := containerStatusReason(status); reason != "" {
+			return reason
+		}
+	}
+
+	if pod.Status.Phase != "" {
+		return string(pod.Status.Phase)
+	}
+
+	return "Unknown"
+}
+
+func podStatusOrder(status string) int {
+	switch status {
+	case "Failed", "Unknown", "CrashLoopBackOff", "ImagePullBackOff", "ErrImagePull", "CreateContainerConfigError", "RunContainerError", "Terminating":
+		return 0
+	case "Pending", "ContainerCreating":
+		return 1
+	case "Running":
+		return 2
+	case "Succeeded", "Completed":
+		return 3
+	default:
+		return 2
+	}
+}
+
+func nodePodCounts(items []corev1.Pod) map[string]int {
+	counts := make(map[string]int)
+	for _, item := range items {
+		if item.Spec.NodeName == "" {
+			continue
+		}
+		if item.Status.Phase == corev1.PodSucceeded || item.Status.Phase == corev1.PodFailed {
+			continue
+		}
+
+		counts[item.Spec.NodeName]++
+	}
+
+	return counts
+}
+
+func nodeMetricsIndex(items []metricsv1beta1.NodeMetrics) map[string]metricsv1beta1.NodeMetrics {
+	index := make(map[string]metricsv1beta1.NodeMetrics, len(items))
+	for _, item := range items {
+		index[item.Name] = item
+	}
+
+	return index
+}
+
+func podMetricsKey(namespace string, name string) string {
+	return namespace + "/" + name
+}
+
+func podMetricsIndex(items []metricsv1beta1.PodMetrics) map[string]metricsv1beta1.PodMetrics {
+	index := make(map[string]metricsv1beta1.PodMetrics, len(items))
+	for _, item := range items {
+		index[podMetricsKey(item.Namespace, item.Name)] = item
+	}
+
+	return index
+}
+
+func filterPodsBySelector(
+	items []corev1.Pod,
+	namespace string,
+	selector labels.Selector,
+) []corev1.Pod {
+	if selector == nil || selector.Empty() {
+		return nil
+	}
+
+	matched := make([]corev1.Pod, 0)
+	for _, item := range items {
+		if namespace != "" && item.Namespace != namespace {
+			continue
+		}
+		if selector.Matches(labels.Set(item.Labels)) {
+			matched = append(matched, item)
+		}
+	}
+
+	return matched
+}
+
+func aggregateWorkloadPods(
+	pods []corev1.Pod,
+	metricsByPod map[string]metricsv1beta1.PodMetrics,
+) ([]DeploymentPodItem, string, string, bool, int) {
+	deploymentPods := make([]DeploymentPodItem, 0, len(pods))
+	totalCPUUsage := resource.NewMilliQuantity(0, resource.DecimalSI)
+	totalMemoryUsage := resource.NewQuantity(0, resource.BinarySI)
+	metricsAvailableCount := 0
+	restartCount := 0
+
+	for _, item := range pods {
+		podItem := DeploymentPodItem{
+			Name:            item.Name,
+			Status:          podListStatus(item),
+			ReadyContainers: podReadyContainerCount(item),
+			TotalContainers: len(item.Spec.Containers),
+			RestartCount:    podListRestartCount(item),
+			NodeName:        item.Spec.NodeName,
+		}
+
+		restartCount += podItem.RestartCount
+
+		if metrics, ok := metricsByPod[podMetricsKey(item.Namespace, item.Name)]; ok {
+			podItem.MetricsAvailable = true
+			podItem.CPUUsage, podItem.MemoryUsage = podMetricSummary(metrics)
+			if cpu := podMetricCPU(metrics); cpu != nil {
+				totalCPUUsage.Add(*cpu)
+			}
+			if memory := podMetricMemory(metrics); memory != nil {
+				totalMemoryUsage.Add(*memory)
+			}
+			metricsAvailableCount++
+		}
+
+		deploymentPods = append(deploymentPods, podItem)
+	}
+
+	sort.Slice(deploymentPods, func(i, j int) bool {
+		leftOrder := podStatusOrder(deploymentPods[i].Status)
+		rightOrder := podStatusOrder(deploymentPods[j].Status)
+		if leftOrder != rightOrder {
+			return leftOrder < rightOrder
+		}
+		return deploymentPods[i].Name < deploymentPods[j].Name
+	})
+
+	if metricsAvailableCount == 0 {
+		return deploymentPods, "", "", false, restartCount
+	}
+
+	return deploymentPods, formatMilliCPUQuantity(totalCPUUsage), formatBinaryQuantity(totalMemoryUsage), true, restartCount
+}
+
+func podReadyContainerCount(pod corev1.Pod) int {
+	count := 0
+	for _, item := range pod.Status.ContainerStatuses {
+		if item.Ready {
+			count++
+		}
+	}
+
+	return count
+}
+
+func podListRestartCount(pod corev1.Pod) int {
+	count := 0
+	for _, item := range pod.Status.InitContainerStatuses {
+		count += int(item.RestartCount)
+	}
+	for _, item := range pod.Status.ContainerStatuses {
+		count += int(item.RestartCount)
+	}
+
+	return count
+}
+
+func containerStatusReason(status corev1.ContainerStatus) string {
+	switch {
+	case status.State.Waiting != nil && strings.TrimSpace(status.State.Waiting.Reason) != "":
+		return status.State.Waiting.Reason
+	case status.State.Terminated != nil && strings.TrimSpace(status.State.Terminated.Reason) != "":
+		return status.State.Terminated.Reason
+	default:
+		return ""
+	}
+}
+
+func containerState(status *corev1.ContainerStatus) string {
+	if status == nil {
+		return "Unknown"
+	}
+
+	switch {
+	case status.State.Running != nil:
+		return "Running"
+	case status.State.Waiting != nil:
+		if reason := strings.TrimSpace(status.State.Waiting.Reason); reason != "" {
+			return reason
+		}
+		return "Waiting"
+	case status.State.Terminated != nil:
+		if reason := strings.TrimSpace(status.State.Terminated.Reason); reason != "" {
+			return reason
+		}
+		return fmt.Sprintf("Exit %d", status.State.Terminated.ExitCode)
+	default:
+		return "Unknown"
+	}
+}
+
+func collectPodContainers(
+	pod corev1.Pod,
+	metrics metricsv1beta1.PodMetrics,
+) ([]PodContainerItem, string, string, bool) {
+	statuses := make(map[string]corev1.ContainerStatus, len(pod.Status.ContainerStatuses))
+	for _, item := range pod.Status.ContainerStatuses {
+		statuses[item.Name] = item
+	}
+
+	metricsByContainer := make(map[string]metricsv1beta1.ContainerMetrics, len(metrics.Containers))
+	totalCPUUsage := resource.NewMilliQuantity(0, resource.DecimalSI)
+	totalMemoryUsage := resource.NewQuantity(0, resource.BinarySI)
+	for _, item := range metrics.Containers {
+		metricsByContainer[item.Name] = item
+		if cpu := item.Usage.Cpu(); cpu != nil {
+			totalCPUUsage.Add(*cpu)
+		}
+		if memory := item.Usage.Memory(); memory != nil {
+			totalMemoryUsage.Add(*memory)
+		}
+	}
+
+	containers := make([]PodContainerItem, 0, len(pod.Spec.Containers))
+	for _, item := range pod.Spec.Containers {
+		status, hasStatus := statuses[item.Name]
+		container := PodContainerItem{
+			Name:  item.Name,
+			Image: item.Image,
+		}
+		if hasStatus {
+			container.Ready = status.Ready
+			container.RestartCount = int(status.RestartCount)
+			container.State = containerState(&status)
+		} else {
+			container.State = "Unknown"
+		}
+
+		if metricsItem, ok := metricsByContainer[item.Name]; ok {
+			container.CPUUsage = formatMilliCPUQuantity(metricsItem.Usage.Cpu())
+			container.MemoryUsage = formatBinaryQuantity(metricsItem.Usage.Memory())
+		}
+
+		containers = append(containers, container)
+	}
+
+	metricsAvailable := len(metrics.Containers) > 0
+	if !metricsAvailable {
+		return containers, "", "", false
+	}
+
+	return containers, formatMilliCPUQuantity(totalCPUUsage), formatBinaryQuantity(totalMemoryUsage), true
+}
+
+func collectPodConditions(pod corev1.Pod) []PodConditionItem {
+	if len(pod.Status.Conditions) == 0 {
+		return nil
+	}
+
+	order := map[string]int{
+		string(corev1.PodReady):        0,
+		string(corev1.ContainersReady): 1,
+		string(corev1.PodScheduled):    2,
+		string(corev1.PodInitialized):  3,
+	}
+
+	conditions := append([]corev1.PodCondition(nil), pod.Status.Conditions...)
+	sort.SliceStable(conditions, func(i, j int) bool {
+		leftOrder, leftOk := order[string(conditions[i].Type)]
+		rightOrder, rightOk := order[string(conditions[j].Type)]
+		switch {
+		case leftOk && rightOk:
+			return leftOrder < rightOrder
+		case leftOk:
+			return true
+		case rightOk:
+			return false
+		default:
+			return string(conditions[i].Type) < string(conditions[j].Type)
+		}
+	})
+
+	result := make([]PodConditionItem, 0, len(conditions))
+	for _, item := range conditions {
+		result = append(result, PodConditionItem{
+			Type:    string(item.Type),
+			Status:  string(item.Status),
+			Reason:  item.Reason,
+			Message: item.Message,
+		})
+	}
+
+	return result
+}
+
+func deploymentImages(items []corev1.Container) []string {
+	if len(items) == 0 {
+		return nil
+	}
+
+	images := make([]string, 0, len(items))
+	for _, item := range items {
+		images = append(images, fmt.Sprintf("%s=%s", item.Name, item.Image))
+	}
+
+	sort.Strings(images)
+
+	return images
+}
+
+func selectorPairs(selector *metav1.LabelSelector) []string {
+	if selector == nil {
+		return nil
+	}
+
+	pairs := labelPairs(selector.MatchLabels)
+	for _, item := range selector.MatchExpressions {
+		values := append([]string(nil), item.Values...)
+		sort.Strings(values)
+		pairs = append(
+			pairs,
+			fmt.Sprintf("%s %s [%s]", item.Key, item.Operator, strings.Join(values, ",")),
+		)
+	}
+
+	sort.Strings(pairs)
+
+	return pairs
+}
+
+func collectDeploymentConditions(item appsv1.Deployment) []DeploymentConditionItem {
+	if len(item.Status.Conditions) == 0 {
+		return nil
+	}
+
+	conditions := append([]appsv1.DeploymentCondition(nil), item.Status.Conditions...)
+	sort.SliceStable(conditions, func(i, j int) bool {
+		return string(conditions[i].Type) < string(conditions[j].Type)
+	})
+
+	result := make([]DeploymentConditionItem, 0, len(conditions))
+	for _, condition := range conditions {
+		result = append(result, DeploymentConditionItem{
+			Type:           string(condition.Type),
+			Status:         string(condition.Status),
+			Reason:         condition.Reason,
+			Message:        condition.Message,
+			LastUpdateTime: condition.LastUpdateTime.Time.Format("2006-01-02 15:04:05"),
+		})
+	}
+
+	return result
+}
+
+func collectStatefulSetConditions(item appsv1.StatefulSet) []StatefulSetConditionItem {
+	if len(item.Status.Conditions) == 0 {
+		return nil
+	}
+
+	conditions := append([]appsv1.StatefulSetCondition(nil), item.Status.Conditions...)
+	sort.SliceStable(conditions, func(i, j int) bool {
+		return string(conditions[i].Type) < string(conditions[j].Type)
+	})
+
+	result := make([]StatefulSetConditionItem, 0, len(conditions))
+	for _, condition := range conditions {
+		result = append(result, StatefulSetConditionItem{
+			Type:           string(condition.Type),
+			Status:         string(condition.Status),
+			Reason:         condition.Reason,
+			Message:        condition.Message,
+			LastUpdateTime: condition.LastTransitionTime.Time.Format("2006-01-02 15:04:05"),
+		})
+	}
+
+	return result
+}
+
+func collectReplicaSetConditions(item appsv1.ReplicaSet) []ReplicaSetConditionItem {
+	if len(item.Status.Conditions) == 0 {
+		return nil
+	}
+
+	conditions := append([]appsv1.ReplicaSetCondition(nil), item.Status.Conditions...)
+	sort.SliceStable(conditions, func(i, j int) bool {
+		return string(conditions[i].Type) < string(conditions[j].Type)
+	})
+
+	result := make([]ReplicaSetConditionItem, 0, len(conditions))
+	for _, condition := range conditions {
+		result = append(result, ReplicaSetConditionItem{
+			Type:           string(condition.Type),
+			Status:         string(condition.Status),
+			Reason:         condition.Reason,
+			Message:        condition.Message,
+			LastUpdateTime: condition.LastTransitionTime.Time.Format("2006-01-02 15:04:05"),
+		})
+	}
+
+	return result
+}
+
+func collectDaemonSetConditions(item appsv1.DaemonSet) []DaemonSetConditionItem {
+	if len(item.Status.Conditions) == 0 {
+		return nil
+	}
+
+	conditions := append([]appsv1.DaemonSetCondition(nil), item.Status.Conditions...)
+	sort.SliceStable(conditions, func(i, j int) bool {
+		return string(conditions[i].Type) < string(conditions[j].Type)
+	})
+
+	result := make([]DaemonSetConditionItem, 0, len(conditions))
+	for _, condition := range conditions {
+		result = append(result, DaemonSetConditionItem{
+			Type:           string(condition.Type),
+			Status:         string(condition.Status),
+			Reason:         condition.Reason,
+			Message:        condition.Message,
+			LastUpdateTime: condition.LastTransitionTime.Time.Format("2006-01-02 15:04:05"),
+		})
+	}
+
+	return result
+}
+
+func collectJobConditions(item batchv1.Job) []JobConditionItem {
+	if len(item.Status.Conditions) == 0 {
+		return nil
+	}
+
+	conditions := append([]batchv1.JobCondition(nil), item.Status.Conditions...)
+	sort.SliceStable(conditions, func(i, j int) bool {
+		return string(conditions[i].Type) < string(conditions[j].Type)
+	})
+
+	result := make([]JobConditionItem, 0, len(conditions))
+	for _, condition := range conditions {
+		result = append(result, JobConditionItem{
+			Type:           string(condition.Type),
+			Status:         string(condition.Status),
+			Reason:         condition.Reason,
+			Message:        condition.Message,
+			LastUpdateTime: condition.LastTransitionTime.Time.Format("2006-01-02 15:04:05"),
+		})
+	}
+
+	return result
+}
+
+func podMetricCPU(metrics metricsv1beta1.PodMetrics) *resource.Quantity {
+	total := resource.NewMilliQuantity(0, resource.DecimalSI)
+	for _, item := range metrics.Containers {
+		if cpu := item.Usage.Cpu(); cpu != nil {
+			total.Add(*cpu)
+		}
+	}
+
+	return total
+}
+
+func podMetricMemory(metrics metricsv1beta1.PodMetrics) *resource.Quantity {
+	total := resource.NewQuantity(0, resource.BinarySI)
+	for _, item := range metrics.Containers {
+		if memory := item.Usage.Memory(); memory != nil {
+			total.Add(*memory)
+		}
+	}
+
+	return total
+}
+
+func podMetricSummary(metrics metricsv1beta1.PodMetrics) (string, string) {
+	return formatMilliCPUQuantity(podMetricCPU(metrics)), formatBinaryQuantity(podMetricMemory(metrics))
+}
+
+func collectNodeConditions(node corev1.Node) []NodeConditionItem {
+	if len(node.Status.Conditions) == 0 {
+		return nil
+	}
+
+	order := map[corev1.NodeConditionType]int{
+		corev1.NodeReady:              0,
+		corev1.NodeMemoryPressure:     1,
+		corev1.NodeDiskPressure:       2,
+		corev1.NodePIDPressure:        3,
+		corev1.NodeNetworkUnavailable: 4,
+	}
+
+	conditions := append([]corev1.NodeCondition(nil), node.Status.Conditions...)
+	sort.SliceStable(conditions, func(i, j int) bool {
+		leftOrder, leftOk := order[conditions[i].Type]
+		rightOrder, rightOk := order[conditions[j].Type]
+		switch {
+		case leftOk && rightOk:
+			return leftOrder < rightOrder
+		case leftOk:
+			return true
+		case rightOk:
+			return false
+		default:
+			return string(conditions[i].Type) < string(conditions[j].Type)
+		}
+	})
+
+	result := make([]NodeConditionItem, 0, len(conditions))
+	for _, item := range conditions {
+		result = append(result, NodeConditionItem{
+			Type:               string(item.Type),
+			Status:             string(item.Status),
+			Reason:             item.Reason,
+			Message:            item.Message,
+			LastTransitionTime: item.LastTransitionTime.Time.Format("2006-01-02 15:04:05"),
+		})
+	}
+
+	return result
+}
+
+func collectNodeTaints(node corev1.Node) []NodeTaintItem {
+	if len(node.Spec.Taints) == 0 {
+		return nil
+	}
+
+	result := make([]NodeTaintItem, 0, len(node.Spec.Taints))
+	for _, item := range node.Spec.Taints {
+		result = append(result, NodeTaintItem{
+			Key:    item.Key,
+			Value:  item.Value,
+			Effect: string(item.Effect),
+		})
+	}
+
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].Key != result[j].Key {
+			return result[i].Key < result[j].Key
+		}
+		return result[i].Effect < result[j].Effect
+	})
+
+	return result
+}
+
+func formatMilliCPUQuantity(quantity *resource.Quantity) string {
+	if quantity == nil {
+		return "-"
+	}
+
+	return fmt.Sprintf("%dm", quantity.MilliValue())
+}
+
+func formatBinaryQuantity(quantity *resource.Quantity) string {
+	if quantity == nil {
+		return "-"
+	}
+
+	return formatBinaryBytes(quantity.Value())
+}
+
+func quantityMilliValue(quantity *resource.Quantity) int64 {
+	if quantity == nil {
+		return 0
+	}
+
+	return quantity.MilliValue()
+}
+
+func quantityValue(quantity *resource.Quantity) int64 {
+	if quantity == nil {
+		return 0
+	}
+
+	return quantity.Value()
+}
+
+func formatBinaryBytes(value int64) string {
+	if value <= 0 {
+		return "0 B"
+	}
+
+	type unit struct {
+		name string
+		size float64
+	}
+
+	units := []unit{
+		{name: "TiB", size: 1024 * 1024 * 1024 * 1024},
+		{name: "GiB", size: 1024 * 1024 * 1024},
+		{name: "MiB", size: 1024 * 1024},
+		{name: "KiB", size: 1024},
+	}
+
+	floatValue := float64(value)
+	for _, item := range units {
+		if floatValue >= item.size {
+			return fmt.Sprintf("%.1f %s", floatValue/item.size, item.name)
+		}
+	}
+
+	return fmt.Sprintf("%d B", value)
+}
+
+func ageString(createdAt time.Time) string {
+	if createdAt.IsZero() {
+		return "-"
+	}
+
+	duration := time.Since(createdAt)
+	switch {
+	case duration < time.Minute:
+		return "<1m"
+	case duration < time.Hour:
+		return fmt.Sprintf("%dm", int(duration/time.Minute))
+	case duration < 24*time.Hour:
+		return fmt.Sprintf("%dh", int(duration/time.Hour))
+	case duration < 30*24*time.Hour:
+		return fmt.Sprintf("%dd", int(duration/(24*time.Hour)))
+	case duration < 365*24*time.Hour:
+		return fmt.Sprintf("%dmo", int(duration/(30*24*time.Hour)))
+	default:
+		return fmt.Sprintf("%dy", int(duration/(365*24*time.Hour)))
+	}
+}
+
+func optionalInt32(value *int32) int32 {
+	if value == nil {
+		return 0
+	}
+
+	return *value
+}
+
+func timeString(value *metav1.Time) string {
+	if value == nil || value.IsZero() {
+		return ""
+	}
+
+	return value.Time.Format("2006-01-02 15:04:05")
+}
+
+func jobCompletionMode(value *batchv1.CompletionMode) string {
+	if value == nil {
+		return "NonIndexed"
+	}
+
+	return string(*value)
+}
+
+func cronJobTimeZone(item batchv1.CronJob) string {
+	if item.Spec.TimeZone == nil {
+		return ""
+	}
+
+	return strings.TrimSpace(*item.Spec.TimeZone)
+}
+
+func jobSuspended(item batchv1.Job) bool {
+	return item.Spec.Suspend != nil && *item.Spec.Suspend
+}
+
+func jobFinishedComplete(item batchv1.Job) bool {
+	for _, condition := range item.Status.Conditions {
+		if condition.Type == batchv1.JobComplete && condition.Status == corev1.ConditionTrue {
+			return true
+		}
+	}
+
+	desired := desiredReplicas(item.Spec.Completions)
+	return desired > 0 && item.Status.Succeeded >= desired
+}
+
+func jobFinishedFailed(item batchv1.Job) bool {
+	for _, condition := range item.Status.Conditions {
+		if condition.Type == batchv1.JobFailed && condition.Status == corev1.ConditionTrue {
+			return true
+		}
+	}
+
+	return item.Status.Failed > 0 && item.Status.Active == 0 && item.Status.Succeeded == 0
+}
+
+func hasFailedJob(items []batchv1.Job) bool {
+	for _, item := range items {
+		if jobFinishedFailed(item) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func hasCompletedJob(items []batchv1.Job) bool {
+	for _, item := range items {
+		if jobFinishedComplete(item) {
+			return true
+		}
+	}
+
+	return false
 }
