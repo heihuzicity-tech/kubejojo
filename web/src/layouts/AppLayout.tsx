@@ -5,6 +5,7 @@ import { Button, Drawer, Grid, Select, Space, Tag, Typography } from 'antd';
 import { PropsWithChildren, startTransition, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 
+import { PageErrorBoundary } from '../app/PageErrorBoundary';
 import { getAuthMe, getNamespaces } from '../services/cluster';
 import { useAppStore } from '../stores/appStore';
 import { findNavigationItem, navigationSections } from './navigation';
@@ -233,7 +234,7 @@ export function AppLayout({ children }: PropsWithChildren) {
           onClose={() => setDrawerOpen(false)}
           width={256}
           closable={false}
-          bodyStyle={{ padding: 0 }}
+          styles={{ body: { padding: 0 } }}
         >
           <NavigationPanel
             currentPath={location.pathname}
@@ -285,7 +286,11 @@ export function AppLayout({ children }: PropsWithChildren) {
           </div>
         </header>
 
-        <main className="mx-auto max-w-[1440px] px-4 py-5 sm:px-6">{children}</main>
+        <main className="mx-auto max-w-[1440px] px-4 py-5 sm:px-6">
+          <PageErrorBoundary resetKey={`${location.pathname}:${namespace}`}>
+            {children}
+          </PageErrorBoundary>
+        </main>
       </div>
     </div>
   );

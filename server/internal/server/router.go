@@ -10,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/zhangya/k8s-admin/server/internal/jsonx"
 	"github.com/zhangya/k8s-admin/server/internal/kube"
 	"github.com/zhangya/k8s-admin/server/internal/response"
 	"github.com/zhangya/k8s-admin/server/internal/service"
@@ -22,12 +23,12 @@ type loginRequest struct {
 }
 
 type loginResponse struct {
-	Name             string   `json:"name"`
-	AuthMode         string   `json:"authMode"`
-	CurrentContext   string   `json:"currentContext"`
-	KubeconfigPath   string   `json:"kubeconfigPath"`
-	Namespaces       []string `json:"namespaces"`
-	DefaultNamespace string   `json:"defaultNamespace"`
+	Name             string              `json:"name"`
+	AuthMode         string              `json:"authMode"`
+	CurrentContext   string              `json:"currentContext"`
+	KubeconfigPath   string              `json:"kubeconfigPath"`
+	Namespaces       jsonx.Slice[string] `json:"namespaces"`
+	DefaultNamespace string              `json:"defaultNamespace"`
 }
 
 func newRouter(clusterFactory *kube.Factory) *gin.Engine {
@@ -69,7 +70,7 @@ func newRouter(clusterFactory *kube.Factory) *gin.Engine {
 				AuthMode:         auth.AuthMode,
 				CurrentContext:   auth.CurrentContext,
 				KubeconfigPath:   auth.KubeconfigPath,
-				Namespaces:       namespaces,
+				Namespaces:       jsonx.Slice[string](namespaces),
 				DefaultNamespace: defaultNamespace(namespaces),
 			}))
 		})
@@ -140,6 +141,20 @@ func newRouter(clusterFactory *kube.Factory) *gin.Engine {
 				}
 
 				c.JSON(http.StatusOK, response.Success(items))
+			})
+
+			authorized.GET("/topology/graph", func(c *gin.Context) {
+				graph, err := mustClusterService(c).GetTopologyGraph(
+					c.Request.Context(),
+					c.Query("namespace"),
+					strings.Split(c.Query("sources"), ","),
+				)
+				if err != nil {
+					respondWithClusterError(c, "GET_TOPOLOGY_GRAPH_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(graph))
 			})
 		}
 	}
