@@ -65,7 +65,7 @@ export const navigationSections: NavigationSection[] = [
         label: 'Topology',
         path: '/topology',
         description: '资源关系拓扑与访问路径展示',
-        implemented: false,
+        implemented: true,
       },
     ],
   },

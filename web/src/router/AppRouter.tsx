@@ -7,6 +7,7 @@ import { LoginPage } from '../pages/LoginPage';
 import { NodesPage } from '../pages/NodesPage';
 import { OverviewPage } from '../pages/OverviewPage';
 import { PlaceholderPage } from '../pages/PlaceholderPage';
+import { TopologyPage } from '../pages/TopologyPage';
 
 const placeholderItems = navigationItems.filter((item) => !item.implemented);
 
@@ -22,6 +23,7 @@ function ProtectedRoutes() {
       <Routes>
         <Route path="/cluster/overview" element={<OverviewPage />} />
         <Route path="/cluster/nodes" element={<NodesPage />} />
+        <Route path="/topology" element={<TopologyPage />} />
 
         {placeholderItems.map((item) => (
           <Route

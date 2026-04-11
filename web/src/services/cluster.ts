@@ -53,6 +53,34 @@ export type NodeItem = {
   containerRuntime: string;
 };
 
+export type TopologyResource = {
+  id: string;
+  kind: string;
+  name: string;
+  namespace: string;
+  instanceName?: string;
+  source: 'workloads' | 'network' | 'storage';
+  status: 'healthy' | 'warning' | 'error';
+  summary: string;
+  detailLines: string[];
+  nodeName?: string;
+  tags?: string[];
+  weight: number;
+  warnings: number;
+};
+
+export type TopologyRelation = {
+  id: string;
+  source: string;
+  target: string;
+  label: string;
+};
+
+export type TopologyGraph = {
+  resources: TopologyResource[];
+  relations: TopologyRelation[];
+};
+
 type Envelope<T> = {
   code: string;
   message: string;
@@ -105,5 +133,15 @@ export async function getNamespacePodTop(namespace?: string) {
 
 export async function getNodes() {
   const { data } = await http.get<Envelope<NodeItem[]>>('/nodes');
+  return data.data;
+}
+
+export async function getTopologyGraph(namespace?: string, sources?: string[]) {
+  const { data } = await http.get<Envelope<TopologyGraph>>('/topology/graph', {
+    params: {
+      namespace,
+      sources: sources?.join(','),
+    },
+  });
   return data.data;
 }
