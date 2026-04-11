@@ -8,6 +8,13 @@ export const http = axios.create({
 });
 
 http.interceptors.request.use((config) => {
+  const skipAuth = config.headers?.['X-Skip-Auth'] === 'true';
+
+  if (skipAuth) {
+    delete config.headers['X-Skip-Auth'];
+    return config;
+  }
+
   const token = useAppStore.getState().token;
 
   if (token) {

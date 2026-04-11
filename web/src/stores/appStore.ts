@@ -23,7 +23,8 @@ export const useAppStore = create<AppState>()(
       setToken: (token) => set({ token }),
       setUserName: (userName) => set({ userName }),
       setSessionMode: (sessionMode) => set({ sessionMode }),
-      clearToken: () => set({ token: '', sessionMode: 'demo', userName: '当前用户' }),
+      clearToken: () =>
+        set({ token: '', namespace: 'default', sessionMode: 'demo', userName: '当前用户' }),
       setNamespace: (namespace) => set({ namespace }),
     }),
     {

@@ -7,6 +7,15 @@ export type AuthMe = {
   kubeconfigPath: string;
 };
 
+export type TokenLoginResult = {
+  name: string;
+  authMode: string;
+  currentContext: string;
+  kubeconfigPath: string;
+  namespaces: string[];
+  defaultNamespace: string;
+};
+
 export type OverviewSummary = {
   kubernetesVersion: string;
   clusterStatus: string;
@@ -55,23 +64,42 @@ export async function getAuthMe() {
   return data.data;
 }
 
+export async function loginWithToken(token: string) {
+  const { data } = await http.post<Envelope<TokenLoginResult>>(
+    '/auth/login',
+    { token },
+    {
+      headers: {
+        'X-Skip-Auth': 'true',
+      },
+    },
+  );
+  return data.data;
+}
+
 export async function getNamespaces() {
   const { data } = await http.get<Envelope<string[]>>('/namespaces');
   return data.data;
 }
 
-export async function getOverviewSummary() {
-  const { data } = await http.get<Envelope<OverviewSummary>>('/overview/summary');
+export async function getOverviewSummary(namespace?: string) {
+  const { data } = await http.get<Envelope<OverviewSummary>>('/overview/summary', {
+    params: namespace ? { namespace } : undefined,
+  });
   return data.data;
 }
 
-export async function getOverviewWarnings() {
-  const { data } = await http.get<Envelope<WarningEvent[]>>('/overview/events/warnings');
+export async function getOverviewWarnings(namespace?: string) {
+  const { data } = await http.get<Envelope<WarningEvent[]>>('/overview/events/warnings', {
+    params: namespace ? { namespace } : undefined,
+  });
   return data.data;
 }
 
-export async function getNamespacePodTop() {
-  const { data } = await http.get<Envelope<NamespacePodStat[]>>('/overview/namespaces/pod-top');
+export async function getNamespacePodTop(namespace?: string) {
+  const { data } = await http.get<Envelope<NamespacePodStat[]>>('/overview/namespaces/pod-top', {
+    params: namespace ? { namespace } : undefined,
+  });
   return data.data;
 }
 
