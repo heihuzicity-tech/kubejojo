@@ -14,8 +14,25 @@ import ELK, { type ElkExtendedEdge, type ElkNode } from 'elkjs/lib/elk.bundled.j
 
 import { forEachNode, getNodeWeight, type TopologyGraphEdge, type TopologyGraphNode } from './graphModel';
 
+export type TopologyViewState = 'default' | 'focused' | 'context' | 'muted';
+
 export type TopologyFlowNodeData = {
   graphNode: TopologyGraphNode;
+  viewState?: TopologyViewState;
+};
+
+export type TopologyFlowEdgeData = {
+  edge?: TopologyGraphEdge;
+  sections?: Array<{
+    startPoint: { x: number; y: number };
+    endPoint: { x: number; y: number };
+    bendPoints?: Array<{ x: number; y: number }>;
+  }>;
+  parentOffset?: {
+    x: number;
+    y: number;
+  };
+  viewState?: TopologyViewState;
 };
 
 type ElkNodeWithData = ElkNode & {
@@ -129,7 +146,7 @@ function makeEdgePathData(
   edge: ElkExtendedEdge,
   node?: ElkNode,
   parent?: ElkNode,
-): Edge['data'] | undefined {
+): TopologyFlowEdgeData | undefined {
   if (!edge.sections || edge.sections.length === 0) {
     return undefined;
   }

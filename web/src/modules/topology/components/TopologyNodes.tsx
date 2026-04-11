@@ -8,6 +8,7 @@ import {
   getGroupPreviewText,
   getNodeAggregateStatus,
   getNodeIssueCount,
+  getNodeSourceStats,
   kindCode,
   sourceMeta,
   statusMeta,
@@ -23,6 +24,21 @@ function hiddenHandle(position: Position) {
   );
 }
 
+function nodeToneClass(viewState: string, selected: boolean) {
+  if (selected) {
+    return 'opacity-100';
+  }
+
+  switch (viewState) {
+    case 'context':
+      return 'opacity-75';
+    case 'muted':
+      return 'opacity-30';
+    default:
+      return 'opacity-100';
+  }
+}
+
 export const TopologyObjectNode = memo(
   ({ data, selected }: NodeProps<Node<TopologyFlowNodeData>>) => {
     const graphNode = data.graphNode;
@@ -31,21 +47,40 @@ export const TopologyObjectNode = memo(
     const issueCount = getNodeIssueCount(graphNode);
     const resourceCount = graphNode.nodes ? collectLeafNodes(graphNode).length : 1;
     const previewMode = Boolean(graphNode.nodes?.length);
-    const source = displayResource ? sourceMeta(displayResource.source) : null;
+    const sourceStats = getNodeSourceStats(graphNode);
+    const primarySource =
+      displayResource?.source ?? sourceStats[0]?.source;
+    const source = primarySource ? sourceMeta(primarySource) : null;
     const summary = previewMode
       ? getGroupPreviewText(graphNode)
       : displayResource?.summary ?? graphNode.subtitle ?? '暂无摘要';
     const title = graphNode.label ?? displayResource?.name ?? '未知资源';
-    const secondaryText = previewMode
-      ? `${resourceCount} 个资源`
-      : displayResource?.kind ?? graphNode.subtitle ?? 'Resource';
+    const secondaryText = previewMode ? `${resourceCount} 个资源` : undefined;
+    const viewState = data.viewState ?? 'default';
 
     return (
-      <div className="relative h-[96px] w-[228px]">
+      <div
+        className={[
+          'relative h-[96px] w-[228px] transition-opacity duration-200',
+          nodeToneClass(viewState, selected),
+        ].join(' ')}
+      >
         {previewMode ? (
           <>
-            <div className="absolute inset-x-0 top-[10px] h-[96px] translate-x-[10px] rounded-[20px] border border-slate-200 bg-white/65 shadow-[0_8px_18px_rgba(15,23,42,0.04)]" />
-            <div className="absolute inset-x-0 top-[5px] h-[96px] translate-x-[5px] rounded-[20px] border border-slate-200 bg-white/80 shadow-[0_8px_18px_rgba(15,23,42,0.05)]" />
+            <div
+              className={[
+                'absolute inset-x-0 top-[10px] h-[96px] translate-x-[10px] rounded-[20px] border shadow-[0_8px_18px_rgba(15,23,42,0.04)]',
+                source?.stackBorderClass ?? 'border-slate-200',
+                source?.stackSurfaceClass ?? 'bg-white/65',
+              ].join(' ')}
+            />
+            <div
+              className={[
+                'absolute inset-x-0 top-[5px] h-[96px] translate-x-[5px] rounded-[20px] border shadow-[0_8px_18px_rgba(15,23,42,0.05)]',
+                source?.stackBorderClass ?? 'border-slate-200',
+                source?.stackSurfaceClass ?? 'bg-white/80',
+              ].join(' ')}
+            />
           </>
         ) : null}
 
@@ -53,8 +88,8 @@ export const TopologyObjectNode = memo(
           className={[
             'relative z-10 flex h-[96px] w-[228px] items-start gap-3 rounded-[20px] border bg-white px-3.5 py-3 shadow-[0_10px_22px_rgba(15,23,42,0.08)] transition-[border-color,box-shadow] duration-200',
             selected
-              ? 'border-teal-500 shadow-[0_12px_26px_rgba(13,148,136,0.16)]'
-              : `${aggregateStatus.borderClass} ring-1 ${aggregateStatus.ringClass}`,
+              ? source?.selectedClass ?? 'border-slate-400 ring-2 ring-slate-200'
+              : `${source?.cardBorderClass ?? aggregateStatus.borderClass} ring-1 ${source?.cardRingClass ?? aggregateStatus.ringClass}`,
           ].join(' ')}
         >
           {hiddenHandle(Position.Top)}
@@ -62,15 +97,21 @@ export const TopologyObjectNode = memo(
 
           <div
             className={[
-              'relative flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] border text-[12px] font-semibold tracking-[0.08em]',
-              aggregateStatus.surfaceClass,
-              aggregateStatus.borderClass,
-              'text-slate-700',
+              'relative flex h-11 w-12 shrink-0 items-center justify-center rounded-[14px] border text-[11px] font-semibold tracking-[0.03em]',
+              source?.iconSurfaceClass ?? aggregateStatus.surfaceClass,
+              source?.iconBorderClass ?? aggregateStatus.borderClass,
+              source?.iconTextClass ?? 'text-slate-700',
             ].join(' ')}
           >
             {kindCode(displayResource?.kind ?? graphNode.label ?? 'GR')}
             {previewMode ? (
-              <span className="absolute -right-2 -top-2 inline-flex min-w-6 items-center justify-center rounded-full border border-slate-200 bg-white px-1.5 text-[10px] font-semibold text-slate-600">
+              <span
+                className={[
+                  'absolute -right-2 -top-2 inline-flex min-w-6 items-center justify-center rounded-full border bg-white px-1.5 text-[10px] font-semibold',
+                  source?.stackBorderClass ?? 'border-slate-200',
+                  source?.badgeTextClass ?? 'text-slate-600',
+                ].join(' ')}
+              >
                 {resourceCount}
               </span>
             ) : null}
@@ -80,28 +121,46 @@ export const TopologyObjectNode = memo(
             <div className="flex items-start gap-2">
               <div className="min-w-0 flex-1">
                 <div className="truncate text-[15px] font-semibold text-slate-950">{title}</div>
-                <div className="mt-0.5 truncate text-[11px] font-medium text-slate-500">
-                  {secondaryText}
-                </div>
+                {secondaryText ? (
+                  <div className="mt-0.5 truncate text-[11px] font-medium text-slate-500">
+                    {secondaryText}
+                  </div>
+                ) : null}
               </div>
               <span className={['mt-1 h-2.5 w-2.5 rounded-full', aggregateStatus.dotClass].join(' ')} />
             </div>
 
-            <div className="mt-2 truncate text-[12px] text-slate-500">{summary}</div>
+            <div className="mt-2 truncate text-[12px] font-medium text-slate-500">{summary}</div>
 
-            <div className="mt-2 flex items-center gap-2">
-              {source ? (
-                <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500">
-                  {source.icon}
-                  {source.label}
-                </span>
-              ) : null}
-              {issueCount > 0 ? (
-                <span className="inline-flex h-5 items-center rounded-full bg-amber-50 px-2 text-[10px] font-semibold text-amber-700">
-                  {issueCount} warnings
-                </span>
-              ) : null}
-            </div>
+            {previewMode ? (
+              issueCount > 0 ? (
+                <div className="mt-2 flex items-center justify-end">
+                  <span className="inline-flex h-5 shrink-0 items-center rounded-full bg-amber-50 px-2 text-[10px] font-semibold text-amber-700">
+                    {issueCount} warnings
+                  </span>
+                </div>
+              ) : null
+            ) : (
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                {source ? (
+                  <span
+                    className={[
+                      'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium',
+                      source.badgeClass,
+                      source.badgeTextClass,
+                    ].join(' ')}
+                  >
+                    {source.icon}
+                    {source.label}
+                  </span>
+                ) : null}
+                {issueCount > 0 ? (
+                  <span className="inline-flex h-5 items-center rounded-full bg-amber-50 px-2 text-[10px] font-semibold text-amber-700">
+                    {issueCount} warnings
+                  </span>
+                ) : null}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -115,24 +174,40 @@ export const TopologyGroupNode = memo(
     const displayResource = getDisplayResource(graphNode);
     const aggregateStatus = statusMeta(getNodeAggregateStatus(graphNode));
     const resourceCount = collectLeafNodes(graphNode).length;
+    const source = displayResource ? sourceMeta(displayResource.source) : null;
+    const viewState = data.viewState ?? 'default';
 
     return (
       <div
         className={[
-          'h-full w-full rounded-[26px] border bg-slate-50/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]',
-          selected ? 'border-teal-400' : 'border-slate-200',
+          'h-full w-full rounded-[26px] border shadow-[inset_0_1px_0_rgba(255,255,255,0.8)] transition-opacity duration-200',
+          source?.groupSurfaceClass ?? 'bg-slate-50/70',
+          nodeToneClass(viewState, selected),
+          selected ? source?.selectedClass ?? 'border-slate-400' : source?.groupBorderClass ?? 'border-slate-200',
         ].join(' ')}
       >
         {hiddenHandle(Position.Top)}
         {hiddenHandle(Position.Bottom)}
 
-        <div className="absolute left-4 top-4 flex max-w-[calc(100%-32px)] items-center gap-2 rounded-full border border-slate-200 bg-white/92 px-3 py-1.5 text-xs shadow-sm backdrop-blur">
+        <div
+          className={[
+            'absolute left-4 top-4 flex max-w-[calc(100%-32px)] items-center gap-2 rounded-full border px-3 py-1.5 text-xs shadow-sm backdrop-blur',
+            source?.groupChipBorderClass ?? 'border-slate-200',
+            source?.groupChipSurfaceClass ?? 'bg-white/92',
+          ].join(' ')}
+        >
           <span className={['h-2 w-2 rounded-full', aggregateStatus.dotClass].join(' ')} />
           <span className="text-slate-500">{graphNode.subtitle ?? 'Group'}</span>
           <span className="truncate font-medium text-slate-900">
             {graphNode.label ?? displayResource?.name ?? 'Untitled'}
           </span>
-          <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-500">
+          <span
+            className={[
+              'rounded-full px-1.5 py-0.5 text-[11px]',
+              source?.badgeClass ?? 'bg-slate-100',
+              source?.badgeTextClass ?? 'text-slate-500',
+            ].join(' ')}
+          >
             {resourceCount}
           </span>
         </div>

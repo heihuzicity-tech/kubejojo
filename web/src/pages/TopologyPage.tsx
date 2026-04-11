@@ -14,21 +14,18 @@ import {
   Empty,
   Popover,
   Segmented,
-  Select,
   Skeleton,
   Space,
   Switch,
   Tag,
   Typography,
 } from 'antd';
-import type { DefaultOptionType } from 'antd/es/select';
 import {
   Background,
   type Edge,
   type Node,
   ReactFlow,
   ReactFlowProvider,
-  useNodesInitialized,
   useReactFlow,
 } from '@xyflow/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -45,9 +42,13 @@ import {
 import { maxZoom, minZoom } from '../modules/topology/graph/graphConstants';
 import {
   applyGraphLayout,
+  type TopologyFlowEdgeData,
   type TopologyFlowNodeData,
+  type TopologyViewState,
 } from '../modules/topology/graph/graphLayout';
 import {
+  collectLeafNodes,
+  forEachNode,
   graphContainsNode,
   makeTopologyElements,
   type TopologyGraphNode,
@@ -72,14 +73,20 @@ import { useAppStore } from '../stores/appStore';
 import '@xyflow/react/dist/base.css';
 
 type SourceType = TopologyResource['source'];
+type SourceFocusMode = 'all' | SourceType;
+type FocusContext = {
+  focusedIDs: Set<string>;
+  relatedIDs: Set<string>;
+};
 
-const sourceOptions: DefaultOptionType[] = [
-  { label: 'Workloads', value: 'workloads' },
-  { label: 'Network', value: 'network' },
-  { label: 'Storage', value: 'storage' },
+const sourceFilterOptions: Array<{ label: string; value: SourceFocusMode }> = [
+  { label: '全部', value: 'all' },
+  { label: '工作负载', value: 'workloads' },
+  { label: '网络', value: 'network' },
+  { label: '存储', value: 'storage' },
 ];
 
-const groupOptions: Array<{ label: string; value: GroupByMode }> = [
+const allGroupOptions: Array<{ label: string; value: GroupByMode }> = [
   { label: '命名空间', value: 'namespace' },
   { label: '实例', value: 'instance' },
   { label: '节点', value: 'node' },
@@ -95,6 +102,89 @@ const nodeTypes = {
 const edgeTypes = {
   topologyEdge: TopologyEdge,
 };
+
+function isClusterWideNamespace(namespace: string) {
+  const value = namespace.trim().toLowerCase();
+  return value === '' || value === 'all' || value === 'all-namespaces';
+}
+
+function createFocusContext(
+  graph: TopologyGraph,
+  sourceFocus: SourceFocusMode,
+): FocusContext | null {
+  if (sourceFocus === 'all') {
+    return null;
+  }
+
+  const focusedIDs = new Set(
+    graph.resources
+      .filter((resource) => resource.source === sourceFocus)
+      .map((resource) => resource.id),
+  );
+  const relatedIDs = new Set(focusedIDs);
+
+  graph.relations.forEach((relation) => {
+    if (focusedIDs.has(relation.source) || focusedIDs.has(relation.target)) {
+      relatedIDs.add(relation.source);
+      relatedIDs.add(relation.target);
+    }
+  });
+
+  return {
+    focusedIDs,
+    relatedIDs,
+  };
+}
+
+function resolveNodeViewState(
+  node: TopologyGraphNode,
+  focusContext: FocusContext | null,
+): TopologyViewState {
+  if (!focusContext) {
+    return 'default';
+  }
+
+  const leafIDs = collectLeafNodes(node)
+    .map((item) => item.resource?.id)
+    .filter((id): id is string => Boolean(id));
+
+  if (leafIDs.some((id) => focusContext.focusedIDs.has(id))) {
+    return 'focused';
+  }
+
+  if (leafIDs.some((id) => focusContext.relatedIDs.has(id))) {
+    return 'context';
+  }
+
+  return 'muted';
+}
+
+function resolveEdgeViewState(
+  edge: Edge,
+  leafIDsByNodeID: Map<string, string[]>,
+  focusContext: FocusContext | null,
+): TopologyViewState {
+  if (!focusContext) {
+    return 'default';
+  }
+
+  const sourceLeafIDs = leafIDsByNodeID.get(edge.source) ?? [edge.source];
+  const targetLeafIDs = leafIDsByNodeID.get(edge.target) ?? [edge.target];
+  const sourceHasFocus = sourceLeafIDs.some((id) => focusContext.focusedIDs.has(id));
+  const targetHasFocus = targetLeafIDs.some((id) => focusContext.focusedIDs.has(id));
+  const sourceHasContext = sourceLeafIDs.some((id) => focusContext.relatedIDs.has(id));
+  const targetHasContext = targetLeafIDs.some((id) => focusContext.relatedIDs.has(id));
+
+  if (sourceHasFocus || targetHasFocus) {
+    return 'focused';
+  }
+
+  if (sourceHasContext || targetHasContext) {
+    return 'context';
+  }
+
+  return 'muted';
+}
 
 function issueFilteredGraph(graph: TopologyGraph, onlyIssues: boolean): TopologyGraph {
   if (!onlyIssues) {
@@ -268,17 +358,18 @@ function TopologyWorkspace() {
   const namespace = useAppStore((state) => state.namespace);
   const sessionMode = useAppStore((state) => state.sessionMode);
   const reactFlow = useReactFlow<Node<TopologyFlowNodeData>, Edge>();
-  const nodesInitialized = useNodesInitialized({ includeHiddenNodes: true });
   const viewport = useTopologyGraphViewport();
   const viewportMovedRef = useRef(false);
   const layoutRequestRef = useRef(0);
+  const initialViewportSettledRef = useRef(false);
 
-  const [sources, setSources] = useState<SourceType[]>(defaultSources);
+  const [sourceFocus, setSourceFocus] = useState<SourceFocusMode>('all');
   const [groupMode, setGroupMode] = useState<GroupByMode>('instance');
   const [onlyIssues, setOnlyIssues] = useState(false);
   const [expandAll, setExpandAll] = useState(false);
   const [focusedID, setFocusedID] = useState<string>();
   const [detailResourceID, setDetailResourceID] = useState<string>();
+  const [canvasReady, setCanvasReady] = useState(false);
   const [layoutedGraph, setLayoutedGraph] = useState<{
     nodes: Node<TopologyFlowNodeData>[];
     edges: Edge[];
@@ -286,19 +377,9 @@ function TopologyWorkspace() {
     nodes: [],
     edges: [],
   });
-  const [pendingViewport, setPendingViewport] = useState<{
-    requestId: number;
-    mode: ZoomMode;
-    nodes: Array<{
-      id: string;
-      width: number;
-      height: number;
-    }>;
-  } | null>(null);
-
   const topologyQuery = useQuery({
-    queryKey: ['topology-graph', namespace, sources.join(','), sessionMode],
-    queryFn: () => getTopologyGraph(namespace, sources),
+    queryKey: ['topology-graph', namespace, sessionMode],
+    queryFn: () => getTopologyGraph(namespace, defaultSources),
     enabled: sessionMode === 'token',
   });
 
@@ -320,6 +401,39 @@ function TopologyWorkspace() {
       ),
     );
   }, [onlyIssues, topologyQuery.data]);
+
+  const clusterWideNamespace = useMemo(
+    () => isClusterWideNamespace(namespace),
+    [namespace],
+  );
+
+  const availableGroupOptions = useMemo(
+    () =>
+      clusterWideNamespace
+        ? allGroupOptions
+        : allGroupOptions.filter((option) => option.value !== 'namespace'),
+    [clusterWideNamespace],
+  );
+
+  const graphSourceCounts = useMemo(
+    () =>
+      graph.resources.reduce<Record<SourceType, number>>(
+        (counts, resource) => ({
+          ...counts,
+          [resource.source]: counts[resource.source] + 1,
+        }),
+        {
+          workloads: 0,
+          network: 0,
+          storage: 0,
+        },
+      ),
+    [graph.resources],
+  );
+  const focusContext = useMemo(
+    () => createFocusContext(graph, sourceFocus),
+    [graph, sourceFocus],
+  );
 
   const groupedGraph = useMemo(() => {
     const elements = makeTopologyElements(graph.resources, graph.relations);
@@ -349,28 +463,56 @@ function TopologyWorkspace() {
   }, [detailResourceID, graph.resources]);
 
   useEffect(() => {
+    if (!clusterWideNamespace && groupMode === 'namespace') {
+      setGroupMode('instance');
+    }
+  }, [clusterWideNamespace, groupMode]);
+
+  useEffect(() => {
+    if (topologyQuery.isLoading) {
+      setCanvasReady(false);
+    }
+  }, [topologyQuery.isLoading]);
+
+  useEffect(() => {
     let active = true;
     const requestId = layoutRequestRef.current + 1;
     layoutRequestRef.current = requestId;
+    const shouldHideCanvasDuringLayout = initialViewportSettledRef.current;
 
-    void applyGraphLayout(visibleGraph, viewport.aspectRatio).then((nextGraph) => {
+    if (shouldHideCanvasDuringLayout) {
+      setCanvasReady(false);
+    }
+
+    void applyGraphLayout(visibleGraph, viewport.aspectRatio).then(async (nextGraph) => {
       if (!active) {
         return;
       }
 
-      setLayoutedGraph(nextGraph);
-
       if (!viewportMovedRef.current) {
-        setPendingViewport({
-          requestId,
+        await viewport.updateViewport({
+          nodes: nextGraph.nodes,
           mode: 'fit',
-          nodes: nextGraph.nodes.map((node) => ({
-            id: node.id,
-            width: node.width ?? 0,
-            height: node.height ?? 0,
-          })),
+          animate: false,
         });
       }
+
+      if (!active || requestId !== layoutRequestRef.current) {
+        return;
+      }
+
+      setLayoutedGraph(nextGraph);
+      initialViewportSettledRef.current = true;
+
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (!active || requestId !== layoutRequestRef.current) {
+            return;
+          }
+
+          setCanvasReady(true);
+        });
+      });
     });
 
     return () => {
@@ -379,46 +521,9 @@ function TopologyWorkspace() {
   }, [viewport, visibleGraph]);
 
   useEffect(() => {
-    if (!pendingViewport || !nodesInitialized) {
-      return;
-    }
-
-    if (pendingViewport.requestId !== layoutRequestRef.current) {
-      return;
-    }
-
-    const currentNodes = pendingViewport.nodes
-      .map(({ id }) => reactFlow.getNode(id))
-      .filter((node): node is Node<TopologyFlowNodeData> => Boolean(node));
-
-    if (currentNodes.length !== pendingViewport.nodes.length) {
-      return;
-    }
-
-    const measuredNodesReady = pendingViewport.nodes.every(({ id, width, height }) => {
-      const internalNode = reactFlow.getInternalNode(id);
-      if (!internalNode?.internals.handleBounds) {
-        return false;
-      }
-
-      const measuredWidth = internalNode.measured.width ?? 0;
-      const measuredHeight = internalNode.measured.height ?? 0;
-
-      return Math.abs(measuredWidth - width) <= 1 && Math.abs(measuredHeight - height) <= 1;
-    });
-
-    if (!measuredNodesReady) {
-      return;
-    }
-
-    viewport.updateViewport({ nodes: currentNodes, mode: pendingViewport.mode });
-    setPendingViewport(null);
-  }, [nodesInitialized, pendingViewport, reactFlow, viewport]);
-
-  useEffect(() => {
     viewportMovedRef.current = false;
     viewport.setZoomMode('fit');
-  }, [expandAll, focusedID, groupMode, namespace, onlyIssues, sources]);
+  }, [expandAll, focusedID, groupMode, namespace, onlyIssues]);
 
   useEffect(() => {
     const graphSize = getGraphSize(visibleGraph);
@@ -433,17 +538,46 @@ function TopologyWorkspace() {
   const issueCount = graph.resources.filter(
     (resource) => resource.status === 'warning' || resource.status === 'error',
   ).length;
+  const leafIDsByVisibleNodeID = useMemo(() => {
+    const map = new Map<string, string[]>();
+
+    forEachNode(visibleGraph, (node) => {
+      map.set(
+        node.id,
+        collectLeafNodes(node)
+          .map((item) => item.resource?.id)
+          .filter((id): id is string => Boolean(id)),
+      );
+    });
+
+    return map;
+  }, [visibleGraph]);
   const renderedNodes = useMemo(
     () =>
       layoutedGraph.nodes.map((node) => ({
         ...node,
+        data: {
+          ...node.data,
+          viewState: resolveNodeViewState(node.data.graphNode, focusContext),
+        },
         selected: detailResourceID ? node.id === detailResourceID : node.id === focusedID,
       })),
-    [detailResourceID, focusedID, layoutedGraph.nodes],
+    [detailResourceID, focusContext, focusedID, layoutedGraph.nodes],
+  );
+  const renderedEdges = useMemo(
+    () =>
+      layoutedGraph.edges.map((edge) => ({
+        ...edge,
+        data: {
+          ...(edge.data as TopologyFlowEdgeData | undefined),
+          viewState: resolveEdgeViewState(edge, leafIDsByVisibleNodeID, focusContext),
+        },
+      })),
+    [focusContext, leafIDsByVisibleNodeID, layoutedGraph.edges],
   );
   const zoomTo = (mode: ZoomMode) => {
     viewportMovedRef.current = false;
-    viewport.updateViewport({ mode });
+    viewport.updateViewport({ mode, animate: true });
   };
   const exitFocus = () => {
     setFocusedID(undefined);
@@ -463,22 +597,19 @@ function TopologyWorkspace() {
     setDetailResourceID(node.id);
   };
   const viewSettingsContent = (
-    <div className="w-[300px] space-y-4">
+    <div className="w-[280px] space-y-4">
       <div className="space-y-2">
-        <div className="text-[12px] font-medium text-slate-500">资源来源</div>
-        <Select
-          mode="multiple"
-          size="small"
-          value={sources}
-          options={sourceOptions}
-          onChange={(values) => {
-            const next = values as SourceType[];
-            setSources(next.length > 0 ? next : defaultSources);
-          }}
-          popupMatchSelectWidth={false}
-          style={{ width: '100%' }}
-          maxTagCount="responsive"
-        />
+        <div className="text-[12px] font-medium text-slate-500">当前视角</div>
+        <div className="rounded-[12px] border border-slate-200 bg-white px-3 py-2 text-[12px] font-medium text-slate-700">
+          {sourceFocus === 'all' ? '全部资源' : sourceMeta(sourceFocus).label}
+        </div>
+        <div className="rounded-[12px] bg-slate-50 px-3 py-2 text-[11px] text-slate-500">
+          当前图谱：
+          {' '}
+          {defaultSources
+            .map((source) => `${sourceMeta(source).label} ${graphSourceCounts[source]}`)
+            .join(' · ')}
+        </div>
       </div>
 
       <div className="space-y-2">
@@ -486,7 +617,7 @@ function TopologyWorkspace() {
         <Segmented
           block
           size="small"
-          options={groupOptions}
+          options={availableGroupOptions}
           value={groupMode}
           onChange={(value) => setGroupMode(value as GroupByMode)}
         />
@@ -541,23 +672,27 @@ function TopologyWorkspace() {
 
       <section className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_14px_40px_rgba(15,23,42,0.06)]">
         <div className="relative h-[calc(100vh-164px)] min-h-[700px]">
-          <div className="absolute left-4 top-4 z-10 space-y-2">
-            <FloatingPanel>
-              <Space.Compact size="small">
-                <Popover trigger="click" placement="bottomLeft" content={viewSettingsContent}>
-                  <Button size="small" icon={<SettingOutlined />}>
-                    视图
-                  </Button>
-                </Popover>
-                <Button
-                  size="small"
-                  type={onlyIssues ? 'primary' : 'default'}
-                  onClick={() => setOnlyIssues((current) => !current)}
-                >
-                  仅异常
-                </Button>
-              </Space.Compact>
-            </FloatingPanel>
+        <div className="absolute left-4 top-4 z-10 space-y-2">
+          <FloatingPanel>
+            <div className="flex items-center gap-2">
+              <Segmented
+                size="small"
+                options={sourceFilterOptions}
+                value={sourceFocus}
+                onChange={(value) => setSourceFocus(value as SourceFocusMode)}
+              />
+              <Button
+                size="small"
+                type={onlyIssues ? 'primary' : 'default'}
+                onClick={() => setOnlyIssues((current) => !current)}
+              >
+                仅异常
+              </Button>
+              <Popover trigger="click" placement="bottomLeft" content={viewSettingsContent}>
+                <Button size="small" icon={<SettingOutlined />} />
+              </Popover>
+            </div>
+          </FloatingPanel>
             {focusedGroup && focusedGroup.id !== 'root' ? (
               <FloatingPanel>
                 <div className="flex flex-wrap items-center gap-2">
@@ -626,25 +761,53 @@ function TopologyWorkspace() {
               />
             </div>
           ) : (
-            <ReactFlow<Node<TopologyFlowNodeData>, Edge>
-              nodes={renderedNodes}
-              edges={layoutedGraph.edges}
-              nodeTypes={nodeTypes}
-              edgeTypes={edgeTypes}
-              nodesDraggable={false}
-              nodesConnectable={false}
-              elementsSelectable={false}
-              minZoom={minZoom}
-              maxZoom={maxZoom}
-              zoomOnDoubleClick={false}
-              onMoveStart={() => {
-                viewportMovedRef.current = true;
-              }}
-              onNodeClick={handleNodeClick}
-              proOptions={{ hideAttribution: true }}
-            >
-              <Background color="#d8e0e7" gap={18} size={1} />
-            </ReactFlow>
+            <>
+              <div
+                className={[
+                  'h-full origin-center transition-[opacity,transform,filter] duration-[360ms] ease-[cubic-bezier(0.22,1,0.36,1)]',
+                  canvasReady
+                    ? 'translate-y-0 scale-100 blur-0 opacity-100'
+                    : 'pointer-events-none translate-y-3 scale-[0.978] blur-[3px] opacity-0',
+                ].join(' ')}
+              >
+                <ReactFlow<Node<TopologyFlowNodeData>, Edge>
+                  nodes={renderedNodes}
+                  edges={renderedEdges}
+                  nodeTypes={nodeTypes}
+                  edgeTypes={edgeTypes}
+                  nodesDraggable={false}
+                  nodesConnectable={false}
+                  elementsSelectable={false}
+                  minZoom={minZoom}
+                  maxZoom={maxZoom}
+                  zoomOnDoubleClick={false}
+                  onMoveStart={() => {
+                    viewportMovedRef.current = true;
+                  }}
+                  onNodeClick={handleNodeClick}
+                  proOptions={{ hideAttribution: true }}
+                >
+                  <Background color="#d8e0e7" gap={18} size={1} />
+                </ReactFlow>
+              </div>
+
+              {!canvasReady ? (
+                <div
+                  className={[
+                    'pointer-events-none absolute inset-0 transition-[opacity,backdrop-filter,background-color] duration-[320ms] ease-[cubic-bezier(0.22,1,0.36,1)]',
+                    initialViewportSettledRef.current
+                      ? 'bg-white/26 opacity-100 backdrop-blur-[3px]'
+                      : 'flex items-center justify-center bg-white/92 opacity-100',
+                  ].join(' ')}
+                >
+                  {!initialViewportSettledRef.current ? (
+                    <div className="w-[220px]">
+                      <Skeleton active title={false} paragraph={{ rows: 5 }} />
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+            </>
           )}
         </div>
       </section>
