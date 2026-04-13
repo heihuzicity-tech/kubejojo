@@ -1,11 +1,11 @@
-import { MoreOutlined } from '@ant-design/icons';
 import { App } from 'antd';
 import { type ProColumns } from '@ant-design/pro-components';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Alert, Button, Drawer, Dropdown, Modal, Select, Space, Tabs, Tag, Typography } from 'antd';
+import { Alert, Button, Drawer, Modal, Select, Space, Tabs, Tag, Typography } from 'antd';
 import { useMemo, useState } from 'react';
 
 import { PodExecTerminalModal } from '../components/pod/PodExecTerminalModal';
+import { ActionMenuButton } from '../components/workload/ActionMenuButton';
 import { ResourceYamlEditorModal } from '../components/workload/ResourceYamlEditorModal';
 import { ResourceListPage, type ResourceMetric } from '../components/resource-list/ResourceListPage';
 import {
@@ -592,58 +592,46 @@ export function PodsPage() {
     {
       title: 'Actions',
       key: 'actions',
-      width: 96,
+      width: 124,
       fixed: 'right',
       render: (_, item) =>
         sessionMode === 'demo' ? (
           <Tag>Demo</Tag>
         ) : (
-          <div onClick={(event) => event.stopPropagation()}>
-            <Dropdown
-              trigger={['click']}
-              menu={{
-                items: [
-                  { key: 'yaml', label: 'YAML' },
-                  { key: 'describe', label: 'Describe' },
-                  { key: 'edit-yaml', label: 'Edit YAML' },
-                  { key: 'exec', label: 'Exec' },
-                  { key: 'logs', label: 'Logs' },
-                  { key: 'delete', label: <span className="text-red-600">Delete</span> },
-                ],
-                onClick: ({ key, domEvent }) => {
-                  domEvent.stopPropagation();
-                  if (key === 'yaml') {
-                    openInspectModal(item, 'yaml');
-                  }
-                  if (key === 'describe') {
-                    openInspectModal(item, 'describe');
-                  }
-                  if (key === 'edit-yaml') {
-                    setYamlEditTarget(item);
-                  }
-                  if (key === 'exec') {
-                    openExecModal(item);
-                  }
-                  if (key === 'logs') {
-                    openLogModal(item);
-                  }
-                  if (key === 'delete') {
-                    openDeleteConfirm(item);
-                  }
-                },
-              }}
-            >
-              <Button
-                size="small"
-                type="text"
-                shape="circle"
-                icon={<MoreOutlined />}
-                loading={deleteMutation.isPending}
-                aria-label="More actions"
-                title="More actions"
-              />
-            </Dropdown>
-          </div>
+          <ActionMenuButton
+            loading={deleteMutation.isPending}
+            menu={{
+              items: [
+                { key: 'yaml', label: 'YAML' },
+                { key: 'describe', label: 'Describe' },
+                { key: 'edit-yaml', label: 'Edit YAML' },
+                { key: 'exec', label: 'Exec' },
+                { key: 'logs', label: 'Logs' },
+                { key: 'delete', label: <span className="text-red-600">Delete</span> },
+              ],
+              onClick: ({ key, domEvent }) => {
+                domEvent.stopPropagation();
+                if (key === 'yaml') {
+                  openInspectModal(item, 'yaml');
+                }
+                if (key === 'describe') {
+                  openInspectModal(item, 'describe');
+                }
+                if (key === 'edit-yaml') {
+                  setYamlEditTarget(item);
+                }
+                if (key === 'exec') {
+                  openExecModal(item);
+                }
+                if (key === 'logs') {
+                  openLogModal(item);
+                }
+                if (key === 'delete') {
+                  openDeleteConfirm(item);
+                }
+              },
+            }}
+          />
         ),
     },
   ];

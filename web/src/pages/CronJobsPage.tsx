@@ -1,10 +1,10 @@
-import { MoreOutlined } from '@ant-design/icons';
 import { App } from 'antd';
 import { type ProColumns } from '@ant-design/pro-components';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Alert, Button, Drawer, Dropdown, Space, Tag, Typography } from 'antd';
+import { Alert, Button, Drawer, Space, Tag, Typography } from 'antd';
 import { useMemo, useState } from 'react';
 
+import { ActionMenuButton } from '../components/workload/ActionMenuButton';
 import { ResourceYamlEditorModal } from '../components/workload/ResourceYamlEditorModal';
 import { ResourceListPage, type ResourceMetric } from '../components/resource-list/ResourceListPage';
 import {
@@ -283,43 +283,31 @@ export function CronJobsPage() {
     {
       title: 'Actions',
       key: 'actions',
-      width: 96,
+      width: 124,
       fixed: 'right',
       render: (_, item) =>
         sessionMode === 'demo' ? (
           <Tag>Demo</Tag>
         ) : (
-          <div onClick={(event) => event.stopPropagation()}>
-            <Dropdown
-              trigger={['click']}
-              menu={{
-                items: [
-                  { key: 'edit-yaml', label: 'Edit YAML' },
-                  { key: 'suspend', label: nextCronJobSuspendAction(item) },
-                ],
-                onClick: ({ key, domEvent }) => {
-                  domEvent.stopPropagation();
-                  if (key === 'edit-yaml') {
-                    setYamlEditTarget(item);
-                    return;
-                  }
-                  if (key === 'suspend') {
-                    openSuspendConfirm(item);
-                  }
-                },
-              }}
-            >
-              <Button
-                size="small"
-                type="text"
-                shape="circle"
-                icon={<MoreOutlined />}
-                loading={suspendMutation.isPending}
-                aria-label="More actions"
-                title="More actions"
-              />
-            </Dropdown>
-          </div>
+          <ActionMenuButton
+            loading={suspendMutation.isPending}
+            menu={{
+              items: [
+                { key: 'edit-yaml', label: 'Edit YAML' },
+                { key: 'suspend', label: nextCronJobSuspendAction(item) },
+              ],
+              onClick: ({ key, domEvent }) => {
+                domEvent.stopPropagation();
+                if (key === 'edit-yaml') {
+                  setYamlEditTarget(item);
+                  return;
+                }
+                if (key === 'suspend') {
+                  openSuspendConfirm(item);
+                }
+              },
+            }}
+          />
         ),
     },
   ];

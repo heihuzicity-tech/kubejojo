@@ -1,10 +1,10 @@
-import { MoreOutlined } from '@ant-design/icons';
 import { App } from 'antd';
 import { type ProColumns } from '@ant-design/pro-components';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Alert, Button, Drawer, Dropdown, InputNumber, Modal, Space, Tag, Typography } from 'antd';
+import { Alert, Button, Drawer, InputNumber, Modal, Space, Tag, Typography } from 'antd';
 import { useMemo, useState } from 'react';
 
+import { ActionMenuButton } from '../components/workload/ActionMenuButton';
 import { ResourceYamlEditorModal } from '../components/workload/ResourceYamlEditorModal';
 import { ResourceListPage, type ResourceMetric } from '../components/resource-list/ResourceListPage';
 import {
@@ -337,43 +337,31 @@ export function ReplicaSetsPage() {
     {
       title: 'Actions',
       key: 'actions',
-      width: 96,
+      width: 124,
       fixed: 'right',
       render: (_, item) =>
         sessionMode === 'demo' ? (
           <Tag>Demo</Tag>
         ) : (
-          <div onClick={(event) => event.stopPropagation()}>
-            <Dropdown
-              trigger={['click']}
-              menu={{
-                items: [
-                  ...(isStandaloneReplicaSet(item) ? [{ key: 'scale', label: 'Scale' }] : []),
-                  { key: 'edit-yaml', label: 'Edit YAML' },
-                ],
-                onClick: ({ key, domEvent }) => {
-                  domEvent.stopPropagation();
-                  if (key === 'scale') {
-                    openScaleModal(item);
-                    return;
-                  }
-                  if (key === 'edit-yaml') {
-                    setYamlEditTarget(item);
-                  }
-                },
-              }}
-            >
-              <Button
-                size="small"
-                type="text"
-                shape="circle"
-                icon={<MoreOutlined />}
-                loading={scaleMutation.isPending}
-                aria-label="More actions"
-                title="More actions"
-              />
-            </Dropdown>
-          </div>
+          <ActionMenuButton
+            loading={scaleMutation.isPending}
+            menu={{
+              items: [
+                ...(isStandaloneReplicaSet(item) ? [{ key: 'scale', label: 'Scale' }] : []),
+                { key: 'edit-yaml', label: 'Edit YAML' },
+              ],
+              onClick: ({ key, domEvent }) => {
+                domEvent.stopPropagation();
+                if (key === 'scale') {
+                  openScaleModal(item);
+                  return;
+                }
+                if (key === 'edit-yaml') {
+                  setYamlEditTarget(item);
+                }
+              },
+            }}
+          />
         ),
     },
   ];
