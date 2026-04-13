@@ -1,13 +1,20 @@
+import { MoreOutlined } from '@ant-design/icons';
+import { App } from 'antd';
 import { type ProColumns } from '@ant-design/pro-components';
-import { useQuery } from '@tanstack/react-query';
-import { Alert, Drawer, Space, Tag, Typography } from 'antd';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { Alert, Button, Drawer, Dropdown, Modal, Select, Space, Tag, Typography } from 'antd';
 import { useMemo, useState } from 'react';
 
 import { ResourceListPage, type ResourceMetric } from '../components/resource-list/ResourceListPage';
 import {
   type PodConditionItem,
   type PodContainerItem,
+  type PodEventItem,
   type PodItem,
+  type PodLogResult,
+  deletePod,
+  getPodEvents,
+  getPodLogs,
   getPods,
 } from '../services/cluster';
 import { useAppStore } from '../stores/appStore';
@@ -87,6 +94,59 @@ const demoPods: PodItem[] = [
   },
 ];
 
+const demoPodEvents: Record<string, PodEventItem[]> = {
+  'default/nginx-demo-6f9c95f95f-c6jth': [
+    {
+      type: 'Normal',
+      reason: 'Scheduled',
+      message: 'Successfully assigned default/nginx-demo-6f9c95f95f-c6jth to k8s-node2.',
+      count: 1,
+      lastSeen: '2026-04-09 10:20:02',
+    },
+    {
+      type: 'Normal',
+      reason: 'Pulled',
+      message: 'Container image "nginx:stable" already present on machine.',
+      count: 1,
+      lastSeen: '2026-04-09 10:20:06',
+    },
+    {
+      type: 'Normal',
+      reason: 'Started',
+      message: 'Started container nginx.',
+      count: 1,
+      lastSeen: '2026-04-09 10:20:08',
+    },
+  ],
+  'kube-system/metrics-server-5cdb79b4f9-d7wdm': [
+    {
+      type: 'Normal',
+      reason: 'Scheduled',
+      message: 'Successfully assigned kube-system/metrics-server-5cdb79b4f9-d7wdm to k8s-node1.',
+      count: 1,
+      lastSeen: '2026-04-11 08:10:02',
+    },
+    {
+      type: 'Normal',
+      reason: 'Pulled',
+      message: 'Container image "registry.k8s.io/metrics-server/metrics-server:v0.7.2" already present on machine.',
+      count: 1,
+      lastSeen: '2026-04-11 08:10:05',
+    },
+  ],
+};
+
+const demoPodLogs: Record<string, string> = {
+  'default/nginx-demo-6f9c95f95f-c6jth/nginx': [
+    '10.244.1.1 - - [09/Apr/2026:10:21:03 +0800] "GET / HTTP/1.1" 200 615 "-" "curl/8.7.1" "-"',
+    '10.244.1.1 - - [09/Apr/2026:10:21:09 +0800] "GET /healthz HTTP/1.1" 200 2 "-" "kube-probe/1.35" "-"',
+  ].join('\n'),
+  'kube-system/metrics-server-5cdb79b4f9-d7wdm/metrics-server': [
+    'I0411 08:10:09.178123       1 serving.go:389] Generated self-signed cert (/tmp/apiserver.crt, /tmp/apiserver.key)',
+    'I0411 08:10:10.892441       1 secure_serving.go:213] Serving securely on [::]:10250',
+  ].join('\n'),
+};
+
 function displayNamespace(namespace: string) {
   const value = namespace.trim();
   return value === '' ? 'all-namespaces' : value;
@@ -118,6 +178,10 @@ function statusColor(status: string) {
     default:
       return 'default';
   }
+}
+
+function eventTypeColor(type: string) {
+  return type === 'Warning' ? 'red' : 'blue';
 }
 
 function conditionTagColor(condition: PodConditionItem) {
@@ -163,6 +227,21 @@ function restartTone(count: number) {
   return 'default';
 }
 
+function hasContainerDiagnostics(container: PodContainerItem) {
+  return Boolean(
+    container.stateReason ||
+      container.stateMessage ||
+      container.startedAt ||
+      container.finishedAt ||
+      container.exitCode != null ||
+      container.lastState ||
+      container.lastStateReason ||
+      container.lastStartedAt ||
+      container.lastFinishedAt ||
+      container.lastExitCode != null,
+  );
+}
+
 function MetricValue({
   available,
   value,
@@ -203,9 +282,12 @@ function ownerSummary(item: PodItem) {
 }
 
 export function PodsPage() {
+  const { message, modal } = App.useApp();
   const sessionMode = useAppStore((state) => state.sessionMode);
   const currentNamespace = useAppStore((state) => state.namespace);
   const [detailItem, setDetailItem] = useState<PodItem>();
+  const [logTarget, setLogTarget] = useState<PodItem>();
+  const [logContainer, setLogContainer] = useState<string>();
 
   const podsQuery = useQuery({
     queryKey: ['pods', currentNamespace],
@@ -215,6 +297,57 @@ export function PodsPage() {
 
   const items = sessionMode === 'demo' || !podsQuery.data ? demoPods : podsQuery.data;
   const namespaceLabel = displayNamespace(currentNamespace);
+
+  const refreshPods = async () => {
+    await podsQuery.refetch();
+  };
+
+  const deleteMutation = useMutation({
+    mutationFn: ({ namespace, name }: { namespace: string; name: string }) => deletePod(namespace, name),
+    onSuccess: async (result) => {
+      void message.success(result.message);
+      setDetailItem(undefined);
+      setLogTarget(undefined);
+      setLogContainer(undefined);
+      await refreshPods();
+    },
+  });
+
+  const podEventsQuery = useQuery({
+    queryKey: ['pod-events', detailItem?.namespace, detailItem?.name],
+    queryFn: () => getPodEvents(detailItem!.namespace, detailItem!.name),
+    enabled: sessionMode === 'token' && Boolean(detailItem),
+  });
+
+  const podLogsQuery = useQuery({
+    queryKey: ['pod-logs', logTarget?.namespace, logTarget?.name, logContainer],
+    queryFn: () => getPodLogs(logTarget!.namespace, logTarget!.name, logContainer!),
+    enabled: sessionMode === 'token' && Boolean(logTarget && logContainer),
+  });
+
+  const openLogModal = (item: PodItem) => {
+    setLogTarget(item);
+    setLogContainer(item.containers[0]?.name);
+  };
+
+  const openDeleteConfirm = (item: PodItem) => {
+    const owner = ownerSummary(item);
+    modal.confirm({
+      title: `Delete ${item.name} ?`,
+      content:
+        owner === '-'
+          ? 'This deletes the current Pod immediately.'
+          : `This deletes the current Pod. If it is managed by ${owner}, Kubernetes may recreate it automatically.`,
+      okText: 'Delete',
+      cancelText: 'Cancel',
+      okButtonProps: { danger: true },
+      onOk: async () =>
+        deleteMutation.mutateAsync({
+          namespace: item.namespace,
+          name: item.name,
+        }),
+    });
+  };
 
   const metrics = useMemo<ResourceMetric[]>(() => {
     const readyCount = items.filter(isPodReady).length;
@@ -309,11 +442,76 @@ export function PodsPage() {
       width: 100,
       render: (value) => value ?? '-',
     },
+    {
+      title: 'Actions',
+      key: 'actions',
+      width: 96,
+      fixed: 'right',
+      render: (_, item) =>
+        sessionMode === 'demo' ? (
+          <Tag>Demo</Tag>
+        ) : (
+          <div onClick={(event) => event.stopPropagation()}>
+            <Dropdown
+              trigger={['click']}
+              menu={{
+                items: [
+                  { key: 'logs', label: 'Logs' },
+                  { key: 'delete', label: <span className="text-red-600">Delete</span> },
+                ],
+                onClick: ({ key, domEvent }) => {
+                  domEvent.stopPropagation();
+                  if (key === 'logs') {
+                    openLogModal(item);
+                  }
+                  if (key === 'delete') {
+                    openDeleteConfirm(item);
+                  }
+                },
+              }}
+            >
+              <Button
+                size="small"
+                type="text"
+                shape="circle"
+                icon={<MoreOutlined />}
+                loading={deleteMutation.isPending}
+                aria-label="More actions"
+                title="More actions"
+              />
+            </Dropdown>
+          </div>
+        ),
+    },
   ];
 
   const detailContainers = detailItem?.containers ?? [];
   const detailConditions = detailItem?.conditions ?? [];
   const detailLabels = detailItem?.labels ?? [];
+  const detailEvents =
+    sessionMode === 'demo'
+      ? detailItem
+        ? demoPodEvents[`${detailItem.namespace}/${detailItem.name}`] ?? []
+        : []
+      : podEventsQuery.data ?? [];
+  const logContainerOptions =
+    logTarget?.containers.map((item) => ({
+      label: item.name,
+      value: item.name,
+    })) ?? [];
+  const logResult: PodLogResult | undefined =
+    sessionMode === 'demo' && logTarget
+      ? {
+          namespace: logTarget.namespace,
+          name: logTarget.name,
+          container: logContainer ?? logTarget.containers[0]?.name ?? '',
+          content:
+            demoPodLogs[
+              `${logTarget.namespace}/${logTarget.name}/${logContainer ?? logTarget.containers[0]?.name ?? ''}`
+            ] ?? 'No logs captured for this demo container.',
+          generatedAt: '2026-04-13 10:35:00',
+        }
+      : podLogsQuery.data;
 
   return (
     <section className="space-y-5">
@@ -333,7 +531,7 @@ export function PodsPage() {
         columns={columns}
         rowKey={(record) => `${record.namespace}/${record.name}`}
         loading={sessionMode === 'token' && podsQuery.isLoading}
-        onRefresh={() => podsQuery.refetch()}
+        onRefresh={refreshPods}
         toolbarExtra={<Tag color="blue">当前上下文: {namespaceLabel}</Tag>}
         searchPlaceholder="搜索 Pod、节点、状态、所属资源或标签"
         searchPredicate={(record, keyword) =>
@@ -370,6 +568,14 @@ export function PodsPage() {
               <Tag color={detailItem.metricsAvailable ? 'geekblue' : 'default'}>
                 {detailItem.metricsAvailable ? 'Metrics Ready' : 'Metrics Unavailable'}
               </Tag>
+              <Button size="small" onClick={() => openLogModal(detailItem)}>
+                Logs
+              </Button>
+              {sessionMode === 'token' ? (
+                <Button danger size="small" loading={deleteMutation.isPending} onClick={() => openDeleteConfirm(detailItem)}>
+                  Delete
+                </Button>
+              ) : null}
             </div>
 
             <div>
@@ -439,12 +645,63 @@ export function PodsPage() {
                     <div className="mt-2 text-sm text-slate-600">
                       CPU: {container.cpuUsage ?? '-'} · Memory: {container.memoryUsage ?? '-'}
                     </div>
+                    {hasContainerDiagnostics(container) ? (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {container.stateReason ? <Tag>Reason: {container.stateReason}</Tag> : null}
+                        {container.exitCode != null ? <Tag color="orange">Exit {container.exitCode}</Tag> : null}
+                        {container.startedAt ? <Tag>Started: {container.startedAt}</Tag> : null}
+                        {container.finishedAt ? <Tag>Finished: {container.finishedAt}</Tag> : null}
+                        {container.lastState ? <Tag color="purple">Last: {container.lastState}</Tag> : null}
+                        {container.lastStateReason ? <Tag>Last Reason: {container.lastStateReason}</Tag> : null}
+                        {container.lastExitCode != null ? <Tag color="red">Last Exit {container.lastExitCode}</Tag> : null}
+                        {container.lastFinishedAt ? <Tag>Last Finished: {container.lastFinishedAt}</Tag> : null}
+                      </div>
+                    ) : null}
+                    {container.stateMessage ? (
+                      <div className="mt-2 text-xs text-slate-500">{container.stateMessage}</div>
+                    ) : null}
                     {container.image ? (
                       <div className="mt-1 text-xs text-slate-500 break-all">{container.image}</div>
                     ) : null}
                   </div>
                 ))}
               </div>
+            </section>
+
+            <section>
+              <Typography.Title level={5} className="!mb-3">
+                Events
+              </Typography.Title>
+              {sessionMode === 'token' && podEventsQuery.error ? (
+                <Alert
+                  type="warning"
+                  showIcon
+                  className="!mb-3"
+                  message="Pod events 加载失败"
+                />
+              ) : null}
+              {detailEvents.length > 0 ? (
+                <div className="space-y-2">
+                  {detailEvents.map((event, index) => (
+                    <div
+                      key={`${event.reason}-${event.lastSeen}-${index}`}
+                      className="rounded-[14px] border border-slate-200 bg-white px-3 py-3"
+                    >
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Tag color={eventTypeColor(event.type)}>{event.type}</Tag>
+                        <Typography.Text strong>{event.reason}</Typography.Text>
+                        <Tag>Count {event.count}</Tag>
+                        <Typography.Text type="secondary">{event.lastSeen}</Typography.Text>
+                      </div>
+                      <div className="mt-2 text-sm text-slate-600">{event.message}</div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-[14px] border border-dashed border-slate-300 bg-slate-50 px-3 py-5 text-sm text-slate-500">
+                  当前 Pod 没有可展示的 events
+                </div>
+              )}
             </section>
 
             <section>
@@ -497,6 +754,52 @@ export function PodsPage() {
           </section>
         ) : null}
       </Drawer>
+
+      <Modal
+        title={
+          logTarget ? `Pod Logs / ${logTarget.namespace}/${logTarget.name}` : 'Pod Logs'
+        }
+        open={Boolean(logTarget)}
+        onCancel={() => {
+          setLogTarget(undefined);
+          setLogContainer(undefined);
+        }}
+        footer={null}
+        width={860}
+      >
+        <section className="space-y-4">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <Space wrap>
+              <Typography.Text type="secondary">Container</Typography.Text>
+              <Select
+                value={logContainer}
+                options={logContainerOptions}
+                onChange={setLogContainer}
+                style={{ minWidth: 220 }}
+              />
+            </Space>
+            {sessionMode === 'token' ? (
+              <Button onClick={() => void podLogsQuery.refetch()} loading={podLogsQuery.isFetching}>
+                Refresh
+              </Button>
+            ) : null}
+          </div>
+
+          {sessionMode === 'token' && podLogsQuery.error ? (
+            <Alert type="warning" showIcon message="Pod logs 加载失败" />
+          ) : null}
+
+          <div className="rounded-[16px] border border-slate-200 bg-slate-950 px-4 py-3 text-slate-100">
+            <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-slate-400">
+              <span>Container: {logResult?.container || '-'}</span>
+              <span>Generated: {logResult?.generatedAt || '-'}</span>
+            </div>
+            <pre className="max-h-[420px] overflow-auto whitespace-pre-wrap break-all font-mono text-xs leading-6 text-slate-100">
+              {logResult?.content || 'No logs available.'}
+            </pre>
+          </div>
+        </section>
+      </Modal>
     </section>
   );
 }

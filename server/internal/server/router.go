@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -172,6 +173,60 @@ func newRouter(clusterFactory *kube.Factory) *gin.Engine {
 				}
 
 				c.JSON(http.StatusOK, response.Success(items))
+			})
+
+			authorized.GET("/pods/:namespace/:name/events", func(c *gin.Context) {
+				items, err := mustClusterService(c).ListPodEvents(
+					c.Request.Context(),
+					c.Param("namespace"),
+					c.Param("name"),
+				)
+				if err != nil {
+					respondWithClusterError(c, "LIST_POD_EVENTS_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(items))
+			})
+
+			authorized.GET("/pods/:namespace/:name/logs", func(c *gin.Context) {
+				tailLines := int64(200)
+				if rawTailLines := strings.TrimSpace(c.Query("tailLines")); rawTailLines != "" {
+					value, err := strconv.ParseInt(rawTailLines, 10, 64)
+					if err != nil || value < 0 {
+						c.JSON(http.StatusBadRequest, response.Failure("INVALID_TAIL_LINES", "tailLines 必须为非负整数"))
+						return
+					}
+					tailLines = value
+				}
+
+				result, err := mustClusterService(c).GetPodLogs(
+					c.Request.Context(),
+					c.Param("namespace"),
+					c.Param("name"),
+					c.Query("container"),
+					tailLines,
+				)
+				if err != nil {
+					respondWithClusterError(c, "GET_POD_LOGS_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(result))
+			})
+
+			authorized.DELETE("/pods/:namespace/:name", func(c *gin.Context) {
+				result, err := mustClusterService(c).DeletePod(
+					c.Request.Context(),
+					c.Param("namespace"),
+					c.Param("name"),
+				)
+				if err != nil {
+					respondWithClusterError(c, "DELETE_POD_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(result))
 			})
 
 			authorized.GET("/deployments", func(c *gin.Context) {

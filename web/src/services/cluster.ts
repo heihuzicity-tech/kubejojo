@@ -57,6 +57,16 @@ export type PodContainerItem = {
   ready: boolean;
   restartCount: number;
   state: string;
+  stateReason?: string;
+  stateMessage?: string;
+  startedAt?: string;
+  finishedAt?: string;
+  exitCode?: number;
+  lastState?: string;
+  lastStateReason?: string;
+  lastStartedAt?: string;
+  lastFinishedAt?: string;
+  lastExitCode?: number;
   image?: string;
   cpuUsage?: string;
   memoryUsage?: string;
@@ -67,6 +77,22 @@ export type PodConditionItem = {
   status: string;
   reason?: string;
   message?: string;
+};
+
+export type PodEventItem = {
+  type: string;
+  reason: string;
+  message: string;
+  count: number;
+  lastSeen: string;
+};
+
+export type PodLogResult = {
+  namespace: string;
+  name: string;
+  container: string;
+  content: string;
+  generatedAt: string;
 };
 
 export type PodItem = {
@@ -433,6 +459,33 @@ export async function getPods(namespace?: string) {
   const { data } = await http.get<Envelope<PodItem[]>>('/pods', {
     params: namespace ? { namespace } : undefined,
   });
+  return data.data;
+}
+
+export async function getPodEvents(namespace: string, name: string) {
+  const { data } = await http.get<Envelope<PodEventItem[]>>(
+    `/pods/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/events`,
+  );
+  return data.data;
+}
+
+export async function getPodLogs(namespace: string, name: string, container: string, tailLines = 200) {
+  const { data } = await http.get<Envelope<PodLogResult>>(
+    `/pods/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/logs`,
+    {
+      params: {
+        container,
+        tailLines,
+      },
+    },
+  );
+  return data.data;
+}
+
+export async function deletePod(namespace: string, name: string) {
+  const { data } = await http.delete<Envelope<WorkloadActionResult>>(
+    `/pods/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`,
+  );
   return data.data;
 }
 

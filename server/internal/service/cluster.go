@@ -134,14 +134,40 @@ type PodItem struct {
 	Conditions       jsonx.Slice[PodConditionItem] `json:"conditions"`
 }
 
+type PodEventItem struct {
+	Type     string `json:"type"`
+	Reason   string `json:"reason"`
+	Message  string `json:"message"`
+	Count    int32  `json:"count"`
+	LastSeen string `json:"lastSeen"`
+}
+
+type PodLogResult struct {
+	Namespace   string `json:"namespace"`
+	Name        string `json:"name"`
+	Container   string `json:"container"`
+	Content     string `json:"content"`
+	GeneratedAt string `json:"generatedAt"`
+}
+
 type PodContainerItem struct {
-	Name         string `json:"name"`
-	Ready        bool   `json:"ready"`
-	RestartCount int    `json:"restartCount"`
-	State        string `json:"state"`
-	Image        string `json:"image,omitempty"`
-	CPUUsage     string `json:"cpuUsage,omitempty"`
-	MemoryUsage  string `json:"memoryUsage,omitempty"`
+	Name            string `json:"name"`
+	Ready           bool   `json:"ready"`
+	RestartCount    int    `json:"restartCount"`
+	State           string `json:"state"`
+	StateReason     string `json:"stateReason,omitempty"`
+	StateMessage    string `json:"stateMessage,omitempty"`
+	StartedAt       string `json:"startedAt,omitempty"`
+	FinishedAt      string `json:"finishedAt,omitempty"`
+	ExitCode        *int32 `json:"exitCode,omitempty"`
+	LastState       string `json:"lastState,omitempty"`
+	LastStateReason string `json:"lastStateReason,omitempty"`
+	LastStartedAt   string `json:"lastStartedAt,omitempty"`
+	LastFinishedAt  string `json:"lastFinishedAt,omitempty"`
+	LastExitCode    *int32 `json:"lastExitCode,omitempty"`
+	Image           string `json:"image,omitempty"`
+	CPUUsage        string `json:"cpuUsage,omitempty"`
+	MemoryUsage     string `json:"memoryUsage,omitempty"`
 }
 
 type PodConditionItem struct {
@@ -594,6 +620,131 @@ func (s *ClusterService) ListPods(ctx context.Context, namespace string) ([]PodI
 	})
 
 	return pods, nil
+}
+
+func (s *ClusterService) DeletePod(
+	ctx context.Context,
+	namespace string,
+	name string,
+) (WorkloadActionResult, error) {
+	namespace = strings.TrimSpace(namespace)
+	name = strings.TrimSpace(name)
+
+	if namespace == "" {
+		return WorkloadActionResult{}, fmt.Errorf("pod namespace is required")
+	}
+	if name == "" {
+		return WorkloadActionResult{}, fmt.Errorf("pod name is required")
+	}
+
+	if err := s.client.Kubernetes.CoreV1().Pods(namespace).Delete(ctx, name, metav1.DeleteOptions{}); err != nil {
+		return WorkloadActionResult{}, fmt.Errorf("delete pod %s/%s: %w", namespace, name, err)
+	}
+
+	return WorkloadActionResult{
+		Kind:      "Pod",
+		Namespace: namespace,
+		Name:      name,
+		Operation: "delete",
+		Message:   "Pod 删除请求已提交",
+		Timestamp: time.Now().Format("2006-01-02 15:04:05"),
+	}, nil
+}
+
+func (s *ClusterService) ListPodEvents(
+	ctx context.Context,
+	namespace string,
+	name string,
+) ([]PodEventItem, error) {
+	namespace = strings.TrimSpace(namespace)
+	name = strings.TrimSpace(name)
+
+	if namespace == "" {
+		return nil, fmt.Errorf("pod namespace is required")
+	}
+	if name == "" {
+		return nil, fmt.Errorf("pod name is required")
+	}
+
+	items, err := s.client.Kubernetes.CoreV1().Events(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list pod events for %s/%s: %w", namespace, name, err)
+	}
+
+	events := make([]corev1.Event, 0, len(items.Items))
+	for _, item := range items.Items {
+		if item.InvolvedObject.Kind == "Pod" && item.InvolvedObject.Name == name {
+			events = append(events, item)
+		}
+	}
+
+	sort.Slice(events, func(i, j int) bool {
+		return eventTimestamp(events[i]).After(eventTimestamp(events[j]))
+	})
+
+	result := make([]PodEventItem, 0, len(events))
+	for _, item := range events {
+		result = append(result, PodEventItem{
+			Type:     item.Type,
+			Reason:   item.Reason,
+			Message:  item.Message,
+			Count:    item.Count,
+			LastSeen: eventTimestamp(item).Format("2006-01-02 15:04:05"),
+		})
+	}
+
+	return result, nil
+}
+
+func (s *ClusterService) GetPodLogs(
+	ctx context.Context,
+	namespace string,
+	name string,
+	container string,
+	tailLines int64,
+) (PodLogResult, error) {
+	namespace = strings.TrimSpace(namespace)
+	name = strings.TrimSpace(name)
+	container = strings.TrimSpace(container)
+
+	if namespace == "" {
+		return PodLogResult{}, fmt.Errorf("pod namespace is required")
+	}
+	if name == "" {
+		return PodLogResult{}, fmt.Errorf("pod name is required")
+	}
+
+	pod, err := s.client.Kubernetes.CoreV1().Pods(namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return PodLogResult{}, fmt.Errorf("get pod %s/%s: %w", namespace, name, err)
+	}
+
+	if container == "" {
+		if len(pod.Spec.Containers) == 0 {
+			return PodLogResult{}, fmt.Errorf("pod %s/%s has no containers", namespace, name)
+		}
+		container = pod.Spec.Containers[0].Name
+	}
+
+	options := &corev1.PodLogOptions{
+		Container: container,
+	}
+	if tailLines > 0 {
+		options.TailLines = &tailLines
+	}
+
+	raw, err := s.client.Kubernetes.CoreV1().Pods(namespace).GetLogs(name, options).DoRaw(ctx)
+	if err != nil {
+		return PodLogResult{}, fmt.Errorf("get pod logs for %s/%s container %s: %w", namespace, name, container, err)
+	}
+
+	return PodLogResult{
+		Namespace:   namespace,
+		Name:        name,
+		Container:   container,
+		Content:     string(raw),
+		GeneratedAt: time.Now().Format("2006-01-02 15:04:05"),
+	}, nil
 }
 
 func (s *ClusterService) ListDeployments(ctx context.Context, namespace string) ([]DeploymentItem, error) {
@@ -2208,6 +2359,38 @@ func containerState(status *corev1.ContainerStatus) string {
 	}
 }
 
+func formatContainerTimestamp(value metav1.Time) string {
+	if value.IsZero() {
+		return ""
+	}
+
+	return value.Time.Format("2006-01-02 15:04:05")
+}
+
+func containerStateDetails(state corev1.ContainerState) (
+	reason string,
+	message string,
+	startedAt string,
+	finishedAt string,
+	exitCode *int32,
+) {
+	switch {
+	case state.Waiting != nil:
+		reason = strings.TrimSpace(state.Waiting.Reason)
+		message = strings.TrimSpace(state.Waiting.Message)
+	case state.Running != nil:
+		startedAt = formatContainerTimestamp(state.Running.StartedAt)
+	case state.Terminated != nil:
+		reason = strings.TrimSpace(state.Terminated.Reason)
+		message = strings.TrimSpace(state.Terminated.Message)
+		startedAt = formatContainerTimestamp(state.Terminated.StartedAt)
+		finishedAt = formatContainerTimestamp(state.Terminated.FinishedAt)
+		exitCode = &state.Terminated.ExitCode
+	}
+
+	return reason, message, startedAt, finishedAt, exitCode
+}
+
 func collectPodContainers(
 	pod corev1.Pod,
 	metrics metricsv1beta1.PodMetrics,
@@ -2241,6 +2424,19 @@ func collectPodContainers(
 			container.Ready = status.Ready
 			container.RestartCount = int(status.RestartCount)
 			container.State = containerState(&status)
+			container.StateReason,
+				container.StateMessage,
+				container.StartedAt,
+				container.FinishedAt,
+				container.ExitCode = containerStateDetails(status.State)
+			if status.LastTerminationState != (corev1.ContainerState{}) {
+				container.LastState = containerState(&corev1.ContainerStatus{State: status.LastTerminationState})
+				container.LastStateReason,
+					_,
+					container.LastStartedAt,
+					container.LastFinishedAt,
+					container.LastExitCode = containerStateDetails(status.LastTerminationState)
+			}
 		} else {
 			container.State = "Unknown"
 		}
