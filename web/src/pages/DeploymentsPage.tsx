@@ -1,6 +1,8 @@
+import { MoreOutlined } from '@ant-design/icons';
+import { App } from 'antd';
 import { type ProColumns } from '@ant-design/pro-components';
-import { useQuery } from '@tanstack/react-query';
-import { Alert, Drawer, Space, Tag, Typography } from 'antd';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { Alert, Button, Drawer, Dropdown, InputNumber, Modal, Popconfirm, Space, Tag, Typography } from 'antd';
 import { useMemo, useState } from 'react';
 
 import { ResourceListPage, type ResourceMetric } from '../components/resource-list/ResourceListPage';
@@ -9,6 +11,8 @@ import {
   type DeploymentItem,
   type DeploymentPodItem,
   getDeployments,
+  restartDeployment,
+  scaleDeployment,
 } from '../services/cluster';
 import { useAppStore } from '../stores/appStore';
 
@@ -212,9 +216,12 @@ function deploymentPodStatusColor(status: string) {
 }
 
 export function DeploymentsPage() {
+  const { message, modal } = App.useApp();
   const sessionMode = useAppStore((state) => state.sessionMode);
   const currentNamespace = useAppStore((state) => state.namespace);
   const [detailItem, setDetailItem] = useState<DeploymentItem>();
+  const [scaleTarget, setScaleTarget] = useState<DeploymentItem>();
+  const [scaleValue, setScaleValue] = useState(1);
 
   const deploymentsQuery = useQuery({
     queryKey: ['deployments', currentNamespace],
@@ -227,7 +234,66 @@ export function DeploymentsPage() {
       ? demoDeployments
       : deploymentsQuery.data;
 
+  const refreshDeployments = async () => {
+    await deploymentsQuery.refetch();
+  };
+
+  const scaleMutation = useMutation({
+    mutationFn: ({ namespace, name, replicas }: { namespace: string; name: string; replicas: number }) =>
+      scaleDeployment(namespace, name, replicas),
+    onSuccess: async (result) => {
+      void message.success(result.message);
+      setScaleTarget(undefined);
+      setDetailItem(undefined);
+      await refreshDeployments();
+    },
+  });
+
+  const restartMutation = useMutation({
+    mutationFn: ({ namespace, name }: { namespace: string; name: string }) =>
+      restartDeployment(namespace, name),
+    onSuccess: async (result) => {
+      void message.success(result.message);
+      setDetailItem(undefined);
+      await refreshDeployments();
+    },
+  });
+
   const namespaceLabel = displayNamespace(currentNamespace);
+
+  const openScaleModal = (item: DeploymentItem) => {
+    setScaleTarget(item);
+    setScaleValue(item.desiredReplicas);
+  };
+
+  const handleScaleSubmit = async () => {
+    if (!scaleTarget) {
+      return;
+    }
+
+    await scaleMutation.mutateAsync({
+      namespace: scaleTarget.namespace,
+      name: scaleTarget.name,
+      replicas: scaleValue,
+    });
+  };
+
+  const handleRestart = async (item: DeploymentItem) => {
+    await restartMutation.mutateAsync({
+      namespace: item.namespace,
+      name: item.name,
+    });
+  };
+
+  const openRestartConfirm = (item: DeploymentItem) => {
+    modal.confirm({
+      title: `重启 ${item.name} ?`,
+      content: '会通过 rollout restart 触发新一轮 Pod 滚动更新。',
+      okText: '重启',
+      cancelText: '取消',
+      onOk: async () => handleRestart(item),
+    });
+  };
 
   const metrics = useMemo<ResourceMetric[]>(() => {
     const healthyCount = items.filter(isDeploymentHealthy).length;
@@ -324,6 +390,48 @@ export function DeploymentsPage() {
       width: 100,
       render: (value) => value ?? '-',
     },
+    {
+      title: 'Actions',
+      key: 'actions',
+      width: 96,
+      fixed: 'right',
+      render: (_, item) =>
+        sessionMode === 'demo' ? (
+          <Tag>Demo</Tag>
+        ) : (
+          <div onClick={(event) => event.stopPropagation()}>
+            <Dropdown
+              trigger={['click']}
+              menu={{
+                items: [
+                  { key: 'scale', label: 'Scale' },
+                  { key: 'restart', label: <span className="text-amber-700">Restart</span> },
+                ],
+                onClick: ({ key, domEvent }) => {
+                  domEvent.stopPropagation();
+                  if (key === 'scale') {
+                    openScaleModal(item);
+                    return;
+                  }
+                  if (key === 'restart') {
+                    openRestartConfirm(item);
+                  }
+                },
+              }}
+            >
+              <Button
+                size="small"
+                type="text"
+                shape="circle"
+                icon={<MoreOutlined />}
+                loading={restartMutation.isPending}
+                aria-label="More actions"
+                title="More actions"
+              />
+            </Dropdown>
+          </div>
+        ),
+    },
   ];
 
   const detailConditions = detailItem?.conditions ?? [];
@@ -350,7 +458,7 @@ export function DeploymentsPage() {
         columns={columns}
         rowKey={(record) => `${record.namespace}/${record.name}`}
         loading={sessionMode === 'token' && deploymentsQuery.isLoading}
-        onRefresh={() => deploymentsQuery.refetch()}
+        onRefresh={refreshDeployments}
         toolbarExtra={
           <Space size={8} wrap>
             <Tag color="blue">当前上下文: {namespaceLabel}</Tag>
@@ -390,6 +498,24 @@ export function DeploymentsPage() {
               <Tag color={detailItem.metricsAvailable ? 'geekblue' : 'default'}>
                 {detailItem.metricsAvailable ? 'Metrics Ready' : 'Metrics Unavailable'}
               </Tag>
+              {sessionMode === 'token' ? (
+                <Space size={8} onClick={(event) => event.stopPropagation()}>
+                  <Button size="small" onClick={() => openScaleModal(detailItem)}>
+                    Scale
+                  </Button>
+                  <Popconfirm
+                    title={`重启 ${detailItem.name} ?`}
+                    description="会通过 rollout restart 触发新一轮 Pod 滚动更新。"
+                    okText="重启"
+                    cancelText="取消"
+                    onConfirm={() => void handleRestart(detailItem)}
+                  >
+                    <Button size="small" loading={restartMutation.isPending}>
+                      Restart
+                    </Button>
+                  </Popconfirm>
+                </Space>
+              ) : null}
             </div>
 
             <div>
@@ -553,6 +679,36 @@ export function DeploymentsPage() {
           </section>
         ) : null}
       </Drawer>
+
+      <Modal
+        title={
+          scaleTarget
+            ? `Scale Deployment / ${scaleTarget.namespace}/${scaleTarget.name}`
+            : 'Scale Deployment'
+        }
+        open={Boolean(scaleTarget)}
+        onCancel={() => setScaleTarget(undefined)}
+        onOk={() => void handleScaleSubmit()}
+        okText="确认"
+        cancelText="取消"
+        confirmLoading={scaleMutation.isPending}
+      >
+        <section className="space-y-4">
+          <Typography.Paragraph className="!mb-0 text-sm text-slate-500">
+            Adjust the Deployment replica target. Current value: {scaleTarget?.desiredReplicas ?? 0}.
+          </Typography.Paragraph>
+          <div>
+            <div className="mb-2 text-sm font-medium text-slate-700">Replicas</div>
+            <InputNumber
+              min={0}
+              precision={0}
+              value={scaleValue}
+              onChange={(value) => setScaleValue(value == null ? 0 : value)}
+              className="w-full"
+            />
+          </div>
+        </section>
+      </Modal>
     </section>
   );
 }

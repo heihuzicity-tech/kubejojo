@@ -1,6 +1,8 @@
+import { MoreOutlined } from '@ant-design/icons';
+import { App } from 'antd';
 import { type ProColumns } from '@ant-design/pro-components';
-import { useQuery } from '@tanstack/react-query';
-import { Alert, Drawer, Space, Tag, Typography } from 'antd';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { Alert, Button, Drawer, Dropdown, InputNumber, Modal, Space, Tag, Typography } from 'antd';
 import { useMemo, useState } from 'react';
 
 import { ResourceListPage, type ResourceMetric } from '../components/resource-list/ResourceListPage';
@@ -9,6 +11,7 @@ import {
   type ReplicaSetItem,
   type ReplicaSetPodItem,
   getReplicaSets,
+  scaleReplicaSet,
 } from '../services/cluster';
 import { useAppStore } from '../stores/appStore';
 
@@ -160,10 +163,17 @@ function ownerSummary(item: ReplicaSetItem) {
   return `${item.ownerKind} / ${item.ownerName}`;
 }
 
+function isStandaloneReplicaSet(item: ReplicaSetItem) {
+  return !item.ownerKind && !item.ownerName;
+}
+
 export function ReplicaSetsPage() {
+  const { message } = App.useApp();
   const sessionMode = useAppStore((state) => state.sessionMode);
   const currentNamespace = useAppStore((state) => state.namespace);
   const [detailItem, setDetailItem] = useState<ReplicaSetItem>();
+  const [scaleTarget, setScaleTarget] = useState<ReplicaSetItem>();
+  const [scaleValue, setScaleValue] = useState(1);
 
   const replicaSetsQuery = useQuery({
     queryKey: ['replicasets', currentNamespace],
@@ -176,6 +186,38 @@ export function ReplicaSetsPage() {
       ? demoReplicaSets
       : replicaSetsQuery.data;
   const namespaceLabel = displayNamespace(currentNamespace);
+
+  const refreshReplicaSets = async () => {
+    await replicaSetsQuery.refetch();
+  };
+
+  const scaleMutation = useMutation({
+    mutationFn: ({ namespace, name, replicas }: { namespace: string; name: string; replicas: number }) =>
+      scaleReplicaSet(namespace, name, replicas),
+    onSuccess: async (result) => {
+      void message.success(result.message);
+      setScaleTarget(undefined);
+      setDetailItem(undefined);
+      await refreshReplicaSets();
+    },
+  });
+
+  const openScaleModal = (item: ReplicaSetItem) => {
+    setScaleTarget(item);
+    setScaleValue(item.desiredReplicas);
+  };
+
+  const handleScaleSubmit = async () => {
+    if (!scaleTarget) {
+      return;
+    }
+
+    await scaleMutation.mutateAsync({
+      namespace: scaleTarget.namespace,
+      name: scaleTarget.name,
+      replicas: scaleValue,
+    });
+  };
 
   const metrics = useMemo<ResourceMetric[]>(() => {
     const healthyCount = items.filter((item) => item.status === 'Healthy' || item.status === 'ScaledDown').length;
@@ -272,6 +314,43 @@ export function ReplicaSetsPage() {
       width: 100,
       render: (value) => value ?? '-',
     },
+    {
+      title: 'Actions',
+      key: 'actions',
+      width: 96,
+      fixed: 'right',
+      render: (_, item) =>
+        sessionMode === 'demo' ? (
+          <Tag>Demo</Tag>
+        ) : !isStandaloneReplicaSet(item) ? (
+          <Tag>Managed</Tag>
+        ) : (
+          <div onClick={(event) => event.stopPropagation()}>
+            <Dropdown
+              trigger={['click']}
+              menu={{
+                items: [{ key: 'scale', label: 'Scale' }],
+                onClick: ({ key, domEvent }) => {
+                  domEvent.stopPropagation();
+                  if (key === 'scale') {
+                    openScaleModal(item);
+                  }
+                },
+              }}
+            >
+              <Button
+                size="small"
+                type="text"
+                shape="circle"
+                icon={<MoreOutlined />}
+                loading={scaleMutation.isPending}
+                aria-label="More actions"
+                title="More actions"
+              />
+            </Dropdown>
+          </div>
+        ),
+    },
   ];
 
   const detailConditions = detailItem?.conditions ?? [];
@@ -298,7 +377,7 @@ export function ReplicaSetsPage() {
         columns={columns}
         rowKey={(record) => `${record.namespace}/${record.name}`}
         loading={sessionMode === 'token' && replicaSetsQuery.isLoading}
-        onRefresh={() => replicaSetsQuery.refetch()}
+        onRefresh={refreshReplicaSets}
         toolbarExtra={<Tag color="blue">当前上下文: {namespaceLabel}</Tag>}
         searchPlaceholder="搜索 ReplicaSet、Owner、镜像、selector 或标签"
         searchPredicate={(record, keyword) =>
@@ -332,6 +411,11 @@ export function ReplicaSetsPage() {
                 {detailItem.metricsAvailable ? 'Metrics Ready' : 'Metrics Unavailable'}
               </Tag>
               <Tag color="blue">{ownerSummary(detailItem)}</Tag>
+              {sessionMode === 'token' && isStandaloneReplicaSet(detailItem) ? (
+                <Button size="small" onClick={() => openScaleModal(detailItem)}>
+                  Scale
+                </Button>
+              ) : null}
             </div>
 
             <div>
@@ -464,6 +548,36 @@ export function ReplicaSetsPage() {
           </section>
         ) : null}
       </Drawer>
+
+      <Modal
+        title={
+          scaleTarget
+            ? `Scale ReplicaSet / ${scaleTarget.namespace}/${scaleTarget.name}`
+            : 'Scale ReplicaSet'
+        }
+        open={Boolean(scaleTarget)}
+        onCancel={() => setScaleTarget(undefined)}
+        onOk={() => void handleScaleSubmit()}
+        okText="Confirm"
+        cancelText="Cancel"
+        confirmLoading={scaleMutation.isPending}
+      >
+        <section className="space-y-4">
+          <Typography.Paragraph className="!mb-0 text-sm text-slate-500">
+            Adjust the ReplicaSet replica target. Current value: {scaleTarget?.desiredReplicas ?? 0}.
+          </Typography.Paragraph>
+          <div>
+            <div className="mb-2 text-sm font-medium text-slate-700">Replicas</div>
+            <InputNumber
+              min={0}
+              precision={0}
+              value={scaleValue}
+              onChange={(value) => setScaleValue(value == null ? 0 : value)}
+              className="w-full"
+            />
+          </div>
+        </section>
+      </Modal>
     </section>
   );
 }

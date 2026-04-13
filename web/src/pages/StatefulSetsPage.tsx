@@ -1,6 +1,8 @@
+import { MoreOutlined } from '@ant-design/icons';
+import { App } from 'antd';
 import { type ProColumns } from '@ant-design/pro-components';
-import { useQuery } from '@tanstack/react-query';
-import { Alert, Drawer, Space, Tag, Typography } from 'antd';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { Alert, Button, Drawer, Dropdown, InputNumber, Modal, Popconfirm, Space, Tag, Typography } from 'antd';
 import { useMemo, useState } from 'react';
 
 import { ResourceListPage, type ResourceMetric } from '../components/resource-list/ResourceListPage';
@@ -9,6 +11,8 @@ import {
   type StatefulSetItem,
   type StatefulSetPodItem,
   getStatefulSets,
+  restartStatefulSet,
+  scaleStatefulSet,
 } from '../services/cluster';
 import { useAppStore } from '../stores/appStore';
 
@@ -157,9 +161,12 @@ function DetailStat({
 }
 
 export function StatefulSetsPage() {
+  const { message, modal } = App.useApp();
   const sessionMode = useAppStore((state) => state.sessionMode);
   const currentNamespace = useAppStore((state) => state.namespace);
   const [detailItem, setDetailItem] = useState<StatefulSetItem>();
+  const [scaleTarget, setScaleTarget] = useState<StatefulSetItem>();
+  const [scaleValue, setScaleValue] = useState(1);
 
   const statefulSetsQuery = useQuery({
     queryKey: ['statefulsets', currentNamespace],
@@ -172,6 +179,65 @@ export function StatefulSetsPage() {
       ? demoStatefulSets
       : statefulSetsQuery.data;
   const namespaceLabel = displayNamespace(currentNamespace);
+
+  const refreshStatefulSets = async () => {
+    await statefulSetsQuery.refetch();
+  };
+
+  const scaleMutation = useMutation({
+    mutationFn: ({ namespace, name, replicas }: { namespace: string; name: string; replicas: number }) =>
+      scaleStatefulSet(namespace, name, replicas),
+    onSuccess: async (result) => {
+      void message.success(result.message);
+      setScaleTarget(undefined);
+      setDetailItem(undefined);
+      await refreshStatefulSets();
+    },
+  });
+
+  const restartMutation = useMutation({
+    mutationFn: ({ namespace, name }: { namespace: string; name: string }) =>
+      restartStatefulSet(namespace, name),
+    onSuccess: async (result) => {
+      void message.success(result.message);
+      setDetailItem(undefined);
+      await refreshStatefulSets();
+    },
+  });
+
+  const openScaleModal = (item: StatefulSetItem) => {
+    setScaleTarget(item);
+    setScaleValue(item.desiredReplicas);
+  };
+
+  const handleScaleSubmit = async () => {
+    if (!scaleTarget) {
+      return;
+    }
+
+    await scaleMutation.mutateAsync({
+      namespace: scaleTarget.namespace,
+      name: scaleTarget.name,
+      replicas: scaleValue,
+    });
+  };
+
+  const handleRestart = async (item: StatefulSetItem) => {
+    await restartMutation.mutateAsync({
+      namespace: item.namespace,
+      name: item.name,
+    });
+  };
+
+  const openRestartConfirm = (item: StatefulSetItem) => {
+    modal.confirm({
+      title: `重启 ${item.name} ?`,
+      content: '会通过滚动更新触发 StatefulSet Pod 重新创建。',
+      okText: '重启',
+      cancelText: '取消',
+      onOk: async () => handleRestart(item),
+    });
+  };
 
   const metrics = useMemo<ResourceMetric[]>(() => {
     const healthyCount = items.filter((item) => item.status === 'Healthy' || item.status === 'ScaledDown').length;
@@ -266,6 +332,48 @@ export function StatefulSetsPage() {
       width: 100,
       render: (value) => value ?? '-',
     },
+    {
+      title: 'Actions',
+      key: 'actions',
+      width: 96,
+      fixed: 'right',
+      render: (_, item) =>
+        sessionMode === 'demo' ? (
+          <Tag>Demo</Tag>
+        ) : (
+          <div onClick={(event) => event.stopPropagation()}>
+            <Dropdown
+              trigger={['click']}
+              menu={{
+                items: [
+                  { key: 'scale', label: 'Scale' },
+                  { key: 'restart', label: <span className="text-amber-700">Restart</span> },
+                ],
+                onClick: ({ key, domEvent }) => {
+                  domEvent.stopPropagation();
+                  if (key === 'scale') {
+                    openScaleModal(item);
+                    return;
+                  }
+                  if (key === 'restart') {
+                    openRestartConfirm(item);
+                  }
+                },
+              }}
+            >
+              <Button
+                size="small"
+                type="text"
+                shape="circle"
+                icon={<MoreOutlined />}
+                loading={restartMutation.isPending}
+                aria-label="More actions"
+                title="More actions"
+              />
+            </Dropdown>
+          </div>
+        ),
+    },
   ];
 
   const detailConditions = detailItem?.conditions ?? [];
@@ -292,7 +400,7 @@ export function StatefulSetsPage() {
         columns={columns}
         rowKey={(record) => `${record.namespace}/${record.name}`}
         loading={sessionMode === 'token' && statefulSetsQuery.isLoading}
-        onRefresh={() => statefulSetsQuery.refetch()}
+        onRefresh={refreshStatefulSets}
         toolbarExtra={<Tag color="blue">当前上下文: {namespaceLabel}</Tag>}
         searchPlaceholder="搜索 StatefulSet、服务名、镜像、selector 或标签"
         searchPredicate={(record, keyword) =>
@@ -327,6 +435,24 @@ export function StatefulSetsPage() {
               <Tag color={detailItem.metricsAvailable ? 'geekblue' : 'default'}>
                 {detailItem.metricsAvailable ? 'Metrics Ready' : 'Metrics Unavailable'}
               </Tag>
+              {sessionMode === 'token' ? (
+                <Space size={8} onClick={(event) => event.stopPropagation()}>
+                  <Button size="small" onClick={() => openScaleModal(detailItem)}>
+                    Scale
+                  </Button>
+                  <Popconfirm
+                    title={`重启 ${detailItem.name} ?`}
+                    description="会通过滚动更新触发 StatefulSet Pod 重新创建。"
+                    okText="重启"
+                    cancelText="取消"
+                    onConfirm={() => void handleRestart(detailItem)}
+                  >
+                    <Button size="small" loading={restartMutation.isPending}>
+                      Restart
+                    </Button>
+                  </Popconfirm>
+                </Space>
+              ) : null}
             </div>
 
             <div>
@@ -465,6 +591,36 @@ export function StatefulSetsPage() {
           </section>
         ) : null}
       </Drawer>
+
+      <Modal
+        title={
+          scaleTarget
+            ? `Scale StatefulSet / ${scaleTarget.namespace}/${scaleTarget.name}`
+            : 'Scale StatefulSet'
+        }
+        open={Boolean(scaleTarget)}
+        onCancel={() => setScaleTarget(undefined)}
+        onOk={() => void handleScaleSubmit()}
+        okText="确认"
+        cancelText="取消"
+        confirmLoading={scaleMutation.isPending}
+      >
+        <section className="space-y-4">
+          <Typography.Paragraph className="!mb-0 text-sm text-slate-500">
+            Adjust the StatefulSet replica target. Current value: {scaleTarget?.desiredReplicas ?? 0}.
+          </Typography.Paragraph>
+          <div>
+            <div className="mb-2 text-sm font-medium text-slate-700">Replicas</div>
+            <InputNumber
+              min={0}
+              precision={0}
+              value={scaleValue}
+              onChange={(value) => setScaleValue(value == null ? 0 : value)}
+              className="w-full"
+            />
+          </div>
+        </section>
+      </Modal>
     </section>
   );
 }

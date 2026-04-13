@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -14,6 +15,8 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/types"
+	utilretry "k8s.io/client-go/util/retry"
 	metricsv1beta1 "k8s.io/metrics/pkg/apis/metrics/v1beta1"
 
 	"github.com/zhangya/k8s-admin/server/internal/jsonx"
@@ -170,6 +173,15 @@ type DeploymentItem struct {
 	Images              jsonx.Slice[string]                  `json:"images"`
 	Conditions          jsonx.Slice[DeploymentConditionItem] `json:"conditions"`
 	Pods                jsonx.Slice[DeploymentPodItem]       `json:"pods"`
+}
+
+type WorkloadActionResult struct {
+	Kind      string `json:"kind"`
+	Namespace string `json:"namespace"`
+	Name      string `json:"name"`
+	Operation string `json:"operation"`
+	Message   string `json:"message"`
+	Timestamp string `json:"timestamp"`
 }
 
 type DeploymentConditionItem struct {
@@ -1055,6 +1067,392 @@ func (s *ClusterService) ListCronJobs(ctx context.Context, namespace string) ([]
 	})
 
 	return cronJobs, nil
+}
+
+func (s *ClusterService) ScaleReplicaSet(
+	ctx context.Context,
+	namespace string,
+	name string,
+	replicas int32,
+) (WorkloadActionResult, error) {
+	namespace = strings.TrimSpace(namespace)
+	name = strings.TrimSpace(name)
+
+	if namespace == "" {
+		return WorkloadActionResult{}, fmt.Errorf("replicaset namespace is required")
+	}
+	if name == "" {
+		return WorkloadActionResult{}, fmt.Errorf("replicaset name is required")
+	}
+	if replicas < 0 {
+		return WorkloadActionResult{}, fmt.Errorf("replicaset replicas must be >= 0")
+	}
+
+	if err := utilretry.RetryOnConflict(utilretry.DefaultRetry, func() error {
+		item, err := s.client.Kubernetes.AppsV1().ReplicaSets(namespace).Get(ctx, name, metav1.GetOptions{})
+		if err != nil {
+			return fmt.Errorf("get replicaset %s/%s: %w", namespace, name, err)
+		}
+
+		item.Spec.Replicas = &replicas
+		if _, err := s.client.Kubernetes.AppsV1().ReplicaSets(namespace).Update(ctx, item, metav1.UpdateOptions{}); err != nil {
+			return err
+		}
+
+		return nil
+	}); err != nil {
+		return WorkloadActionResult{}, fmt.Errorf("update replicaset replicas for %s/%s: %w", namespace, name, err)
+	}
+
+	return WorkloadActionResult{
+		Kind:      "ReplicaSet",
+		Namespace: namespace,
+		Name:      name,
+		Operation: "scale",
+		Message:   fmt.Sprintf("ReplicaSet 已调整为 %d 个副本", replicas),
+		Timestamp: time.Now().Format("2006-01-02 15:04:05"),
+	}, nil
+}
+
+func (s *ClusterService) SetJobSuspend(
+	ctx context.Context,
+	namespace string,
+	name string,
+	suspend bool,
+) (WorkloadActionResult, error) {
+	namespace = strings.TrimSpace(namespace)
+	name = strings.TrimSpace(name)
+
+	if namespace == "" {
+		return WorkloadActionResult{}, fmt.Errorf("job namespace is required")
+	}
+	if name == "" {
+		return WorkloadActionResult{}, fmt.Errorf("job name is required")
+	}
+
+	if err := utilretry.RetryOnConflict(utilretry.DefaultRetry, func() error {
+		item, err := s.client.Kubernetes.BatchV1().Jobs(namespace).Get(ctx, name, metav1.GetOptions{})
+		if err != nil {
+			return fmt.Errorf("get job %s/%s: %w", namespace, name, err)
+		}
+
+		item.Spec.Suspend = &suspend
+		if _, err := s.client.Kubernetes.BatchV1().Jobs(namespace).Update(ctx, item, metav1.UpdateOptions{}); err != nil {
+			return err
+		}
+
+		return nil
+	}); err != nil {
+		return WorkloadActionResult{}, fmt.Errorf("update job suspend state for %s/%s: %w", namespace, name, err)
+	}
+
+	operation := "resume"
+	message := "Job 已恢复调度"
+	if suspend {
+		operation = "suspend"
+		message = "Job 已暂停"
+	}
+
+	return WorkloadActionResult{
+		Kind:      "Job",
+		Namespace: namespace,
+		Name:      name,
+		Operation: operation,
+		Message:   message,
+		Timestamp: time.Now().Format("2006-01-02 15:04:05"),
+	}, nil
+}
+
+func (s *ClusterService) SetCronJobSuspend(
+	ctx context.Context,
+	namespace string,
+	name string,
+	suspend bool,
+) (WorkloadActionResult, error) {
+	namespace = strings.TrimSpace(namespace)
+	name = strings.TrimSpace(name)
+
+	if namespace == "" {
+		return WorkloadActionResult{}, fmt.Errorf("cronjob namespace is required")
+	}
+	if name == "" {
+		return WorkloadActionResult{}, fmt.Errorf("cronjob name is required")
+	}
+
+	if err := utilretry.RetryOnConflict(utilretry.DefaultRetry, func() error {
+		item, err := s.client.Kubernetes.BatchV1().CronJobs(namespace).Get(ctx, name, metav1.GetOptions{})
+		if err != nil {
+			return fmt.Errorf("get cronjob %s/%s: %w", namespace, name, err)
+		}
+
+		item.Spec.Suspend = &suspend
+		if _, err := s.client.Kubernetes.BatchV1().CronJobs(namespace).Update(ctx, item, metav1.UpdateOptions{}); err != nil {
+			return err
+		}
+
+		return nil
+	}); err != nil {
+		return WorkloadActionResult{}, fmt.Errorf("update cronjob suspend state for %s/%s: %w", namespace, name, err)
+	}
+
+	operation := "resume"
+	message := "CronJob 已恢复调度"
+	if suspend {
+		operation = "suspend"
+		message = "CronJob 已暂停"
+	}
+
+	return WorkloadActionResult{
+		Kind:      "CronJob",
+		Namespace: namespace,
+		Name:      name,
+		Operation: operation,
+		Message:   message,
+		Timestamp: time.Now().Format("2006-01-02 15:04:05"),
+	}, nil
+}
+
+func (s *ClusterService) ScaleDeployment(
+	ctx context.Context,
+	namespace string,
+	name string,
+	replicas int32,
+) (WorkloadActionResult, error) {
+	namespace = strings.TrimSpace(namespace)
+	name = strings.TrimSpace(name)
+
+	if namespace == "" {
+		return WorkloadActionResult{}, fmt.Errorf("deployment namespace is required")
+	}
+	if name == "" {
+		return WorkloadActionResult{}, fmt.Errorf("deployment name is required")
+	}
+	if replicas < 0 {
+		return WorkloadActionResult{}, fmt.Errorf("deployment replicas must be >= 0")
+	}
+
+	if err := utilretry.RetryOnConflict(utilretry.DefaultRetry, func() error {
+		item, err := s.client.Kubernetes.AppsV1().Deployments(namespace).Get(ctx, name, metav1.GetOptions{})
+		if err != nil {
+			return fmt.Errorf("get deployment %s/%s: %w", namespace, name, err)
+		}
+
+		item.Spec.Replicas = &replicas
+		if _, err := s.client.Kubernetes.AppsV1().Deployments(namespace).Update(ctx, item, metav1.UpdateOptions{}); err != nil {
+			return err
+		}
+
+		return nil
+	}); err != nil {
+		return WorkloadActionResult{}, fmt.Errorf("update deployment replicas for %s/%s: %w", namespace, name, err)
+	}
+
+	return WorkloadActionResult{
+		Kind:      "Deployment",
+		Namespace: namespace,
+		Name:      name,
+		Operation: "scale",
+		Message:   fmt.Sprintf("Deployment 已调整为 %d 个副本", replicas),
+		Timestamp: time.Now().Format("2006-01-02 15:04:05"),
+	}, nil
+}
+
+func (s *ClusterService) RestartDeployment(
+	ctx context.Context,
+	namespace string,
+	name string,
+) (WorkloadActionResult, error) {
+	namespace = strings.TrimSpace(namespace)
+	name = strings.TrimSpace(name)
+
+	if namespace == "" {
+		return WorkloadActionResult{}, fmt.Errorf("deployment namespace is required")
+	}
+	if name == "" {
+		return WorkloadActionResult{}, fmt.Errorf("deployment name is required")
+	}
+
+	restartedAt := time.Now().Format(time.RFC3339)
+	body, err := json.Marshal(map[string]any{
+		"spec": map[string]any{
+			"template": map[string]any{
+				"metadata": map[string]any{
+					"annotations": map[string]string{
+						"kubectl.kubernetes.io/restartedAt": restartedAt,
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		return WorkloadActionResult{}, fmt.Errorf("marshal deployment restart patch for %s/%s: %w", namespace, name, err)
+	}
+
+	if _, err := s.client.Kubernetes.AppsV1().Deployments(namespace).Patch(
+		ctx,
+		name,
+		types.StrategicMergePatchType,
+		body,
+		metav1.PatchOptions{},
+	); err != nil {
+		return WorkloadActionResult{}, fmt.Errorf("restart deployment %s/%s: %w", namespace, name, err)
+	}
+
+	return WorkloadActionResult{
+		Kind:      "Deployment",
+		Namespace: namespace,
+		Name:      name,
+		Operation: "restart",
+		Message:   "Deployment 滚动重启已触发",
+		Timestamp: time.Now().Format("2006-01-02 15:04:05"),
+	}, nil
+}
+
+func (s *ClusterService) ScaleStatefulSet(
+	ctx context.Context,
+	namespace string,
+	name string,
+	replicas int32,
+) (WorkloadActionResult, error) {
+	namespace = strings.TrimSpace(namespace)
+	name = strings.TrimSpace(name)
+
+	if namespace == "" {
+		return WorkloadActionResult{}, fmt.Errorf("statefulset namespace is required")
+	}
+	if name == "" {
+		return WorkloadActionResult{}, fmt.Errorf("statefulset name is required")
+	}
+	if replicas < 0 {
+		return WorkloadActionResult{}, fmt.Errorf("statefulset replicas must be >= 0")
+	}
+
+	if err := utilretry.RetryOnConflict(utilretry.DefaultRetry, func() error {
+		item, err := s.client.Kubernetes.AppsV1().StatefulSets(namespace).Get(ctx, name, metav1.GetOptions{})
+		if err != nil {
+			return fmt.Errorf("get statefulset %s/%s: %w", namespace, name, err)
+		}
+
+		item.Spec.Replicas = &replicas
+		if _, err := s.client.Kubernetes.AppsV1().StatefulSets(namespace).Update(ctx, item, metav1.UpdateOptions{}); err != nil {
+			return err
+		}
+
+		return nil
+	}); err != nil {
+		return WorkloadActionResult{}, fmt.Errorf("update statefulset replicas for %s/%s: %w", namespace, name, err)
+	}
+
+	return WorkloadActionResult{
+		Kind:      "StatefulSet",
+		Namespace: namespace,
+		Name:      name,
+		Operation: "scale",
+		Message:   fmt.Sprintf("StatefulSet 已调整为 %d 个副本", replicas),
+		Timestamp: time.Now().Format("2006-01-02 15:04:05"),
+	}, nil
+}
+
+func (s *ClusterService) RestartStatefulSet(
+	ctx context.Context,
+	namespace string,
+	name string,
+) (WorkloadActionResult, error) {
+	namespace = strings.TrimSpace(namespace)
+	name = strings.TrimSpace(name)
+
+	if namespace == "" {
+		return WorkloadActionResult{}, fmt.Errorf("statefulset namespace is required")
+	}
+	if name == "" {
+		return WorkloadActionResult{}, fmt.Errorf("statefulset name is required")
+	}
+
+	restartedAt := time.Now().Format(time.RFC3339)
+	body, err := json.Marshal(map[string]any{
+		"spec": map[string]any{
+			"template": map[string]any{
+				"metadata": map[string]any{
+					"annotations": map[string]string{
+						"kubectl.kubernetes.io/restartedAt": restartedAt,
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		return WorkloadActionResult{}, fmt.Errorf("marshal statefulset restart patch for %s/%s: %w", namespace, name, err)
+	}
+
+	if _, err := s.client.Kubernetes.AppsV1().StatefulSets(namespace).Patch(
+		ctx,
+		name,
+		types.StrategicMergePatchType,
+		body,
+		metav1.PatchOptions{},
+	); err != nil {
+		return WorkloadActionResult{}, fmt.Errorf("restart statefulset %s/%s: %w", namespace, name, err)
+	}
+
+	return WorkloadActionResult{
+		Kind:      "StatefulSet",
+		Namespace: namespace,
+		Name:      name,
+		Operation: "restart",
+		Message:   "StatefulSet 滚动重启已触发",
+		Timestamp: time.Now().Format("2006-01-02 15:04:05"),
+	}, nil
+}
+
+func (s *ClusterService) RestartDaemonSet(
+	ctx context.Context,
+	namespace string,
+	name string,
+) (WorkloadActionResult, error) {
+	namespace = strings.TrimSpace(namespace)
+	name = strings.TrimSpace(name)
+
+	if namespace == "" {
+		return WorkloadActionResult{}, fmt.Errorf("daemonset namespace is required")
+	}
+	if name == "" {
+		return WorkloadActionResult{}, fmt.Errorf("daemonset name is required")
+	}
+
+	restartedAt := time.Now().Format(time.RFC3339)
+	body, err := json.Marshal(map[string]any{
+		"spec": map[string]any{
+			"template": map[string]any{
+				"metadata": map[string]any{
+					"annotations": map[string]string{
+						"kubectl.kubernetes.io/restartedAt": restartedAt,
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		return WorkloadActionResult{}, fmt.Errorf("marshal daemonset restart patch for %s/%s: %w", namespace, name, err)
+	}
+
+	if _, err := s.client.Kubernetes.AppsV1().DaemonSets(namespace).Patch(
+		ctx,
+		name,
+		types.StrategicMergePatchType,
+		body,
+		metav1.PatchOptions{},
+	); err != nil {
+		return WorkloadActionResult{}, fmt.Errorf("restart daemonset %s/%s: %w", namespace, name, err)
+	}
+
+	return WorkloadActionResult{
+		Kind:      "DaemonSet",
+		Namespace: namespace,
+		Name:      name,
+		Operation: "restart",
+		Message:   "DaemonSet 滚动重启已触发",
+		Timestamp: time.Now().Format("2006-01-02 15:04:05"),
+	}, nil
 }
 
 func (s *ClusterService) GetOverviewSummary(ctx context.Context, namespace string) (OverviewSummary, error) {

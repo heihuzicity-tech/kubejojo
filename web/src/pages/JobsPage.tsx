@@ -1,6 +1,8 @@
+import { MoreOutlined } from '@ant-design/icons';
+import { App } from 'antd';
 import { type ProColumns } from '@ant-design/pro-components';
-import { useQuery } from '@tanstack/react-query';
-import { Alert, Drawer, Space, Tag, Typography } from 'antd';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { Alert, Button, Drawer, Dropdown, Space, Tag, Typography } from 'antd';
 import { useMemo, useState } from 'react';
 
 import { ResourceListPage, type ResourceMetric } from '../components/resource-list/ResourceListPage';
@@ -9,6 +11,7 @@ import {
   type JobItem,
   type JobPodItem,
   getJobs,
+  setJobSuspend,
 } from '../services/cluster';
 import { useAppStore } from '../stores/appStore';
 
@@ -166,7 +169,16 @@ function completionSummary(item: JobItem) {
   return `${item.succeeded}/${item.desiredCompletions}`;
 }
 
+function canToggleJobSuspend(item: JobItem) {
+  return item.status !== 'Completed' && item.status !== 'Failed';
+}
+
+function nextJobSuspendAction(item: JobItem) {
+  return item.status === 'Suspended' ? 'Resume' : 'Suspend';
+}
+
 export function JobsPage() {
+  const { message, modal } = App.useApp();
   const sessionMode = useAppStore((state) => state.sessionMode);
   const currentNamespace = useAppStore((state) => state.namespace);
   const [detailItem, setDetailItem] = useState<JobItem>();
@@ -179,6 +191,42 @@ export function JobsPage() {
 
   const items = sessionMode === 'demo' || !jobsQuery.data ? demoJobs : jobsQuery.data;
   const namespaceLabel = displayNamespace(currentNamespace);
+
+  const refreshJobs = async () => {
+    await jobsQuery.refetch();
+  };
+
+  const suspendMutation = useMutation({
+    mutationFn: ({ namespace, name, suspend }: { namespace: string; name: string; suspend: boolean }) =>
+      setJobSuspend(namespace, name, suspend),
+    onSuccess: async (result) => {
+      void message.success(result.message);
+      setDetailItem(undefined);
+      await refreshJobs();
+    },
+  });
+
+  const handleSuspendToggle = async (item: JobItem) => {
+    await suspendMutation.mutateAsync({
+      namespace: item.namespace,
+      name: item.name,
+      suspend: item.status !== 'Suspended',
+    });
+  };
+
+  const openSuspendConfirm = (item: JobItem) => {
+    const nextAction = nextJobSuspendAction(item);
+    modal.confirm({
+      title: `${nextAction} ${item.name} ?`,
+      content:
+        item.status === 'Suspended'
+          ? 'This resumes Job scheduling.'
+          : 'This suspends the Job and prevents new Pods from being created.',
+      okText: nextAction,
+      cancelText: 'Cancel',
+      onOk: async () => handleSuspendToggle(item),
+    });
+  };
 
   const metrics = useMemo<ResourceMetric[]>(() => {
     const completedCount = items.filter((item) => item.status === 'Completed').length;
@@ -267,6 +315,41 @@ export function JobsPage() {
       width: 100,
       render: (value) => value ?? '-',
     },
+    {
+      title: 'Actions',
+      key: 'actions',
+      width: 96,
+      fixed: 'right',
+      render: (_, item) =>
+        sessionMode === 'demo' ? (
+          <Tag>Demo</Tag>
+        ) : !canToggleJobSuspend(item) ? null : (
+          <div onClick={(event) => event.stopPropagation()}>
+            <Dropdown
+              trigger={['click']}
+              menu={{
+                items: [{ key: 'suspend', label: nextJobSuspendAction(item) }],
+                onClick: ({ key, domEvent }) => {
+                  domEvent.stopPropagation();
+                  if (key === 'suspend') {
+                    openSuspendConfirm(item);
+                  }
+                },
+              }}
+            >
+              <Button
+                size="small"
+                type="text"
+                shape="circle"
+                icon={<MoreOutlined />}
+                loading={suspendMutation.isPending}
+                aria-label="More actions"
+                title="More actions"
+              />
+            </Dropdown>
+          </div>
+        ),
+    },
   ];
 
   const detailConditions = detailItem?.conditions ?? [];
@@ -292,7 +375,7 @@ export function JobsPage() {
         columns={columns}
         rowKey={(record) => `${record.namespace}/${record.name}`}
         loading={sessionMode === 'token' && jobsQuery.isLoading}
-        onRefresh={() => jobsQuery.refetch()}
+        onRefresh={refreshJobs}
         toolbarExtra={<Tag color="blue">当前上下文: {namespaceLabel}</Tag>}
         searchPlaceholder="搜索 Job、Owner、状态、镜像或标签"
         searchPredicate={(record, keyword) =>
@@ -326,6 +409,15 @@ export function JobsPage() {
                 {detailItem.metricsAvailable ? 'Metrics Ready' : 'Metrics Unavailable'}
               </Tag>
               <Tag color="blue">{ownerSummary(detailItem)}</Tag>
+              {sessionMode === 'token' && canToggleJobSuspend(detailItem) ? (
+                <Button
+                  size="small"
+                  loading={suspendMutation.isPending}
+                  onClick={() => openSuspendConfirm(detailItem)}
+                >
+                  {nextJobSuspendAction(detailItem)}
+                </Button>
+              ) : null}
             </div>
 
             <div>

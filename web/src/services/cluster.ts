@@ -136,6 +136,15 @@ export type DeploymentItem = {
   pods: DeploymentPodItem[];
 };
 
+export type WorkloadActionResult = {
+  kind: string;
+  namespace: string;
+  name: string;
+  operation: string;
+  message: string;
+  timestamp: string;
+};
+
 export type ReplicaSetConditionItem = DeploymentConditionItem;
 export type ReplicaSetPodItem = DeploymentPodItem;
 export type DaemonSetConditionItem = DeploymentConditionItem;
@@ -434,6 +443,36 @@ export async function getDeployments(namespace?: string) {
   return data.data;
 }
 
+export async function scaleDeployment(namespace: string, name: string, replicas: number) {
+  const { data } = await http.post<Envelope<WorkloadActionResult>>(
+    `/deployments/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/scale`,
+    { replicas },
+  );
+  return data.data;
+}
+
+export async function restartDeployment(namespace: string, name: string) {
+  const { data } = await http.post<Envelope<WorkloadActionResult>>(
+    `/deployments/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/restart`,
+  );
+  return data.data;
+}
+
+export async function scaleStatefulSet(namespace: string, name: string, replicas: number) {
+  const { data } = await http.post<Envelope<WorkloadActionResult>>(
+    `/statefulsets/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/scale`,
+    { replicas },
+  );
+  return data.data;
+}
+
+export async function restartStatefulSet(namespace: string, name: string) {
+  const { data } = await http.post<Envelope<WorkloadActionResult>>(
+    `/statefulsets/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/restart`,
+  );
+  return data.data;
+}
+
 export async function getStatefulSets(namespace?: string) {
   const { data } = await http.get<Envelope<StatefulSetItem[]>>('/statefulsets', {
     params: namespace ? { namespace } : undefined,
@@ -448,10 +487,25 @@ export async function getReplicaSets(namespace?: string) {
   return data.data;
 }
 
+export async function scaleReplicaSet(namespace: string, name: string, replicas: number) {
+  const { data } = await http.post<Envelope<WorkloadActionResult>>(
+    `/replicasets/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/scale`,
+    { replicas },
+  );
+  return data.data;
+}
+
 export async function getDaemonSets(namespace?: string) {
   const { data } = await http.get<Envelope<DaemonSetItem[]>>('/daemonsets', {
     params: namespace ? { namespace } : undefined,
   });
+  return data.data;
+}
+
+export async function restartDaemonSet(namespace: string, name: string) {
+  const { data } = await http.post<Envelope<WorkloadActionResult>>(
+    `/daemonsets/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/restart`,
+  );
   return data.data;
 }
 
@@ -462,10 +516,26 @@ export async function getJobs(namespace?: string) {
   return data.data;
 }
 
+export async function setJobSuspend(namespace: string, name: string, suspend: boolean) {
+  const { data } = await http.post<Envelope<WorkloadActionResult>>(
+    `/jobs/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/suspend`,
+    { suspend },
+  );
+  return data.data;
+}
+
 export async function getCronJobs(namespace?: string) {
   const { data } = await http.get<Envelope<CronJobItem[]>>('/cronjobs', {
     params: namespace ? { namespace } : undefined,
   });
+  return data.data;
+}
+
+export async function setCronJobSuspend(namespace: string, name: string, suspend: boolean) {
+  const { data } = await http.post<Envelope<WorkloadActionResult>>(
+    `/cronjobs/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/suspend`,
+    { suspend },
+  );
   return data.data;
 }
 

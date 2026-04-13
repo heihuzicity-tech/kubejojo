@@ -1,6 +1,8 @@
+import { MoreOutlined } from '@ant-design/icons';
+import { App } from 'antd';
 import { type ProColumns } from '@ant-design/pro-components';
-import { useQuery } from '@tanstack/react-query';
-import { Alert, Drawer, Space, Tag, Typography } from 'antd';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { Alert, Button, Drawer, Dropdown, Space, Tag, Typography } from 'antd';
 import { useMemo, useState } from 'react';
 
 import { ResourceListPage, type ResourceMetric } from '../components/resource-list/ResourceListPage';
@@ -8,6 +10,7 @@ import {
   type CronJobItem,
   type CronJobJobItem,
   getCronJobs,
+  setCronJobSuspend,
 } from '../services/cluster';
 import { useAppStore } from '../stores/appStore';
 
@@ -121,6 +124,7 @@ function DetailStat({
 }
 
 export function CronJobsPage() {
+  const { message, modal } = App.useApp();
   const sessionMode = useAppStore((state) => state.sessionMode);
   const currentNamespace = useAppStore((state) => state.namespace);
   const [detailItem, setDetailItem] = useState<CronJobItem>();
@@ -133,6 +137,43 @@ export function CronJobsPage() {
 
   const items = sessionMode === 'demo' || !cronJobsQuery.data ? demoCronJobs : cronJobsQuery.data;
   const namespaceLabel = displayNamespace(currentNamespace);
+
+  const refreshCronJobs = async () => {
+    await cronJobsQuery.refetch();
+  };
+
+  const suspendMutation = useMutation({
+    mutationFn: ({ namespace, name, suspend }: { namespace: string; name: string; suspend: boolean }) =>
+      setCronJobSuspend(namespace, name, suspend),
+    onSuccess: async (result) => {
+      void message.success(result.message);
+      setDetailItem(undefined);
+      await refreshCronJobs();
+    },
+  });
+
+  const handleSuspendToggle = async (item: CronJobItem) => {
+    await suspendMutation.mutateAsync({
+      namespace: item.namespace,
+      name: item.name,
+      suspend: !item.suspend,
+    });
+  };
+
+  const nextCronJobSuspendAction = (item: CronJobItem) => (item.suspend ? 'Resume' : 'Suspend');
+
+  const openSuspendConfirm = (item: CronJobItem) => {
+    const nextAction = nextCronJobSuspendAction(item);
+    modal.confirm({
+      title: `${nextAction} ${item.name} ?`,
+      content: item.suspend
+        ? 'This resumes CronJob scheduling.'
+        : 'This suspends future runs but does not stop already created Jobs.',
+      okText: nextAction,
+      cancelText: 'Cancel',
+      onOk: async () => handleSuspendToggle(item),
+    });
+  };
 
   const metrics = useMemo<ResourceMetric[]>(() => {
     const healthyCount = items.filter((item) => item.status === 'Healthy').length;
@@ -219,6 +260,41 @@ export function CronJobsPage() {
       width: 100,
       render: (value) => value ?? '-',
     },
+    {
+      title: 'Actions',
+      key: 'actions',
+      width: 96,
+      fixed: 'right',
+      render: (_, item) =>
+        sessionMode === 'demo' ? (
+          <Tag>Demo</Tag>
+        ) : (
+          <div onClick={(event) => event.stopPropagation()}>
+            <Dropdown
+              trigger={['click']}
+              menu={{
+                items: [{ key: 'suspend', label: nextCronJobSuspendAction(item) }],
+                onClick: ({ key, domEvent }) => {
+                  domEvent.stopPropagation();
+                  if (key === 'suspend') {
+                    openSuspendConfirm(item);
+                  }
+                },
+              }}
+            >
+              <Button
+                size="small"
+                type="text"
+                shape="circle"
+                icon={<MoreOutlined />}
+                loading={suspendMutation.isPending}
+                aria-label="More actions"
+                title="More actions"
+              />
+            </Dropdown>
+          </div>
+        ),
+    },
   ];
 
   const detailImages = detailItem?.images ?? [];
@@ -243,7 +319,7 @@ export function CronJobsPage() {
         columns={columns}
         rowKey={(record) => `${record.namespace}/${record.name}`}
         loading={sessionMode === 'token' && cronJobsQuery.isLoading}
-        onRefresh={() => cronJobsQuery.refetch()}
+        onRefresh={refreshCronJobs}
         toolbarExtra={<Tag color="blue">当前上下文: {namespaceLabel}</Tag>}
         searchPlaceholder="搜索 CronJob、Schedule、状态、镜像或标签"
         searchPredicate={(record, keyword) =>
@@ -279,6 +355,15 @@ export function CronJobsPage() {
               <Tag color={detailItem.metricsAvailable ? 'geekblue' : 'default'}>
                 {detailItem.metricsAvailable ? 'Metrics Ready' : 'Metrics Unavailable'}
               </Tag>
+              {sessionMode === 'token' ? (
+                <Button
+                  size="small"
+                  loading={suspendMutation.isPending}
+                  onClick={() => openSuspendConfirm(detailItem)}
+                >
+                  {nextCronJobSuspendAction(detailItem)}
+                </Button>
+              ) : null}
             </div>
 
             <div>

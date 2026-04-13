@@ -31,6 +31,14 @@ type loginResponse struct {
 	DefaultNamespace string              `json:"defaultNamespace"`
 }
 
+type scaleDeploymentRequest struct {
+	Replicas int32 `json:"replicas"`
+}
+
+type suspendRequest struct {
+	Suspend bool `json:"suspend"`
+}
+
 func newRouter(clusterFactory *kube.Factory) *gin.Engine {
 	router := gin.New()
 	router.Use(gin.Logger(), gin.Recovery())
@@ -179,6 +187,45 @@ func newRouter(clusterFactory *kube.Factory) *gin.Engine {
 				c.JSON(http.StatusOK, response.Success(items))
 			})
 
+			authorized.POST("/deployments/:namespace/:name/scale", func(c *gin.Context) {
+				var req scaleDeploymentRequest
+				if err := c.ShouldBindJSON(&req); err != nil {
+					c.JSON(http.StatusBadRequest, response.Failure("INVALID_SCALE_REQUEST", "请求体格式不正确"))
+					return
+				}
+				if req.Replicas < 0 {
+					c.JSON(http.StatusBadRequest, response.Failure("INVALID_REPLICAS", "副本数不能小于 0"))
+					return
+				}
+
+				result, err := mustClusterService(c).ScaleDeployment(
+					c.Request.Context(),
+					c.Param("namespace"),
+					c.Param("name"),
+					req.Replicas,
+				)
+				if err != nil {
+					respondWithClusterError(c, "SCALE_DEPLOYMENT_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(result))
+			})
+
+			authorized.POST("/deployments/:namespace/:name/restart", func(c *gin.Context) {
+				result, err := mustClusterService(c).RestartDeployment(
+					c.Request.Context(),
+					c.Param("namespace"),
+					c.Param("name"),
+				)
+				if err != nil {
+					respondWithClusterError(c, "RESTART_DEPLOYMENT_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(result))
+			})
+
 			authorized.GET("/statefulsets", func(c *gin.Context) {
 				items, err := mustClusterService(c).ListStatefulSets(
 					c.Request.Context(),
@@ -190,6 +237,45 @@ func newRouter(clusterFactory *kube.Factory) *gin.Engine {
 				}
 
 				c.JSON(http.StatusOK, response.Success(items))
+			})
+
+			authorized.POST("/statefulsets/:namespace/:name/scale", func(c *gin.Context) {
+				var req scaleDeploymentRequest
+				if err := c.ShouldBindJSON(&req); err != nil {
+					c.JSON(http.StatusBadRequest, response.Failure("INVALID_SCALE_REQUEST", "请求体格式不正确"))
+					return
+				}
+				if req.Replicas < 0 {
+					c.JSON(http.StatusBadRequest, response.Failure("INVALID_REPLICAS", "副本数不能小于 0"))
+					return
+				}
+
+				result, err := mustClusterService(c).ScaleStatefulSet(
+					c.Request.Context(),
+					c.Param("namespace"),
+					c.Param("name"),
+					req.Replicas,
+				)
+				if err != nil {
+					respondWithClusterError(c, "SCALE_STATEFULSET_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(result))
+			})
+
+			authorized.POST("/statefulsets/:namespace/:name/restart", func(c *gin.Context) {
+				result, err := mustClusterService(c).RestartStatefulSet(
+					c.Request.Context(),
+					c.Param("namespace"),
+					c.Param("name"),
+				)
+				if err != nil {
+					respondWithClusterError(c, "RESTART_STATEFULSET_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(result))
 			})
 
 			authorized.GET("/jobs", func(c *gin.Context) {
@@ -205,6 +291,27 @@ func newRouter(clusterFactory *kube.Factory) *gin.Engine {
 				c.JSON(http.StatusOK, response.Success(items))
 			})
 
+			authorized.POST("/jobs/:namespace/:name/suspend", func(c *gin.Context) {
+				var req suspendRequest
+				if err := c.ShouldBindJSON(&req); err != nil {
+					c.JSON(http.StatusBadRequest, response.Failure("INVALID_SUSPEND_REQUEST", "请求体格式不正确"))
+					return
+				}
+
+				result, err := mustClusterService(c).SetJobSuspend(
+					c.Request.Context(),
+					c.Param("namespace"),
+					c.Param("name"),
+					req.Suspend,
+				)
+				if err != nil {
+					respondWithClusterError(c, "SET_JOB_SUSPEND_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(result))
+			})
+
 			authorized.GET("/cronjobs", func(c *gin.Context) {
 				items, err := mustClusterService(c).ListCronJobs(
 					c.Request.Context(),
@@ -216,6 +323,27 @@ func newRouter(clusterFactory *kube.Factory) *gin.Engine {
 				}
 
 				c.JSON(http.StatusOK, response.Success(items))
+			})
+
+			authorized.POST("/cronjobs/:namespace/:name/suspend", func(c *gin.Context) {
+				var req suspendRequest
+				if err := c.ShouldBindJSON(&req); err != nil {
+					c.JSON(http.StatusBadRequest, response.Failure("INVALID_SUSPEND_REQUEST", "请求体格式不正确"))
+					return
+				}
+
+				result, err := mustClusterService(c).SetCronJobSuspend(
+					c.Request.Context(),
+					c.Param("namespace"),
+					c.Param("name"),
+					req.Suspend,
+				)
+				if err != nil {
+					respondWithClusterError(c, "SET_CRONJOB_SUSPEND_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(result))
 			})
 
 			authorized.GET("/replicasets", func(c *gin.Context) {
@@ -231,6 +359,31 @@ func newRouter(clusterFactory *kube.Factory) *gin.Engine {
 				c.JSON(http.StatusOK, response.Success(items))
 			})
 
+			authorized.POST("/replicasets/:namespace/:name/scale", func(c *gin.Context) {
+				var req scaleDeploymentRequest
+				if err := c.ShouldBindJSON(&req); err != nil {
+					c.JSON(http.StatusBadRequest, response.Failure("INVALID_SCALE_REQUEST", "请求体格式不正确"))
+					return
+				}
+				if req.Replicas < 0 {
+					c.JSON(http.StatusBadRequest, response.Failure("INVALID_REPLICAS", "副本数不能小于 0"))
+					return
+				}
+
+				result, err := mustClusterService(c).ScaleReplicaSet(
+					c.Request.Context(),
+					c.Param("namespace"),
+					c.Param("name"),
+					req.Replicas,
+				)
+				if err != nil {
+					respondWithClusterError(c, "SCALE_REPLICASET_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(result))
+			})
+
 			authorized.GET("/daemonsets", func(c *gin.Context) {
 				items, err := mustClusterService(c).ListDaemonSets(
 					c.Request.Context(),
@@ -242,6 +395,20 @@ func newRouter(clusterFactory *kube.Factory) *gin.Engine {
 				}
 
 				c.JSON(http.StatusOK, response.Success(items))
+			})
+
+			authorized.POST("/daemonsets/:namespace/:name/restart", func(c *gin.Context) {
+				result, err := mustClusterService(c).RestartDaemonSet(
+					c.Request.Context(),
+					c.Param("namespace"),
+					c.Param("name"),
+				)
+				if err != nil {
+					respondWithClusterError(c, "RESTART_DAEMONSET_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(result))
 			})
 
 			authorized.GET("/topology/graph", func(c *gin.Context) {

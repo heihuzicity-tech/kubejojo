@@ -1,6 +1,8 @@
+import { MoreOutlined } from '@ant-design/icons';
+import { App } from 'antd';
 import { type ProColumns } from '@ant-design/pro-components';
-import { useQuery } from '@tanstack/react-query';
-import { Alert, Drawer, Space, Tag, Typography } from 'antd';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { Alert, Button, Drawer, Dropdown, Popconfirm, Space, Tag, Typography } from 'antd';
 import { useMemo, useState } from 'react';
 
 import { ResourceListPage, type ResourceMetric } from '../components/resource-list/ResourceListPage';
@@ -9,6 +11,7 @@ import {
   type DaemonSetItem,
   type DaemonSetPodItem,
   getDaemonSets,
+  restartDaemonSet,
 } from '../services/cluster';
 import { useAppStore } from '../stores/appStore';
 
@@ -151,6 +154,7 @@ function DetailStat({
 }
 
 export function DaemonSetsPage() {
+  const { message, modal } = App.useApp();
   const sessionMode = useAppStore((state) => state.sessionMode);
   const currentNamespace = useAppStore((state) => state.namespace);
   const [detailItem, setDetailItem] = useState<DaemonSetItem>();
@@ -166,6 +170,37 @@ export function DaemonSetsPage() {
       ? demoDaemonSets
       : daemonSetsQuery.data;
   const namespaceLabel = displayNamespace(currentNamespace);
+
+  const refreshDaemonSets = async () => {
+    await daemonSetsQuery.refetch();
+  };
+
+  const restartMutation = useMutation({
+    mutationFn: ({ namespace, name }: { namespace: string; name: string }) =>
+      restartDaemonSet(namespace, name),
+    onSuccess: async (result) => {
+      void message.success(result.message);
+      setDetailItem(undefined);
+      await refreshDaemonSets();
+    },
+  });
+
+  const handleRestart = async (item: DaemonSetItem) => {
+    await restartMutation.mutateAsync({
+      namespace: item.namespace,
+      name: item.name,
+    });
+  };
+
+  const openRestartConfirm = (item: DaemonSetItem) => {
+    modal.confirm({
+      title: `Restart ${item.name} ?`,
+      content: 'This triggers a rolling update and recreates DaemonSet Pods.',
+      okText: 'Restart',
+      cancelText: 'Cancel',
+      onOk: async () => handleRestart(item),
+    });
+  };
 
   const metrics = useMemo<ResourceMetric[]>(() => {
     const healthyCount = items.filter((item) => item.status === 'Healthy' || item.status === 'ScaledDown').length;
@@ -260,6 +295,43 @@ export function DaemonSetsPage() {
       width: 100,
       render: (value) => value ?? '-',
     },
+    {
+      title: 'Actions',
+      key: 'actions',
+      width: 96,
+      fixed: 'right',
+      render: (_, item) =>
+        sessionMode === 'demo' ? (
+          <Tag>Demo</Tag>
+        ) : (
+          <div onClick={(event) => event.stopPropagation()}>
+            <Dropdown
+              trigger={['click']}
+              menu={{
+                items: [
+                  { key: 'restart', label: <span className="text-amber-700">Restart</span> },
+                ],
+                onClick: ({ key, domEvent }) => {
+                  domEvent.stopPropagation();
+                  if (key === 'restart') {
+                    openRestartConfirm(item);
+                  }
+                },
+              }}
+            >
+              <Button
+                size="small"
+                type="text"
+                shape="circle"
+                icon={<MoreOutlined />}
+                loading={restartMutation.isPending}
+                aria-label="More actions"
+                title="More actions"
+              />
+            </Dropdown>
+          </div>
+        ),
+    },
   ];
 
   const detailConditions = detailItem?.conditions ?? [];
@@ -286,7 +358,7 @@ export function DaemonSetsPage() {
         columns={columns}
         rowKey={(record) => `${record.namespace}/${record.name}`}
         loading={sessionMode === 'token' && daemonSetsQuery.isLoading}
-        onRefresh={() => daemonSetsQuery.refetch()}
+        onRefresh={refreshDaemonSets}
         toolbarExtra={<Tag color="blue">当前上下文: {namespaceLabel}</Tag>}
         searchPlaceholder="搜索 DaemonSet、状态、镜像、selector 或标签"
         searchPredicate={(record, keyword) =>
@@ -319,6 +391,21 @@ export function DaemonSetsPage() {
               <Tag color={detailItem.metricsAvailable ? 'geekblue' : 'default'}>
                 {detailItem.metricsAvailable ? 'Metrics Ready' : 'Metrics Unavailable'}
               </Tag>
+              {sessionMode === 'token' ? (
+                <Space size={8} onClick={(event) => event.stopPropagation()}>
+                  <Popconfirm
+                    title={`Restart ${detailItem.name} ?`}
+                    description="This triggers a rolling update and recreates DaemonSet Pods."
+                    okText="Restart"
+                    cancelText="Cancel"
+                    onConfirm={() => void handleRestart(detailItem)}
+                  >
+                    <Button size="small" loading={restartMutation.isPending}>
+                      Restart
+                    </Button>
+                  </Popconfirm>
+                </Space>
+              ) : null}
             </div>
 
             <div>

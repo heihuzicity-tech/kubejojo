@@ -335,7 +335,7 @@ export function PodsPage() {
         loading={sessionMode === 'token' && podsQuery.isLoading}
         onRefresh={() => podsQuery.refetch()}
         toolbarExtra={<Tag color="blue">当前上下文: {namespaceLabel}</Tag>}
-        searchPlaceholder="搜索 Pod、节点、状态、Owner 或标签"
+        searchPlaceholder="搜索 Pod、节点、状态、所属资源或标签"
         searchPredicate={(record, keyword) =>
           record.name.toLowerCase().includes(keyword) ||
           record.nodeName.toLowerCase().includes(keyword) ||
