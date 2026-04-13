@@ -2,12 +2,12 @@ import { MoreOutlined } from '@ant-design/icons';
 import { App } from 'antd';
 import { type ProColumns } from '@ant-design/pro-components';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Alert, Button, Drawer, Dropdown, Input, Modal, Select, Space, Tag, Typography } from 'antd';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, Button, Drawer, Dropdown, Modal, Select, Space, Tag, Typography } from 'antd';
+import { useMemo, useState } from 'react';
 
+import { PodExecTerminalModal } from '../components/pod/PodExecTerminalModal';
 import { ResourceListPage, type ResourceMetric } from '../components/resource-list/ResourceListPage';
 import {
-  buildPodExecWebSocketUrl,
   type PodConditionItem,
   type PodContainerItem,
   type PodEventItem,
@@ -243,21 +243,6 @@ function hasContainerDiagnostics(container: PodContainerItem) {
   );
 }
 
-function execStatusColor(status: 'idle' | 'connecting' | 'connected' | 'closed' | 'error') {
-  switch (status) {
-    case 'connected':
-      return 'green';
-    case 'connecting':
-      return 'blue';
-    case 'error':
-      return 'red';
-    case 'closed':
-      return 'default';
-    default:
-      return 'default';
-  }
-}
-
 function MetricValue({
   available,
   value,
@@ -306,14 +291,6 @@ export function PodsPage() {
   const [logTarget, setLogTarget] = useState<PodItem>();
   const [logContainer, setLogContainer] = useState<string>();
   const [execTarget, setExecTarget] = useState<PodItem>();
-  const [execContainer, setExecContainer] = useState<string>();
-  const [execCommand, setExecCommand] = useState('/bin/sh');
-  const [execInput, setExecInput] = useState('');
-  const [execOutput, setExecOutput] = useState('');
-  const [execStatus, setExecStatus] = useState<'idle' | 'connecting' | 'connected' | 'closed' | 'error'>('idle');
-  const [execSessionKey, setExecSessionKey] = useState(0);
-  const execSocketRef = useRef<WebSocket | null>(null);
-  const execOutputRef = useRef<HTMLPreElement | null>(null);
 
   const podsQuery = useQuery({
     queryKey: ['pods', currentNamespace],
@@ -358,12 +335,6 @@ export function PodsPage() {
 
   const openExecModal = (item: PodItem) => {
     setExecTarget(item);
-    setExecContainer(item.containers[0]?.name);
-    setExecCommand('/bin/sh');
-    setExecInput('');
-    setExecOutput('');
-    setExecStatus('idle');
-    setExecSessionKey((value) => value + 1);
   };
 
   const openDeleteConfirm = (item: PodItem) => {
@@ -383,68 +354,6 @@ export function PodsPage() {
           name: item.name,
         }),
     });
-  };
-
-  useEffect(() => {
-    if (!execTarget || !execContainer || !token || sessionMode !== 'token') {
-      return;
-    }
-
-    const socket = new WebSocket(
-      buildPodExecWebSocketUrl(token, execTarget.namespace, execTarget.name, execContainer, execCommand),
-    );
-    execSocketRef.current = socket;
-    setExecStatus('connecting');
-    setExecOutput(`[connecting] ${execCommand} on ${execContainer}\n`);
-
-    socket.onopen = () => {
-      setExecStatus('connected');
-      setExecOutput((current) => `${current}[connected]\n`);
-    };
-
-    socket.onmessage = (event) => {
-      setExecOutput((current) => `${current}${String(event.data)}`);
-    };
-
-    socket.onerror = () => {
-      setExecStatus('error');
-    };
-
-    socket.onclose = () => {
-      setExecStatus((current) => (current === 'error' ? 'error' : 'closed'));
-      if (execSocketRef.current === socket) {
-        execSocketRef.current = null;
-      }
-    };
-
-    return () => {
-      socket.close();
-      if (execSocketRef.current === socket) {
-        execSocketRef.current = null;
-      }
-    };
-  }, [execTarget, execContainer, execCommand, execSessionKey, sessionMode, token]);
-
-  useEffect(() => {
-    if (!execOutputRef.current) {
-      return;
-    }
-
-    execOutputRef.current.scrollTop = execOutputRef.current.scrollHeight;
-  }, [execOutput]);
-
-  const handleExecSubmit = () => {
-    if (!execInput.trim()) {
-      return;
-    }
-
-    if (!execSocketRef.current || execSocketRef.current.readyState !== WebSocket.OPEN) {
-      void message.warning('Exec session is not connected');
-      return;
-    }
-
-    execSocketRef.current.send(execInput.endsWith('\n') ? execInput : `${execInput}\n`);
-    setExecInput('');
   };
 
   const metrics = useMemo<ResourceMetric[]>(() => {
@@ -862,86 +771,12 @@ export function PodsPage() {
         ) : null}
       </Drawer>
 
-      <Modal
-        title={
-          execTarget ? `Pod Exec / ${execTarget.namespace}/${execTarget.name}` : 'Pod Exec'
-        }
+      <PodExecTerminalModal
         open={Boolean(execTarget)}
-        onCancel={() => {
-          execSocketRef.current?.close();
-          setExecTarget(undefined);
-          setExecContainer(undefined);
-          setExecInput('');
-          setExecOutput('');
-          setExecStatus('idle');
-        }}
-        footer={null}
-        width={920}
-      >
-        <section className="space-y-4">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <Space wrap>
-              <Typography.Text type="secondary">Container</Typography.Text>
-              <Select
-                value={execContainer}
-                options={
-                  execTarget?.containers.map((item) => ({
-                    label: item.name,
-                    value: item.name,
-                  })) ?? []
-                }
-                onChange={setExecContainer}
-                style={{ minWidth: 200 }}
-              />
-              <Typography.Text type="secondary">Shell</Typography.Text>
-              <Select
-                value={execCommand}
-                options={[
-                  { label: '/bin/sh', value: '/bin/sh' },
-                  { label: '/bin/bash', value: '/bin/bash' },
-                ]}
-                onChange={setExecCommand}
-                style={{ minWidth: 160 }}
-              />
-              <Tag color={execStatusColor(execStatus)}>{execStatus}</Tag>
-            </Space>
-            <Button onClick={() => setExecSessionKey((value) => value + 1)}>
-              Reconnect
-            </Button>
-          </div>
-
-          <Alert
-            type="info"
-            showIcon
-            message="Lightweight shell session. Commands are sent line by line."
-          />
-
-          <div className="rounded-[16px] border border-slate-200 bg-slate-950 px-4 py-3 text-slate-100">
-            <pre
-              ref={execOutputRef}
-              className="max-h-[420px] overflow-auto whitespace-pre-wrap break-all font-mono text-xs leading-6 text-slate-100"
-            >
-              {execOutput || 'No exec output yet.'}
-            </pre>
-          </div>
-
-          <div className="flex flex-col gap-3 md:flex-row">
-            <Input
-              value={execInput}
-              onChange={(event) => setExecInput(event.target.value)}
-              onPressEnter={handleExecSubmit}
-              placeholder="Enter a command, for example ls -la"
-            />
-            <Button
-              type="primary"
-              onClick={handleExecSubmit}
-              disabled={execStatus !== 'connected' || !execInput.trim()}
-            >
-              Send
-            </Button>
-          </div>
-        </section>
-      </Modal>
+        target={execTarget}
+        token={token}
+        onClose={() => setExecTarget(undefined)}
+      />
 
       <Modal
         title={

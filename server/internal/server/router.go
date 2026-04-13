@@ -2,12 +2,15 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 
 	"golang.org/x/net/websocket"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -16,6 +19,7 @@ import (
 
 	"github.com/zhangya/k8s-admin/server/internal/jsonx"
 	"github.com/zhangya/k8s-admin/server/internal/kube"
+	"github.com/zhangya/k8s-admin/server/internal/ptyx"
 	"github.com/zhangya/k8s-admin/server/internal/response"
 	"github.com/zhangya/k8s-admin/server/internal/service"
 )
@@ -46,6 +50,13 @@ type suspendRequest struct {
 type websocketTextWriter struct {
 	conn *websocket.Conn
 	mu   sync.Mutex
+}
+
+type execWebSocketMessage struct {
+	Type string `json:"type"`
+	Data string `json:"data,omitempty"`
+	Cols uint16 `json:"cols,omitempty"`
+	Rows uint16 `json:"rows,omitempty"`
 }
 
 func (w *websocketTextWriter) Write(p []byte) (int, error) {
@@ -123,40 +134,111 @@ func newRouter(clusterFactory *kube.Factory) *gin.Engine {
 						command = "/bin/sh"
 					}
 
-					stdinReader, stdinWriter := io.Pipe()
-					defer stdinReader.Close()
+					execCtx, cancel := context.WithCancel(c.Request.Context())
+					defer cancel()
 
 					outputWriter := &websocketTextWriter{conn: ws}
 
+					cmd, _, err := clusterService.BuildPodExecCommand(
+						execCtx,
+						c.Param("namespace"),
+						c.Param("name"),
+						container,
+						command,
+						true,
+					)
+					if err != nil {
+						_, _ = outputWriter.Write([]byte("\r\n[exec error] " + err.Error() + "\r\n"))
+						return
+					}
+
+					cmd.Env = append(os.Environ(), "TERM=xterm-256color")
+
+					ptmx, err := ptyx.StartWithSize(cmd, &ptyx.Winsize{
+						Cols: 120,
+						Rows: 32,
+					})
+					if err != nil {
+						_, _ = outputWriter.Write([]byte("\r\n[exec error] " + err.Error() + "\r\n"))
+						return
+					}
+					defer ptmx.Close()
+
+					var closeOnce sync.Once
+					closeSession := func() {
+						closeOnce.Do(func() {
+							cancel()
+							_ = ptmx.Close()
+							if cmd.Process != nil {
+								_ = cmd.Process.Kill()
+							}
+						})
+					}
+
 					go func() {
-						defer stdinWriter.Close()
+						buffer := make([]byte, 4096)
 						for {
-							var input string
-							if err := websocket.Message.Receive(ws, &input); err != nil {
-								_ = stdinWriter.CloseWithError(err)
-								return
+							count, readErr := ptmx.Read(buffer)
+							if count > 0 {
+								if _, err := outputWriter.Write(buffer[:count]); err != nil {
+									closeSession()
+									return
+								}
 							}
-							if input == "" {
-								continue
-							}
-							if _, err := stdinWriter.Write([]byte(input)); err != nil {
+							if readErr != nil {
+								if execCtx.Err() == nil &&
+									!errors.Is(readErr, io.EOF) &&
+									!errors.Is(readErr, os.ErrClosed) &&
+									!errors.Is(readErr, syscall.EIO) {
+									_, _ = outputWriter.Write([]byte("\r\n[exec error] " + readErr.Error() + "\r\n"))
+								}
+								closeSession()
 								return
 							}
 						}
 					}()
 
-					if err := clusterService.ExecPod(
-						c.Request.Context(),
-						c.Param("namespace"),
-						c.Param("name"),
-						container,
-						command,
-						stdinReader,
-						outputWriter,
-						outputWriter,
-						false,
-					); err != nil {
-						_, _ = outputWriter.Write([]byte("\r\n[exec error] " + err.Error() + "\r\n"))
+					go func() {
+						if err := cmd.Wait(); err != nil && execCtx.Err() == nil && !errors.Is(err, os.ErrClosed) {
+							_, _ = outputWriter.Write([]byte("\r\n[exec exit] " + err.Error() + "\r\n"))
+						}
+						closeSession()
+						_ = ws.Close()
+					}()
+
+					for {
+						var raw string
+						if err := websocket.Message.Receive(ws, &raw); err != nil {
+							closeSession()
+							return
+						}
+
+						var message execWebSocketMessage
+						if err := json.Unmarshal([]byte(raw), &message); err != nil {
+							_, _ = outputWriter.Write([]byte("\r\n[exec error] invalid websocket payload\r\n"))
+							continue
+						}
+
+						switch message.Type {
+						case "input":
+							if message.Data == "" {
+								continue
+							}
+							if _, err := io.WriteString(ptmx, message.Data); err != nil {
+								closeSession()
+								return
+							}
+						case "resize":
+							if message.Cols == 0 || message.Rows == 0 {
+								continue
+							}
+							if err := ptyx.Setsize(ptmx, &ptyx.Winsize{
+								Cols: message.Cols,
+								Rows: message.Rows,
+							}); err != nil {
+								_, _ = outputWriter.Write([]byte("\r\n[exec error] resize failed\r\n"))
+							}
+						}
 					}
 				},
 			}.ServeHTTP(c.Writer, c.Request)

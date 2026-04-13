@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os/exec"
 	"sort"
 	"strings"
@@ -749,46 +748,43 @@ func (s *ClusterService) GetPodLogs(
 	}, nil
 }
 
-func (s *ClusterService) ExecPod(
+func (s *ClusterService) BuildPodExecCommand(
 	ctx context.Context,
 	namespace string,
 	name string,
 	container string,
 	command string,
-	stdin io.Reader,
-	stdout io.Writer,
-	stderr io.Writer,
 	tty bool,
-) error {
+) (*exec.Cmd, string, error) {
 	namespace = strings.TrimSpace(namespace)
 	name = strings.TrimSpace(name)
 	container = strings.TrimSpace(container)
 	command = strings.TrimSpace(command)
 
 	if namespace == "" {
-		return fmt.Errorf("pod namespace is required")
+		return nil, "", fmt.Errorf("pod namespace is required")
 	}
 	if name == "" {
-		return fmt.Errorf("pod name is required")
+		return nil, "", fmt.Errorf("pod name is required")
 	}
 	if command == "" {
 		command = "/bin/sh"
 	}
 	if strings.TrimSpace(s.client.ConfigPath) == "" {
-		return fmt.Errorf("kubeconfig path is required for exec")
+		return nil, "", fmt.Errorf("kubeconfig path is required for exec")
 	}
 	if strings.TrimSpace(s.client.AccessToken) == "" {
-		return fmt.Errorf("access token is required for exec")
+		return nil, "", fmt.Errorf("access token is required for exec")
 	}
 
 	pod, err := s.client.Kubernetes.CoreV1().Pods(namespace).Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
-		return fmt.Errorf("get pod %s/%s: %w", namespace, name, err)
+		return nil, "", fmt.Errorf("get pod %s/%s: %w", namespace, name, err)
 	}
 
 	if container == "" {
 		if len(pod.Spec.Containers) == 0 {
-			return fmt.Errorf("pod %s/%s has no containers", namespace, name)
+			return nil, "", fmt.Errorf("pod %s/%s has no containers", namespace, name)
 		}
 		container = pod.Spec.Containers[0].Name
 	}
@@ -807,22 +803,16 @@ func (s *ClusterService) ExecPod(
 	if container != "" {
 		args = append(args, "-c", container)
 	}
-	args = append(args, "--", command)
+	commandArgs := strings.Fields(command)
+	if len(commandArgs) == 0 {
+		commandArgs = []string{"/bin/sh"}
+	}
+	args = append(args, "--")
+	args = append(args, commandArgs...)
 
 	cmd := exec.CommandContext(ctx, "kubectl", args...)
-	cmd.Stdin = stdin
-	cmd.Stdout = stdout
-	if tty || stderr == nil {
-		cmd.Stderr = stdout
-	} else {
-		cmd.Stderr = stderr
-	}
 
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("exec pod %s/%s container %s: %w", namespace, name, container, err)
-	}
-
-	return nil
+	return cmd, container, nil
 }
 
 func (s *ClusterService) ListDeployments(ctx context.Context, namespace string) ([]DeploymentItem, error) {
