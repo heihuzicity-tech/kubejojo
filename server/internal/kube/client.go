@@ -12,11 +12,13 @@ import (
 )
 
 type Client struct {
-	Kubernetes kubernetes.Interface
-	Metrics    metricsclient.Interface
-	ConfigPath string
-	AuthMode   string
-	RawConfig  clientcmdapiConfig
+	Kubernetes  kubernetes.Interface
+	Metrics     metricsclient.Interface
+	RESTConfig  *rest.Config
+	ConfigPath  string
+	AccessToken string
+	AuthMode    string
+	RawConfig   clientcmdapiConfig
 }
 
 type Factory struct {
@@ -101,10 +103,12 @@ func newClient(
 	}
 
 	return &Client{
-		Kubernetes: kubeClient,
-		Metrics:    metricsClient,
-		ConfigPath: configPath,
-		AuthMode:   authMode,
-		RawConfig:  rawConfig,
+		Kubernetes:  kubeClient,
+		Metrics:     metricsClient,
+		RESTConfig:  rest.CopyConfig(config),
+		ConfigPath:  configPath,
+		AccessToken: strings.TrimSpace(config.BearerToken),
+		AuthMode:    authMode,
+		RawConfig:   rawConfig,
 	}, nil
 }

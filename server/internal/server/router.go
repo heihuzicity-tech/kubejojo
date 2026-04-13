@@ -3,10 +3,13 @@ package server
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 
+	"golang.org/x/net/websocket"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
 	"github.com/gin-gonic/gin"
@@ -38,6 +41,22 @@ type scaleDeploymentRequest struct {
 
 type suspendRequest struct {
 	Suspend bool `json:"suspend"`
+}
+
+type websocketTextWriter struct {
+	conn *websocket.Conn
+	mu   sync.Mutex
+}
+
+func (w *websocketTextWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	if err := websocket.Message.Send(w.conn, string(p)); err != nil {
+		return 0, err
+	}
+
+	return len(p), nil
 }
 
 func newRouter(clusterFactory *kube.Factory) *gin.Engine {
@@ -82,6 +101,65 @@ func newRouter(clusterFactory *kube.Factory) *gin.Engine {
 				Namespaces:       jsonx.Slice[string](namespaces),
 				DefaultNamespace: defaultNamespace(namespaces),
 			}))
+		})
+
+		api.GET("/pods/:namespace/:name/exec/ws", func(c *gin.Context) {
+			clusterService, err := clusterServiceFromRequest(clusterFactory, c)
+			if err != nil {
+				c.JSON(http.StatusUnauthorized, response.Failure("UNAUTHORIZED", "缺少有效的 Bearer Token"))
+				return
+			}
+
+			websocket.Server{
+				Handshake: func(*websocket.Config, *http.Request) error {
+					return nil
+				},
+				Handler: func(ws *websocket.Conn) {
+					defer ws.Close()
+
+					container := strings.TrimSpace(c.Query("container"))
+					command := strings.TrimSpace(c.Query("command"))
+					if command == "" {
+						command = "/bin/sh"
+					}
+
+					stdinReader, stdinWriter := io.Pipe()
+					defer stdinReader.Close()
+
+					outputWriter := &websocketTextWriter{conn: ws}
+
+					go func() {
+						defer stdinWriter.Close()
+						for {
+							var input string
+							if err := websocket.Message.Receive(ws, &input); err != nil {
+								_ = stdinWriter.CloseWithError(err)
+								return
+							}
+							if input == "" {
+								continue
+							}
+							if _, err := stdinWriter.Write([]byte(input)); err != nil {
+								return
+							}
+						}
+					}()
+
+					if err := clusterService.ExecPod(
+						c.Request.Context(),
+						c.Param("namespace"),
+						c.Param("name"),
+						container,
+						command,
+						stdinReader,
+						outputWriter,
+						outputWriter,
+						false,
+					); err != nil {
+						_, _ = outputWriter.Write([]byte("\r\n[exec error] " + err.Error() + "\r\n"))
+					}
+				},
+			}.ServeHTTP(c.Writer, c.Request)
 		})
 
 		authorized := api.Group("/")
@@ -487,8 +565,7 @@ func newRouter(clusterFactory *kube.Factory) *gin.Engine {
 
 func clusterServiceMiddleware(clusterFactory *kube.Factory) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		token := bearerTokenFromHeader(c.GetHeader("Authorization"))
-		clusterService, err := clusterServiceFromToken(clusterFactory, token)
+		clusterService, err := clusterServiceFromRequest(clusterFactory, c)
 		if err != nil {
 			c.JSON(http.StatusUnauthorized, response.Failure("UNAUTHORIZED", "缺少有效的 Bearer Token"))
 			c.Abort()
@@ -498,6 +575,15 @@ func clusterServiceMiddleware(clusterFactory *kube.Factory) gin.HandlerFunc {
 		c.Set(clusterServiceContextKey, clusterService)
 		c.Next()
 	}
+}
+
+func clusterServiceFromRequest(clusterFactory *kube.Factory, c *gin.Context) (*service.ClusterService, error) {
+	token := bearerTokenFromHeader(c.GetHeader("Authorization"))
+	if token == "" {
+		token = strings.TrimSpace(c.Query("token"))
+	}
+
+	return clusterServiceFromToken(clusterFactory, token)
 }
 
 func clusterServiceFromToken(clusterFactory *kube.Factory, token string) (*service.ClusterService, error) {

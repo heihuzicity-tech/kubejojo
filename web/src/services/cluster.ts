@@ -489,6 +489,23 @@ export async function deletePod(namespace: string, name: string) {
   return data.data;
 }
 
+export function buildPodExecWebSocketUrl(
+  token: string,
+  namespace: string,
+  name: string,
+  container: string,
+  command: string,
+) {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const query = new URLSearchParams({
+    token,
+    container,
+    command,
+  });
+
+  return `${protocol}//${window.location.host}/api/v1/pods/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/exec/ws?${query.toString()}`;
+}
+
 export async function getDeployments(namespace?: string) {
   const { data } = await http.get<Envelope<DeploymentItem[]>>('/deployments', {
     params: namespace ? { namespace } : undefined,

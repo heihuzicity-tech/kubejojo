@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"os/exec"
 	"sort"
 	"strings"
 	"time"
@@ -745,6 +747,82 @@ func (s *ClusterService) GetPodLogs(
 		Content:     string(raw),
 		GeneratedAt: time.Now().Format("2006-01-02 15:04:05"),
 	}, nil
+}
+
+func (s *ClusterService) ExecPod(
+	ctx context.Context,
+	namespace string,
+	name string,
+	container string,
+	command string,
+	stdin io.Reader,
+	stdout io.Writer,
+	stderr io.Writer,
+	tty bool,
+) error {
+	namespace = strings.TrimSpace(namespace)
+	name = strings.TrimSpace(name)
+	container = strings.TrimSpace(container)
+	command = strings.TrimSpace(command)
+
+	if namespace == "" {
+		return fmt.Errorf("pod namespace is required")
+	}
+	if name == "" {
+		return fmt.Errorf("pod name is required")
+	}
+	if command == "" {
+		command = "/bin/sh"
+	}
+	if strings.TrimSpace(s.client.ConfigPath) == "" {
+		return fmt.Errorf("kubeconfig path is required for exec")
+	}
+	if strings.TrimSpace(s.client.AccessToken) == "" {
+		return fmt.Errorf("access token is required for exec")
+	}
+
+	pod, err := s.client.Kubernetes.CoreV1().Pods(namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("get pod %s/%s: %w", namespace, name, err)
+	}
+
+	if container == "" {
+		if len(pod.Spec.Containers) == 0 {
+			return fmt.Errorf("pod %s/%s has no containers", namespace, name)
+		}
+		container = pod.Spec.Containers[0].Name
+	}
+
+	args := []string{
+		"--kubeconfig", s.client.ConfigPath,
+		"--token", s.client.AccessToken,
+		"exec",
+		"-i",
+		"-n", namespace,
+		name,
+	}
+	if tty {
+		args = append(args, "-t")
+	}
+	if container != "" {
+		args = append(args, "-c", container)
+	}
+	args = append(args, "--", command)
+
+	cmd := exec.CommandContext(ctx, "kubectl", args...)
+	cmd.Stdin = stdin
+	cmd.Stdout = stdout
+	if tty || stderr == nil {
+		cmd.Stderr = stdout
+	} else {
+		cmd.Stderr = stderr
+	}
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("exec pod %s/%s container %s: %w", namespace, name, container, err)
+	}
+
+	return nil
 }
 
 func (s *ClusterService) ListDeployments(ctx context.Context, namespace string) ([]DeploymentItem, error) {
