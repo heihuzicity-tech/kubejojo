@@ -12,6 +12,7 @@ import { NamespacesPage } from '../pages/NamespacesPage';
 import { NodesPage } from '../pages/NodesPage';
 import { OverviewPage } from '../pages/OverviewPage';
 import { PlaceholderPage } from '../pages/PlaceholderPage';
+import { PodDetailsPage } from '../pages/PodDetailsPage';
 import { PodsPage } from '../pages/PodsPage';
 import { ReplicaSetsPage } from '../pages/ReplicaSetsPage';
 import { StatefulSetsPage } from '../pages/StatefulSetsPage';
@@ -33,6 +34,7 @@ function ProtectedRoutes() {
         <Route path="/cluster/namespaces" element={<NamespacesPage />} />
         <Route path="/cluster/nodes" element={<NodesPage />} />
         <Route path="/workloads/pods" element={<PodsPage />} />
+        <Route path="/workloads/pods/:namespace/:name" element={<PodDetailsPage />} />
         <Route path="/workloads/deployments" element={<DeploymentsPage />} />
         <Route path="/workloads/statefulsets" element={<StatefulSetsPage />} />
         <Route path="/workloads/daemonsets" element={<DaemonSetsPage />} />

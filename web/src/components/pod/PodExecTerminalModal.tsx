@@ -8,13 +8,6 @@ import { buildPodExecWebSocketUrl, type PodItem } from '../../services/cluster';
 
 type ExecStatus = 'idle' | 'connecting' | 'connected' | 'closed' | 'error';
 
-type PodExecTerminalModalProps = {
-  open: boolean;
-  target?: PodItem;
-  token: string;
-  onClose: () => void;
-};
-
 type ExecSocketMessage =
   | {
       type: 'input';
@@ -25,6 +18,20 @@ type ExecSocketMessage =
       cols: number;
       rows: number;
     };
+
+type PodExecTerminalPanelProps = {
+  active: boolean;
+  target?: PodItem;
+  token: string;
+  className?: string;
+};
+
+type PodExecTerminalModalProps = {
+  open: boolean;
+  target?: PodItem;
+  token: string;
+  onClose: () => void;
+};
 
 function execStatusColor(status: ExecStatus) {
   switch (status) {
@@ -45,12 +52,12 @@ function sendSocketMessage(socket: WebSocket, message: ExecSocketMessage) {
   socket.send(JSON.stringify(message));
 }
 
-export function PodExecTerminalModal({
-  open,
+export function PodExecTerminalPanel({
+  active,
   target,
   token,
-  onClose,
-}: PodExecTerminalModalProps) {
+  className,
+}: PodExecTerminalPanelProps) {
   const [execContainer, setExecContainer] = useState<string>();
   const [execCommand, setExecCommand] = useState('/bin/sh');
   const [execStatus, setExecStatus] = useState<ExecStatus>('idle');
@@ -59,10 +66,9 @@ export function PodExecTerminalModal({
   const socketRef = useRef<WebSocket | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
-  const resizeObserverRef = useRef<ResizeObserver | null>(null);
 
   useEffect(() => {
-    if (!open || !target) {
+    if (!active || !target) {
       setExecStatus('idle');
       return;
     }
@@ -70,10 +76,10 @@ export function PodExecTerminalModal({
     setExecContainer(target.containers[0]?.name);
     setExecCommand('/bin/sh');
     setExecSessionKey((value) => value + 1);
-  }, [open, target]);
+  }, [active, target]);
 
   useEffect(() => {
-    if (!open || !target || !token || !execContainer || !terminalHostRef.current) {
+    if (!active || !target || !token || !execContainer || !terminalHostRef.current) {
       return;
     }
 
@@ -165,12 +171,10 @@ export function PodExecTerminalModal({
       fitTerminal();
     });
     resizeObserver.observe(host);
-    resizeObserverRef.current = resizeObserver;
 
     return () => {
       window.clearTimeout(openTimer);
       resizeObserver.disconnect();
-      resizeObserverRef.current = null;
       dataDisposable.dispose();
       socket.close();
       socketRef.current = null;
@@ -178,7 +182,7 @@ export function PodExecTerminalModal({
       terminalRef.current = null;
       fitAddonRef.current = null;
     };
-  }, [execCommand, execContainer, execSessionKey, open, target, token]);
+  }, [active, execCommand, execContainer, execSessionKey, target, token]);
 
   const containerOptions =
     target?.containers.map((item) => ({
@@ -186,6 +190,95 @@ export function PodExecTerminalModal({
       value: item.name,
     })) ?? [];
 
+  if (!target) {
+    return (
+      <section className={className ?? 'space-y-4'}>
+        <Alert type="warning" showIcon message="No Pod selected for terminal access." />
+      </section>
+    );
+  }
+
+  if (!token) {
+    return (
+      <section className={className ?? 'space-y-4'}>
+        <Alert
+          type="info"
+          showIcon
+          message="Terminal requires live cluster access. Demo mode does not open exec sessions."
+        />
+      </section>
+    );
+  }
+
+  return (
+    <section className={className ?? 'space-y-4'}>
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <Space wrap>
+          <Typography.Text type="secondary">Container</Typography.Text>
+          <Select
+            value={execContainer}
+            options={containerOptions}
+            onChange={(value) => {
+              setExecContainer(value);
+              setExecSessionKey((current) => current + 1);
+            }}
+            style={{ minWidth: 220 }}
+          />
+          <Typography.Text type="secondary">Shell</Typography.Text>
+          <Select
+            value={execCommand}
+            options={[
+              { label: '/bin/sh', value: '/bin/sh' },
+              { label: '/bin/bash', value: '/bin/bash' },
+            ]}
+            onChange={(value) => {
+              setExecCommand(value);
+              setExecSessionKey((current) => current + 1);
+            }}
+            style={{ minWidth: 180 }}
+          />
+          <Tag color={execStatusColor(execStatus)}>{execStatus}</Tag>
+        </Space>
+
+        <Space wrap>
+          <Button
+            onClick={() => {
+              terminalRef.current?.clear();
+            }}
+          >
+            Clear
+          </Button>
+          <Button onClick={() => setExecSessionKey((value) => value + 1)}>Reconnect</Button>
+        </Space>
+      </div>
+
+      <Alert
+        type="info"
+        showIcon
+        message="Interactive terminal with TTY resize support. Use it for in-container diagnostics."
+      />
+
+      <div className="overflow-hidden rounded-[18px] border border-slate-200 bg-slate-950 shadow-[0_18px_48px_rgba(15,23,42,0.18)]">
+        <div className="flex items-center gap-2 border-b border-slate-800 px-4 py-3">
+          <span className="h-2.5 w-2.5 rounded-full bg-rose-400" />
+          <span className="h-2.5 w-2.5 rounded-full bg-amber-300" />
+          <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
+          <Typography.Text className="!mb-0 !ml-2 !text-xs !text-slate-300">
+            {target ? `${target.name} / ${execContainer}` : 'Terminal'}
+          </Typography.Text>
+        </div>
+        <div ref={terminalHostRef} className="h-[460px] w-full px-3 py-3" />
+      </div>
+    </section>
+  );
+}
+
+export function PodExecTerminalModal({
+  open,
+  target,
+  token,
+  onClose,
+}: PodExecTerminalModalProps) {
   return (
     <Modal
       title={target ? `Pod Exec / ${target.namespace}/${target.name}` : 'Pod Exec'}
@@ -195,65 +288,7 @@ export function PodExecTerminalModal({
       width={980}
       destroyOnHidden
     >
-      <section className="space-y-4">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <Space wrap>
-            <Typography.Text type="secondary">Container</Typography.Text>
-            <Select
-              value={execContainer}
-              options={containerOptions}
-              onChange={(value) => {
-                setExecContainer(value);
-                setExecSessionKey((current) => current + 1);
-              }}
-              style={{ minWidth: 220 }}
-            />
-            <Typography.Text type="secondary">Shell</Typography.Text>
-            <Select
-              value={execCommand}
-              options={[
-                { label: '/bin/sh', value: '/bin/sh' },
-                { label: '/bin/bash', value: '/bin/bash' },
-              ]}
-              onChange={(value) => {
-                setExecCommand(value);
-                setExecSessionKey((current) => current + 1);
-              }}
-              style={{ minWidth: 180 }}
-            />
-            <Tag color={execStatusColor(execStatus)}>{execStatus}</Tag>
-          </Space>
-
-          <Space wrap>
-            <Button
-              onClick={() => {
-                terminalRef.current?.clear();
-              }}
-            >
-              Clear
-            </Button>
-            <Button onClick={() => setExecSessionKey((value) => value + 1)}>Reconnect</Button>
-          </Space>
-        </div>
-
-        <Alert
-          type="info"
-          showIcon
-          message="Interactive terminal with TTY resize support. Use it for in-container diagnostics."
-        />
-
-        <div className="overflow-hidden rounded-[18px] border border-slate-200 bg-slate-950 shadow-[0_18px_48px_rgba(15,23,42,0.18)]">
-          <div className="flex items-center gap-2 border-b border-slate-800 px-4 py-3">
-            <span className="h-2.5 w-2.5 rounded-full bg-rose-400" />
-            <span className="h-2.5 w-2.5 rounded-full bg-amber-300" />
-            <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
-            <Typography.Text className="!mb-0 !ml-2 !text-xs !text-slate-300">
-              {target ? `${target.name} / ${execContainer}` : 'Terminal'}
-            </Typography.Text>
-          </div>
-          <div ref={terminalHostRef} className="h-[460px] w-full px-3 py-3" />
-        </div>
-      </section>
+      <PodExecTerminalPanel active={open} target={target} token={token} />
     </Modal>
   );
 }

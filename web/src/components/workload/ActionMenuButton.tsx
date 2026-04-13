@@ -3,15 +3,23 @@ import { Dropdown, Spin, type MenuProps } from 'antd';
 type ActionMenuButtonProps = {
   menu: MenuProps;
   loading?: boolean;
+  className?: string;
 };
 
-export function ActionMenuButton({ menu, loading = false }: ActionMenuButtonProps) {
+export function ActionMenuButton({
+  menu,
+  loading = false,
+  className,
+}: ActionMenuButtonProps) {
   return (
     <div onClick={(event) => event.stopPropagation()}>
       <Dropdown trigger={['click']} menu={menu}>
         <button
           type="button"
-          className="inline-flex h-8 items-center justify-center rounded-full border border-slate-200 bg-white px-3 text-[13px] font-medium text-slate-700 shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-950 focus:outline-none"
+          className={[
+            'inline-flex h-8 items-center justify-center rounded-full border border-slate-200 bg-white px-3 text-[13px] font-medium text-slate-700 shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-950 focus:outline-none',
+            className ?? '',
+          ].join(' ')}
           aria-label="操作"
         >
           <span>操作</span>
