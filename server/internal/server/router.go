@@ -375,6 +375,34 @@ func newRouter(clusterFactory *kube.Factory) *gin.Engine {
 				c.JSON(http.StatusOK, response.Success(result))
 			})
 
+			authorized.GET("/pods/:namespace/:name/yaml", func(c *gin.Context) {
+				result, err := mustClusterService(c).GetPodYAML(
+					c.Request.Context(),
+					c.Param("namespace"),
+					c.Param("name"),
+				)
+				if err != nil {
+					respondWithClusterError(c, "GET_POD_YAML_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(result))
+			})
+
+			authorized.GET("/pods/:namespace/:name/describe", func(c *gin.Context) {
+				result, err := mustClusterService(c).GetPodDescribe(
+					c.Request.Context(),
+					c.Param("namespace"),
+					c.Param("name"),
+				)
+				if err != nil {
+					respondWithClusterError(c, "GET_POD_DESCRIBE_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(result))
+			})
+
 			authorized.DELETE("/pods/:namespace/:name", func(c *gin.Context) {
 				result, err := mustClusterService(c).DeletePod(
 					c.Request.Context(),

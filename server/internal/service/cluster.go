@@ -19,6 +19,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	utilretry "k8s.io/client-go/util/retry"
 	metricsv1beta1 "k8s.io/metrics/pkg/apis/metrics/v1beta1"
+	"sigs.k8s.io/yaml"
 
 	"github.com/zhangya/k8s-admin/server/internal/jsonx"
 	"github.com/zhangya/k8s-admin/server/internal/kube"
@@ -147,6 +148,13 @@ type PodLogResult struct {
 	Namespace   string `json:"namespace"`
 	Name        string `json:"name"`
 	Container   string `json:"container"`
+	Content     string `json:"content"`
+	GeneratedAt string `json:"generatedAt"`
+}
+
+type ResourceTextResult struct {
+	Namespace   string `json:"namespace"`
+	Name        string `json:"name"`
 	Content     string `json:"content"`
 	GeneratedAt string `json:"generatedAt"`
 }
@@ -744,6 +752,86 @@ func (s *ClusterService) GetPodLogs(
 		Name:        name,
 		Container:   container,
 		Content:     string(raw),
+		GeneratedAt: time.Now().Format("2006-01-02 15:04:05"),
+	}, nil
+}
+
+func (s *ClusterService) GetPodYAML(
+	ctx context.Context,
+	namespace string,
+	name string,
+) (ResourceTextResult, error) {
+	namespace = strings.TrimSpace(namespace)
+	name = strings.TrimSpace(name)
+
+	if namespace == "" {
+		return ResourceTextResult{}, fmt.Errorf("pod namespace is required")
+	}
+	if name == "" {
+		return ResourceTextResult{}, fmt.Errorf("pod name is required")
+	}
+
+	pod, err := s.client.Kubernetes.CoreV1().Pods(namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return ResourceTextResult{}, fmt.Errorf("get pod %s/%s: %w", namespace, name, err)
+	}
+
+	raw, err := yaml.Marshal(pod)
+	if err != nil {
+		return ResourceTextResult{}, fmt.Errorf("marshal pod %s/%s yaml: %w", namespace, name, err)
+	}
+
+	return ResourceTextResult{
+		Namespace:   namespace,
+		Name:        name,
+		Content:     string(raw),
+		GeneratedAt: time.Now().Format("2006-01-02 15:04:05"),
+	}, nil
+}
+
+func (s *ClusterService) GetPodDescribe(
+	ctx context.Context,
+	namespace string,
+	name string,
+) (ResourceTextResult, error) {
+	namespace = strings.TrimSpace(namespace)
+	name = strings.TrimSpace(name)
+
+	if namespace == "" {
+		return ResourceTextResult{}, fmt.Errorf("pod namespace is required")
+	}
+	if name == "" {
+		return ResourceTextResult{}, fmt.Errorf("pod name is required")
+	}
+	if strings.TrimSpace(s.client.ConfigPath) == "" {
+		return ResourceTextResult{}, fmt.Errorf("kubeconfig path is required for describe")
+	}
+	if strings.TrimSpace(s.client.AccessToken) == "" {
+		return ResourceTextResult{}, fmt.Errorf("access token is required for describe")
+	}
+
+	if _, err := s.client.Kubernetes.CoreV1().Pods(namespace).Get(ctx, name, metav1.GetOptions{}); err != nil {
+		return ResourceTextResult{}, fmt.Errorf("get pod %s/%s: %w", namespace, name, err)
+	}
+
+	args := []string{
+		"--kubeconfig", s.client.ConfigPath,
+		"--token", s.client.AccessToken,
+		"describe",
+		"pod",
+		"-n", namespace,
+		name,
+	}
+
+	output, err := exec.CommandContext(ctx, "kubectl", args...).CombinedOutput()
+	if err != nil {
+		return ResourceTextResult{}, fmt.Errorf("describe pod %s/%s: %w", namespace, name, err)
+	}
+
+	return ResourceTextResult{
+		Namespace:   namespace,
+		Name:        name,
+		Content:     string(output),
 		GeneratedAt: time.Now().Format("2006-01-02 15:04:05"),
 	}, nil
 }

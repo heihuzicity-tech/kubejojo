@@ -95,6 +95,13 @@ export type PodLogResult = {
   generatedAt: string;
 };
 
+export type ResourceTextResult = {
+  namespace: string;
+  name: string;
+  content: string;
+  generatedAt: string;
+};
+
 export type PodItem = {
   name: string;
   namespace: string;
@@ -478,6 +485,20 @@ export async function getPodLogs(namespace: string, name: string, container: str
         tailLines,
       },
     },
+  );
+  return data.data;
+}
+
+export async function getPodYaml(namespace: string, name: string) {
+  const { data } = await http.get<Envelope<ResourceTextResult>>(
+    `/pods/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/yaml`,
+  );
+  return data.data;
+}
+
+export async function getPodDescribe(namespace: string, name: string) {
+  const { data } = await http.get<Envelope<ResourceTextResult>>(
+    `/pods/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/describe`,
   );
   return data.data;
 }

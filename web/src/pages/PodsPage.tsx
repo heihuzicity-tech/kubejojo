@@ -2,7 +2,7 @@ import { MoreOutlined } from '@ant-design/icons';
 import { App } from 'antd';
 import { type ProColumns } from '@ant-design/pro-components';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Alert, Button, Drawer, Dropdown, Modal, Select, Space, Tag, Typography } from 'antd';
+import { Alert, Button, Drawer, Dropdown, Modal, Select, Space, Tabs, Tag, Typography } from 'antd';
 import { useMemo, useState } from 'react';
 
 import { PodExecTerminalModal } from '../components/pod/PodExecTerminalModal';
@@ -13,10 +13,13 @@ import {
   type PodEventItem,
   type PodItem,
   type PodLogResult,
+  type ResourceTextResult,
   deletePod,
+  getPodDescribe,
   getPodEvents,
   getPodLogs,
   getPods,
+  getPodYaml,
 } from '../services/cluster';
 import { useAppStore } from '../stores/appStore';
 
@@ -145,6 +148,75 @@ const demoPodLogs: Record<string, string> = {
   'kube-system/metrics-server-5cdb79b4f9-d7wdm/metrics-server': [
     'I0411 08:10:09.178123       1 serving.go:389] Generated self-signed cert (/tmp/apiserver.crt, /tmp/apiserver.key)',
     'I0411 08:10:10.892441       1 secure_serving.go:213] Serving securely on [::]:10250',
+  ].join('\n'),
+};
+
+const demoPodYaml: Record<string, string> = {
+  'default/nginx-demo-6f9c95f95f-c6jth': [
+    'apiVersion: v1',
+    'kind: Pod',
+    'metadata:',
+    '  name: nginx-demo-6f9c95f95f-c6jth',
+    '  namespace: default',
+    '  labels:',
+    '    app: nginx-demo',
+    'spec:',
+    '  containers:',
+    '    - name: nginx',
+    '      image: nginx:stable',
+    '  restartPolicy: Always',
+    'status:',
+    '  phase: Running',
+  ].join('\n'),
+  'kube-system/metrics-server-5cdb79b4f9-d7wdm': [
+    'apiVersion: v1',
+    'kind: Pod',
+    'metadata:',
+    '  name: metrics-server-5cdb79b4f9-d7wdm',
+    '  namespace: kube-system',
+    '  labels:',
+    '    k8s-app: metrics-server',
+    'spec:',
+    '  containers:',
+    '    - name: metrics-server',
+    '      image: registry.k8s.io/metrics-server/metrics-server:v0.7.2',
+    'status:',
+    '  phase: Running',
+  ].join('\n'),
+};
+
+const demoPodDescribe: Record<string, string> = {
+  'default/nginx-demo-6f9c95f95f-c6jth': [
+    'Name:         nginx-demo-6f9c95f95f-c6jth',
+    'Namespace:    default',
+    'Node:         k8s-node2/10.0.0.103',
+    'Status:       Running',
+    'IP:           10.244.1.80',
+    'Controlled By: ReplicaSet/nginx-demo-6f9c95f95f',
+    'Containers:',
+    '  nginx:',
+    '    Image:      nginx:stable',
+    '    State:      Running',
+    '    Ready:      True',
+    'Events:',
+    '  Type    Reason     Age   From               Message',
+    '  Normal  Started    2d    kubelet            Started container nginx',
+  ].join('\n'),
+  'kube-system/metrics-server-5cdb79b4f9-d7wdm': [
+    'Name:         metrics-server-5cdb79b4f9-d7wdm',
+    'Namespace:    kube-system',
+    'Node:         k8s-node1/10.0.0.102',
+    'Status:       Running',
+    'IP:           10.244.0.81',
+    'Controlled By: ReplicaSet/metrics-server-5cdb79b4f9',
+    'Containers:',
+    '  metrics-server:',
+    '    Image:      registry.k8s.io/metrics-server/metrics-server:v0.7.2',
+    '    State:      Running',
+    '    Ready:      True',
+    'Events:',
+    '  Type    Reason     Age   From               Message',
+    '  Normal  Started    14h   kubelet            Started container metrics-server',
   ].join('\n'),
 };
 
@@ -282,6 +354,33 @@ function ownerSummary(item: PodItem) {
   return `${item.ownerKind} / ${item.ownerName}`;
 }
 
+function PodTextViewer({
+  error,
+  result,
+  errorMessage,
+  emptyMessage,
+}: {
+  error: unknown;
+  result?: ResourceTextResult;
+  errorMessage: string;
+  emptyMessage: string;
+}) {
+  return (
+    <section className="space-y-4">
+      {error ? <Alert type="warning" showIcon message={errorMessage} /> : null}
+
+      <div className="rounded-[16px] border border-slate-200 bg-slate-950 px-4 py-3 text-slate-100">
+        <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-slate-400">
+          <span>Generated: {result?.generatedAt || '-'}</span>
+        </div>
+        <pre className="max-h-[520px] overflow-auto whitespace-pre-wrap break-all font-mono text-xs leading-6 text-slate-100">
+          {result?.content || emptyMessage}
+        </pre>
+      </div>
+    </section>
+  );
+}
+
 export function PodsPage() {
   const { message, modal } = App.useApp();
   const sessionMode = useAppStore((state) => state.sessionMode);
@@ -291,6 +390,8 @@ export function PodsPage() {
   const [logTarget, setLogTarget] = useState<PodItem>();
   const [logContainer, setLogContainer] = useState<string>();
   const [execTarget, setExecTarget] = useState<PodItem>();
+  const [inspectTarget, setInspectTarget] = useState<PodItem>();
+  const [inspectTab, setInspectTab] = useState<'yaml' | 'describe'>('yaml');
 
   const podsQuery = useQuery({
     queryKey: ['pods', currentNamespace],
@@ -328,6 +429,18 @@ export function PodsPage() {
     enabled: sessionMode === 'token' && Boolean(logTarget && logContainer),
   });
 
+  const podYamlQuery = useQuery({
+    queryKey: ['pod-yaml', inspectTarget?.namespace, inspectTarget?.name],
+    queryFn: () => getPodYaml(inspectTarget!.namespace, inspectTarget!.name),
+    enabled: sessionMode === 'token' && Boolean(inspectTarget),
+  });
+
+  const podDescribeQuery = useQuery({
+    queryKey: ['pod-describe', inspectTarget?.namespace, inspectTarget?.name],
+    queryFn: () => getPodDescribe(inspectTarget!.namespace, inspectTarget!.name),
+    enabled: sessionMode === 'token' && Boolean(inspectTarget),
+  });
+
   const openLogModal = (item: PodItem) => {
     setLogTarget(item);
     setLogContainer(item.containers[0]?.name);
@@ -335,6 +448,11 @@ export function PodsPage() {
 
   const openExecModal = (item: PodItem) => {
     setExecTarget(item);
+  };
+
+  const openInspectModal = (item: PodItem, tab: 'yaml' | 'describe') => {
+    setInspectTarget(item);
+    setInspectTab(tab);
   };
 
   const openDeleteConfirm = (item: PodItem) => {
@@ -463,12 +581,20 @@ export function PodsPage() {
               trigger={['click']}
               menu={{
                 items: [
+                  { key: 'yaml', label: 'YAML' },
+                  { key: 'describe', label: 'Describe' },
                   { key: 'exec', label: 'Exec' },
                   { key: 'logs', label: 'Logs' },
                   { key: 'delete', label: <span className="text-red-600">Delete</span> },
                 ],
                 onClick: ({ key, domEvent }) => {
                   domEvent.stopPropagation();
+                  if (key === 'yaml') {
+                    openInspectModal(item, 'yaml');
+                  }
+                  if (key === 'describe') {
+                    openInspectModal(item, 'describe');
+                  }
                   if (key === 'exec') {
                     openExecModal(item);
                   }
@@ -579,6 +705,16 @@ export function PodsPage() {
               <Tag color={detailItem.metricsAvailable ? 'geekblue' : 'default'}>
                 {detailItem.metricsAvailable ? 'Metrics Ready' : 'Metrics Unavailable'}
               </Tag>
+              {sessionMode === 'token' ? (
+                <Button size="small" onClick={() => openInspectModal(detailItem, 'yaml')}>
+                  YAML
+                </Button>
+              ) : null}
+              {sessionMode === 'token' ? (
+                <Button size="small" onClick={() => openInspectModal(detailItem, 'describe')}>
+                  Describe
+                </Button>
+              ) : null}
               {sessionMode === 'token' ? (
                 <Button size="small" onClick={() => openExecModal(detailItem)}>
                   Exec
@@ -777,6 +913,93 @@ export function PodsPage() {
         token={token}
         onClose={() => setExecTarget(undefined)}
       />
+
+      <Modal
+        title={inspectTarget ? `Pod Inspector / ${inspectTarget.namespace}/${inspectTarget.name}` : 'Pod Inspector'}
+        open={Boolean(inspectTarget)}
+        onCancel={() => setInspectTarget(undefined)}
+        footer={null}
+        width={980}
+      >
+        <section className="space-y-4">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <Space wrap>
+              <Tag color="blue">{inspectTab.toUpperCase()}</Tag>
+              <Typography.Text type="secondary">
+                {inspectTarget ? `${inspectTarget.namespace}/${inspectTarget.name}` : '-'}
+              </Typography.Text>
+            </Space>
+            {sessionMode === 'token' ? (
+              <Button
+                onClick={() => {
+                  if (inspectTab === 'yaml') {
+                    void podYamlQuery.refetch();
+                    return;
+                  }
+
+                  void podDescribeQuery.refetch();
+                }}
+                loading={inspectTab === 'yaml' ? podYamlQuery.isFetching : podDescribeQuery.isFetching}
+              >
+                Refresh
+              </Button>
+            ) : null}
+          </div>
+
+          <Tabs
+            activeKey={inspectTab}
+            onChange={(key) => setInspectTab(key as 'yaml' | 'describe')}
+            items={[
+              {
+                key: 'yaml',
+                label: 'YAML',
+                children: (
+                  <PodTextViewer
+                    error={sessionMode === 'token' ? podYamlQuery.error : undefined}
+                    result={
+                      sessionMode === 'demo' && inspectTarget
+                        ? {
+                            namespace: inspectTarget.namespace,
+                            name: inspectTarget.name,
+                            content:
+                              demoPodYaml[`${inspectTarget.namespace}/${inspectTarget.name}`] ??
+                              'No YAML available for this demo pod.',
+                            generatedAt: '2026-04-13 12:20:00',
+                          }
+                        : podYamlQuery.data
+                    }
+                    errorMessage="Pod YAML 加载失败"
+                    emptyMessage="No YAML available."
+                  />
+                ),
+              },
+              {
+                key: 'describe',
+                label: 'Describe',
+                children: (
+                  <PodTextViewer
+                    error={sessionMode === 'token' ? podDescribeQuery.error : undefined}
+                    result={
+                      sessionMode === 'demo' && inspectTarget
+                        ? {
+                            namespace: inspectTarget.namespace,
+                            name: inspectTarget.name,
+                            content:
+                              demoPodDescribe[`${inspectTarget.namespace}/${inspectTarget.name}`] ??
+                              'No describe output available for this demo pod.',
+                            generatedAt: '2026-04-13 12:20:00',
+                          }
+                        : podDescribeQuery.data
+                    }
+                    errorMessage="Pod describe 加载失败"
+                    emptyMessage="No describe output available."
+                  />
+                ),
+              },
+            ]}
+          />
+        </section>
+      </Modal>
 
       <Modal
         title={
