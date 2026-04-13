@@ -55,7 +55,11 @@ export function PodsPage() {
     enabled: sessionMode === 'token',
   });
 
-  const items = sessionMode === 'demo' || !podsQuery.data ? demoPods : podsQuery.data;
+  const demoItems = useMemo(() => {
+    const namespace = currentNamespace.trim();
+    return namespace === '' ? demoPods : demoPods.filter((item) => item.namespace === namespace);
+  }, [currentNamespace]);
+  const items = sessionMode === 'demo' || !podsQuery.data ? demoItems : podsQuery.data;
   const namespaceLabel = displayNamespace(currentNamespace);
 
   const refreshPods = async () => {

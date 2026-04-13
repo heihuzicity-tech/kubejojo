@@ -157,8 +157,13 @@ export function ResourceYamlEditorModal({
       return;
     }
 
-    await onSave(draft);
-    setBaseline(draft);
+    try {
+      await onSave(draft);
+      setBaseline(draft);
+      onClose();
+    } catch {
+      // Keep the editor open so the current draft can be reviewed or retried.
+    }
   };
 
   const requestClose = () => {

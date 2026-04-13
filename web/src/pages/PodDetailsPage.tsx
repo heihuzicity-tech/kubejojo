@@ -80,11 +80,15 @@ export function PodDetailsPage() {
     queryFn: () => getPods(namespace),
     enabled: sessionMode === 'token' && Boolean(namespace),
   });
+  const useDemoData =
+    sessionMode === 'demo' ||
+    (sessionMode === 'token' && Boolean(podListQuery.error) && !podListQuery.data);
+  const allowLiveAccess = sessionMode === 'token' && !useDemoData;
 
   const podItem = useMemo<PodItem | undefined>(() => {
-    const source = sessionMode === 'demo' ? demoPods : podListQuery.data ?? [];
+    const source = useDemoData ? demoPods : podListQuery.data ?? [];
     return source.find((item) => item.namespace === namespace && item.name === name);
-  }, [name, namespace, podListQuery.data, sessionMode]);
+  }, [name, namespace, podListQuery.data, useDemoData]);
 
   useEffect(() => {
     setActiveTab('overview');
@@ -123,35 +127,35 @@ export function PodDetailsPage() {
   const podEventsQuery = useQuery({
     queryKey: ['pod-detail-events', namespace, name],
     queryFn: () => getPodEvents(namespace, name),
-    enabled: sessionMode === 'token' && Boolean(namespace && name && podItem),
+    enabled: allowLiveAccess && Boolean(namespace && name && podItem),
   });
 
   const podLogsQuery = useQuery({
     queryKey: ['pod-detail-logs', namespace, name, logContainer],
     queryFn: () => getPodLogs(namespace, name, logContainer!),
-    enabled: sessionMode === 'token' && activeTab === 'logs' && Boolean(namespace && name && logContainer),
+    enabled: allowLiveAccess && activeTab === 'logs' && Boolean(namespace && name && logContainer),
   });
 
   const podYamlQuery = useQuery({
     queryKey: ['pod-detail-yaml', namespace, name],
     queryFn: () => getPodYaml(namespace, name),
-    enabled: sessionMode === 'token' && activeTab === 'yaml' && Boolean(namespace && name),
+    enabled: allowLiveAccess && activeTab === 'yaml' && Boolean(namespace && name),
   });
 
   const podDescribeQuery = useQuery({
     queryKey: ['pod-detail-describe', namespace, name],
     queryFn: () => getPodDescribe(namespace, name),
-    enabled: sessionMode === 'token' && activeTab === 'related' && Boolean(namespace && name),
+    enabled: allowLiveAccess && activeTab === 'related' && Boolean(namespace && name),
   });
 
   const podYamlEditorQuery = useQuery({
     queryKey: ['pod-detail-yaml-editor', namespace, name],
     queryFn: () => getPodYaml(namespace, name),
-    enabled: sessionMode === 'token' && yamlEditOpen && Boolean(namespace && name),
+    enabled: allowLiveAccess && yamlEditOpen && Boolean(namespace && name),
   });
 
   const detailEventsSource =
-    sessionMode === 'demo' && podItem
+    useDemoData && podItem
       ? demoPodEvents[`${podItem.namespace}/${podItem.name}`] ?? []
       : podEventsQuery.data ?? [];
   const detailEvents = useMemo(() => {
@@ -170,6 +174,7 @@ export function PodDetailsPage() {
     });
   }, [detailEventsSource]);
   const overviewEvents = detailEvents.slice(0, 3);
+  const hasOverviewEvents = overviewEvents.length > 0;
   const abnormalConditions = podItem?.conditions.filter(
     (condition) =>
       condition.status !== 'True' || Boolean(condition.reason) || Boolean(condition.message),
@@ -178,7 +183,7 @@ export function PodDetailsPage() {
   const hiddenLabelCount = Math.max((podItem?.labels.length ?? 0) - labelsPreview.length, 0);
 
   const logResult: PodLogResult | undefined =
-    sessionMode === 'demo' && podItem
+    useDemoData && podItem
       ? {
           namespace: podItem.namespace,
           name: podItem.name,
@@ -192,7 +197,7 @@ export function PodDetailsPage() {
       : podLogsQuery.data;
 
   const yamlResult: ResourceTextResult | undefined =
-    sessionMode === 'demo' && podItem
+    useDemoData && podItem
       ? {
           namespace: podItem.namespace,
           name: podItem.name,
@@ -204,7 +209,7 @@ export function PodDetailsPage() {
       : podYamlQuery.data;
 
   const describeResult: ResourceTextResult | undefined =
-    sessionMode === 'demo' && podItem
+    useDemoData && podItem
       ? {
           namespace: podItem.namespace,
           name: podItem.name,
@@ -262,6 +267,14 @@ export function PodDetailsPage() {
 
   return (
     <section className="space-y-4">
+      {sessionMode === 'token' && useDemoData ? (
+        <Alert
+          type="warning"
+          showIcon
+          message="Pod 详情当前显示的是安全回退的演示数据，实时日志、终端与 YAML 编辑已自动降级。"
+        />
+      ) : null}
+
       <section className="rounded-[20px] border border-slate-200 bg-white px-5 py-4 shadow-[0_12px_36px_rgba(15,23,42,0.05)]">
         <div className="min-w-0 space-y-3">
           <Button
@@ -383,17 +396,15 @@ export function PodDetailsPage() {
                       )}
                     </SectionCard>
 
-                    <SectionCard title="Latest Events" extra={<Tag>{detailEvents.length}</Tag>}>
-                      {overviewEvents.length > 0 ? (
+                    {hasOverviewEvents ? (
+                      <SectionCard title="Latest Events" extra={<Tag>{detailEvents.length}</Tag>}>
                         <div className="space-y-2">
                           {overviewEvents.map((event, index) => (
                             <EventRow key={`${event.reason}-${event.lastSeen}-${index}`} event={event} compact />
                           ))}
                         </div>
-                      ) : (
-                        <EmptyState message="No recent events for this Pod." />
-                      )}
-                    </SectionCard>
+                      </SectionCard>
+                    ) : null}
                   </div>
                 </div>
               ),
@@ -471,7 +482,7 @@ export function PodDetailsPage() {
               label: 'Events',
               children: (
                 <SectionCard title="Events" extra={<Tag>{detailEvents.length}</Tag>}>
-                  {sessionMode === 'token' && podEventsQuery.error ? (
+                  {allowLiveAccess && podEventsQuery.error ? (
                     <Alert type="warning" showIcon className="!mb-3" message="Pod events 加载失败" />
                   ) : null}
                   {detailEvents.length > 0 ? (
@@ -502,14 +513,14 @@ export function PodDetailsPage() {
                           style={{ minWidth: 220 }}
                         />
                       </Space>
-                      {sessionMode === 'token' ? (
+                      {allowLiveAccess ? (
                         <Button onClick={() => void podLogsQuery.refetch()} loading={podLogsQuery.isFetching}>
                           Refresh
                         </Button>
                       ) : null}
                     </div>
 
-                    {sessionMode === 'token' && podLogsQuery.error ? (
+                    {allowLiveAccess && podLogsQuery.error ? (
                       <Alert type="warning" showIcon message="Pod logs 加载失败" />
                     ) : null}
 
@@ -534,7 +545,7 @@ export function PodDetailsPage() {
                   <PodExecTerminalPanel
                     active={activeTab === 'terminal'}
                     target={podItem}
-                    token={token}
+                    token={useDemoData ? '' : token}
                   />
                 </SectionCard>
               ),
@@ -556,7 +567,7 @@ export function PodDetailsPage() {
                         </Typography.Text>
                       </Space>
                       <Space wrap>
-                        {sessionMode === 'token' ? (
+                        {allowLiveAccess ? (
                           <Button onClick={() => void podYamlQuery.refetch()} loading={podYamlQuery.isFetching}>
                             Refresh
                           </Button>
@@ -564,7 +575,7 @@ export function PodDetailsPage() {
                         <Button
                           type="primary"
                           onClick={() => setYamlEditOpen(true)}
-                          disabled={sessionMode !== 'token'}
+                          disabled={!allowLiveAccess}
                         >
                           Edit YAML
                         </Button>
@@ -572,7 +583,7 @@ export function PodDetailsPage() {
                     </div>
 
                     <PodTextViewer
-                      error={sessionMode === 'token' ? podYamlQuery.error : undefined}
+                      error={allowLiveAccess ? podYamlQuery.error : undefined}
                       result={yamlResult}
                       errorMessage="Pod YAML 加载失败"
                       emptyMessage="No YAML available."
@@ -588,7 +599,7 @@ export function PodDetailsPage() {
                 <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_340px]">
                   <SectionCard title="Describe">
                     <PodTextViewer
-                      error={sessionMode === 'token' ? podDescribeQuery.error : undefined}
+                      error={allowLiveAccess ? podDescribeQuery.error : undefined}
                       result={describeResult}
                       errorMessage="Pod describe 加载失败"
                       emptyMessage="No describe output available."

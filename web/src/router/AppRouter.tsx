@@ -5,8 +5,12 @@ import { navigationItems } from '../layouts/navigation';
 import { useAppStore } from '../stores/appStore';
 import { LoginPage } from '../pages/LoginPage';
 import { DaemonSetsPage } from '../pages/DaemonSetsPage';
+import { DaemonSetDetailsPage } from '../pages/DaemonSetDetailsPage';
 import { CronJobsPage } from '../pages/CronJobsPage';
+import { CronJobDetailsPage } from '../pages/CronJobDetailsPage';
+import { DeploymentDetailsPage } from '../pages/DeploymentDetailsPage';
 import { DeploymentsPage } from '../pages/DeploymentsPage';
+import { JobDetailsPage } from '../pages/JobDetailsPage';
 import { JobsPage } from '../pages/JobsPage';
 import { NamespacesPage } from '../pages/NamespacesPage';
 import { NodesPage } from '../pages/NodesPage';
@@ -14,7 +18,9 @@ import { OverviewPage } from '../pages/OverviewPage';
 import { PlaceholderPage } from '../pages/PlaceholderPage';
 import { PodDetailsPage } from '../pages/PodDetailsPage';
 import { PodsPage } from '../pages/PodsPage';
+import { ReplicaSetDetailsPage } from '../pages/ReplicaSetDetailsPage';
 import { ReplicaSetsPage } from '../pages/ReplicaSetsPage';
+import { StatefulSetDetailsPage } from '../pages/StatefulSetDetailsPage';
 import { StatefulSetsPage } from '../pages/StatefulSetsPage';
 import { TopologyPage } from '../pages/TopologyPage';
 
@@ -36,11 +42,26 @@ function ProtectedRoutes() {
         <Route path="/workloads/pods" element={<PodsPage />} />
         <Route path="/workloads/pods/:namespace/:name" element={<PodDetailsPage />} />
         <Route path="/workloads/deployments" element={<DeploymentsPage />} />
+        <Route
+          path="/workloads/deployments/:namespace/:name"
+          element={<DeploymentDetailsPage />}
+        />
         <Route path="/workloads/statefulsets" element={<StatefulSetsPage />} />
+        <Route
+          path="/workloads/statefulsets/:namespace/:name"
+          element={<StatefulSetDetailsPage />}
+        />
         <Route path="/workloads/daemonsets" element={<DaemonSetsPage />} />
+        <Route path="/workloads/daemonsets/:namespace/:name" element={<DaemonSetDetailsPage />} />
         <Route path="/workloads/replicasets" element={<ReplicaSetsPage />} />
+        <Route
+          path="/workloads/replicasets/:namespace/:name"
+          element={<ReplicaSetDetailsPage />}
+        />
         <Route path="/workloads/jobs" element={<JobsPage />} />
+        <Route path="/workloads/jobs/:namespace/:name" element={<JobDetailsPage />} />
         <Route path="/workloads/cronjobs" element={<CronJobsPage />} />
+        <Route path="/workloads/cronjobs/:namespace/:name" element={<CronJobDetailsPage />} />
         <Route path="/topology" element={<TopologyPage />} />
 
         {placeholderItems.map((item) => (

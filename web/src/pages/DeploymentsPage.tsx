@@ -1,16 +1,24 @@
 import { App } from 'antd';
 import { type ProColumns } from '@ant-design/pro-components';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Alert, Button, Drawer, InputNumber, Modal, Popconfirm, Space, Tag, Typography } from 'antd';
+import { Alert, Button, InputNumber, Modal, Space, Tag, Typography } from 'antd';
 import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 
+import {
+  buildDeploymentRoute,
+  demoDeployments,
+  deploymentStatusColor,
+  displayDeploymentNamespace,
+  isDeploymentHealthy,
+  MetricValue,
+  restartTone,
+} from '../components/deployment/deploymentShared';
 import { ActionMenuButton } from '../components/workload/ActionMenuButton';
 import { ResourceYamlEditorModal } from '../components/workload/ResourceYamlEditorModal';
 import { ResourceListPage, type ResourceMetric } from '../components/resource-list/ResourceListPage';
 import {
-  type DeploymentConditionItem,
   type DeploymentItem,
-  type DeploymentPodItem,
   getDeploymentYaml,
   getDeployments,
   restartDeployment,
@@ -19,210 +27,11 @@ import {
 } from '../services/cluster';
 import { useAppStore } from '../stores/appStore';
 
-const demoDeployments: DeploymentItem[] = [
-  {
-    name: 'nginx-demo',
-    namespace: 'default',
-    status: 'Healthy',
-    desiredReplicas: 3,
-    updatedReplicas: 3,
-    readyReplicas: 3,
-    availableReplicas: 3,
-    unavailableReplicas: 0,
-    podCount: 3,
-    restartCount: 0,
-    strategy: 'RollingUpdate',
-    age: '2d',
-    createdAt: '2026-04-09 10:10:00',
-    metricsAvailable: true,
-    cpuUsage: '0m',
-    memoryUsage: '8.4 MiB',
-    selector: ['app=nginx-demo'],
-    labels: ['app=nginx-demo'],
-    images: ['nginx=nginx:1.27-alpine'],
-    conditions: [
-      { type: 'Available', status: 'True', reason: 'MinimumReplicasAvailable' },
-      { type: 'Progressing', status: 'True', reason: 'NewReplicaSetAvailable' },
-    ],
-    pods: [
-      {
-        name: 'nginx-demo-6f9c95f95f-c6jth',
-        status: 'Running',
-        readyContainers: 1,
-        totalContainers: 1,
-        restartCount: 0,
-        nodeName: 'k8s-node2',
-        metricsAvailable: true,
-        cpuUsage: '0m',
-        memoryUsage: '2.8 MiB',
-      },
-      {
-        name: 'nginx-demo-6f9c95f95f-gzctk',
-        status: 'Running',
-        readyContainers: 1,
-        totalContainers: 1,
-        restartCount: 0,
-        nodeName: 'k8s-node2',
-        metricsAvailable: true,
-        cpuUsage: '0m',
-        memoryUsage: '2.8 MiB',
-      },
-      {
-        name: 'nginx-demo-6f9c95f95f-pm4qf',
-        status: 'Running',
-        readyContainers: 1,
-        totalContainers: 1,
-        restartCount: 0,
-        nodeName: 'k8s-node1',
-        metricsAvailable: true,
-        cpuUsage: '0m',
-        memoryUsage: '2.8 MiB',
-      },
-    ],
-  },
-  {
-    name: 'metrics-server',
-    namespace: 'kube-system',
-    status: 'Healthy',
-    desiredReplicas: 1,
-    updatedReplicas: 1,
-    readyReplicas: 1,
-    availableReplicas: 1,
-    unavailableReplicas: 0,
-    podCount: 1,
-    restartCount: 0,
-    strategy: 'RollingUpdate',
-    age: '2d',
-    createdAt: '2026-04-09 08:10:00',
-    metricsAvailable: true,
-    cpuUsage: '4m',
-    memoryUsage: '20.0 MiB',
-    selector: ['k8s-app=metrics-server'],
-    labels: ['k8s-app=metrics-server'],
-    images: ['metrics-server=registry.k8s.io/metrics-server/metrics-server:v0.8.1'],
-    conditions: [
-      { type: 'Available', status: 'True', reason: 'MinimumReplicasAvailable' },
-      { type: 'Progressing', status: 'True', reason: 'NewReplicaSetAvailable' },
-    ],
-    pods: [
-      {
-        name: 'metrics-server-5cdb79b4f9-d7wdm',
-        status: 'Running',
-        readyContainers: 1,
-        totalContainers: 1,
-        restartCount: 0,
-        nodeName: 'k8s-node1',
-        metricsAvailable: true,
-        cpuUsage: '4m',
-        memoryUsage: '20.0 MiB',
-      },
-    ],
-  },
-];
-
-function displayNamespace(namespace: string) {
-  const value = namespace.trim();
-  return value === '' ? 'all-namespaces' : value;
-}
-
-function isDeploymentHealthy(item: DeploymentItem) {
-  return item.status === 'Healthy' || item.status === 'ScaledDown';
-}
-
-function statusColor(status: string) {
-  switch (status) {
-    case 'Healthy':
-      return 'green';
-    case 'Progressing':
-      return 'orange';
-    case 'Degraded':
-      return 'red';
-    case 'ScaledDown':
-      return 'default';
-    default:
-      return 'default';
-  }
-}
-
-function restartTone(count: number) {
-  if (count > 3) {
-    return 'red';
-  }
-
-  if (count > 0) {
-    return 'orange';
-  }
-
-  return 'default';
-}
-
-function MetricValue({
-  available,
-  value,
-}: {
-  available: boolean;
-  value?: string;
-}) {
-  if (!available || !value) {
-    return <Tag>Unavailable</Tag>;
-  }
-
-  return <Typography.Text strong>{value}</Typography.Text>;
-}
-
-function DetailStat({
-  label,
-  value,
-}: {
-  label: string;
-  value: string | number;
-}) {
-  return (
-    <div className="rounded-[16px] border border-slate-200 bg-slate-50 px-3 py-3">
-      <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-slate-400">
-        {label}
-      </div>
-      <div className="mt-1.5 text-2xl font-semibold text-slate-950">{value}</div>
-    </div>
-  );
-}
-
-function conditionTagColor(condition: DeploymentConditionItem) {
-  if (condition.status === 'True') {
-    return condition.type === 'Available' ? 'green' : 'blue';
-  }
-
-  if (condition.status === 'False') {
-    return condition.type === 'Available' ? 'red' : 'default';
-  }
-
-  return 'default';
-}
-
-function deploymentPodStatusColor(status: string) {
-  switch (status) {
-    case 'Running':
-      return 'green';
-    case 'Pending':
-    case 'ContainerCreating':
-    case 'Terminating':
-      return 'orange';
-    case 'Failed':
-    case 'Unknown':
-    case 'CrashLoopBackOff':
-    case 'ImagePullBackOff':
-    case 'ErrImagePull':
-      return 'red';
-    default:
-      return 'default';
-  }
-}
-
 export function DeploymentsPage() {
   const { message, modal } = App.useApp();
+  const navigate = useNavigate();
   const sessionMode = useAppStore((state) => state.sessionMode);
   const currentNamespace = useAppStore((state) => state.namespace);
-  const [detailItem, setDetailItem] = useState<DeploymentItem>();
   const [scaleTarget, setScaleTarget] = useState<DeploymentItem>();
   const [scaleValue, setScaleValue] = useState(1);
   const [yamlEditTarget, setYamlEditTarget] = useState<DeploymentItem>();
@@ -233,9 +42,15 @@ export function DeploymentsPage() {
     enabled: sessionMode === 'token',
   });
 
+  const demoItems = useMemo(() => {
+    const namespace = currentNamespace.trim();
+    return namespace === ''
+      ? demoDeployments
+      : demoDeployments.filter((item) => item.namespace === namespace);
+  }, [currentNamespace]);
   const items =
     sessionMode === 'demo' || !deploymentsQuery.data
-      ? demoDeployments
+      ? demoItems
       : deploymentsQuery.data;
 
   const refreshDeployments = async () => {
@@ -248,7 +63,6 @@ export function DeploymentsPage() {
     onSuccess: async (result) => {
       void message.success(result.message);
       setScaleTarget(undefined);
-      setDetailItem(undefined);
       await refreshDeployments();
     },
   });
@@ -258,7 +72,6 @@ export function DeploymentsPage() {
       restartDeployment(namespace, name),
     onSuccess: async (result) => {
       void message.success(result.message);
-      setDetailItem(undefined);
       await refreshDeployments();
     },
   });
@@ -279,7 +92,7 @@ export function DeploymentsPage() {
     },
   });
 
-  const namespaceLabel = displayNamespace(currentNamespace);
+  const namespaceLabel = displayDeploymentNamespace(currentNamespace);
 
   const openScaleModal = (item: DeploymentItem) => {
     setScaleTarget(item);
@@ -298,20 +111,17 @@ export function DeploymentsPage() {
     });
   };
 
-  const handleRestart = async (item: DeploymentItem) => {
-    await restartMutation.mutateAsync({
-      namespace: item.namespace,
-      name: item.name,
-    });
-  };
-
   const openRestartConfirm = (item: DeploymentItem) => {
     modal.confirm({
       title: `重启 ${item.name} ?`,
       content: '会通过 rollout restart 触发新一轮 Pod 滚动更新。',
       okText: '重启',
       cancelText: '取消',
-      onOk: async () => handleRestart(item),
+      onOk: async () =>
+        restartMutation.mutateAsync({
+          namespace: item.namespace,
+          name: item.name,
+        }),
     });
   };
 
@@ -372,7 +182,7 @@ export function DeploymentsPage() {
       width: 240,
       render: (_, item) => (
         <Space size={[6, 6]} wrap>
-          <Tag color={statusColor(item.status)}>{item.status}</Tag>
+          <Tag color={deploymentStatusColor(item.status)}>{item.status}</Tag>
           <Tag color={item.availableReplicas >= item.desiredReplicas ? 'green' : 'orange'}>
             Ready {item.availableReplicas}/{item.desiredReplicas}
           </Tag>
@@ -423,12 +233,17 @@ export function DeploymentsPage() {
             loading={restartMutation.isPending}
             menu={{
               items: [
+                { key: 'open', label: 'Open' },
                 { key: 'edit-yaml', label: 'Edit YAML' },
                 { key: 'scale', label: 'Scale' },
                 { key: 'restart', label: <span className="text-amber-700">Restart</span> },
               ],
               onClick: ({ key, domEvent }) => {
                 domEvent.stopPropagation();
+                if (key === 'open') {
+                  navigate(buildDeploymentRoute(item.namespace, item.name));
+                  return;
+                }
                 if (key === 'edit-yaml') {
                   setYamlEditTarget(item);
                   return;
@@ -446,12 +261,6 @@ export function DeploymentsPage() {
         ),
     },
   ];
-
-  const detailConditions = detailItem?.conditions ?? [];
-  const detailSelector = detailItem?.selector ?? [];
-  const detailImages = detailItem?.images ?? [];
-  const detailLabels = detailItem?.labels ?? [];
-  const detailPods = detailItem?.pods ?? [];
 
   return (
     <section className="space-y-5">
@@ -491,210 +300,10 @@ export function DeploymentsPage() {
         }
         emptyDescription={`${namespaceLabel} 下没有可展示的 Deployment`}
         onRow={(record) => ({
-          onClick: () => setDetailItem(record),
+          onClick: () => navigate(buildDeploymentRoute(record.namespace, record.name)),
           style: { cursor: 'pointer' },
         })}
       />
-
-      <Drawer
-        title={detailItem ? `Deployment / ${detailItem.namespace}/${detailItem.name}` : 'Deployment 详情'}
-        placement="right"
-        width={460}
-        open={Boolean(detailItem)}
-        onClose={() => setDetailItem(undefined)}
-      >
-        {detailItem ? (
-          <section className="space-y-5">
-            <div className="flex flex-wrap items-center gap-2">
-              <Tag color={statusColor(detailItem.status)}>{detailItem.status}</Tag>
-              <Tag color="blue">{detailItem.strategy}</Tag>
-              <Tag color={detailItem.metricsAvailable ? 'geekblue' : 'default'}>
-                {detailItem.metricsAvailable ? 'Metrics Ready' : 'Metrics Unavailable'}
-              </Tag>
-              {sessionMode === 'token' ? (
-                <Space size={8} onClick={(event) => event.stopPropagation()}>
-                  <Button size="small" onClick={() => openScaleModal(detailItem)}>
-                    Scale
-                  </Button>
-                  <Button size="small" onClick={() => setYamlEditTarget(detailItem)}>
-                    Edit YAML
-                  </Button>
-                  <Popconfirm
-                    title={`重启 ${detailItem.name} ?`}
-                    description="会通过 rollout restart 触发新一轮 Pod 滚动更新。"
-                    okText="重启"
-                    cancelText="取消"
-                    onConfirm={() => void handleRestart(detailItem)}
-                  >
-                    <Button size="small" loading={restartMutation.isPending}>
-                      Restart
-                    </Button>
-                  </Popconfirm>
-                </Space>
-              ) : null}
-            </div>
-
-            <div>
-              <Typography.Title level={4} className="!mb-1">
-                {detailItem.name}
-              </Typography.Title>
-              <Typography.Paragraph className="!mb-0 text-sm text-slate-500">
-                {detailItem.namespace} · 创建于 {detailItem.createdAt} · 已运行 {detailItem.age}
-              </Typography.Paragraph>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <DetailStat label="Desired" value={detailItem.desiredReplicas} />
-              <DetailStat label="Updated" value={detailItem.updatedReplicas} />
-              <DetailStat label="Available" value={detailItem.availableReplicas} />
-              <DetailStat label="Restarts" value={detailItem.restartCount} />
-            </div>
-
-            <section className="grid grid-cols-2 gap-3">
-              <div className="rounded-[16px] border border-slate-200 bg-slate-50 px-3 py-3">
-                <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-slate-400">
-                  CPU
-                </div>
-                <div className="mt-1.5 text-2xl font-semibold text-slate-950">
-                  {detailItem.metricsAvailable && detailItem.cpuUsage
-                    ? detailItem.cpuUsage
-                    : 'Unavailable'}
-                </div>
-              </div>
-              <div className="rounded-[16px] border border-slate-200 bg-slate-50 px-3 py-3">
-                <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-slate-400">
-                  Memory
-                </div>
-                <div className="mt-1.5 text-2xl font-semibold text-slate-950">
-                  {detailItem.metricsAvailable && detailItem.memoryUsage
-                    ? detailItem.memoryUsage
-                    : 'Unavailable'}
-                </div>
-              </div>
-            </section>
-
-            <section>
-              <Typography.Title level={5} className="!mb-3">
-                Images
-              </Typography.Title>
-              {detailImages.length > 0 ? (
-                <Space size={[8, 8]} wrap>
-                  {detailImages.map((image) => (
-                    <Tag key={image}>{image}</Tag>
-                  ))}
-                </Space>
-              ) : (
-                <div className="rounded-[14px] border border-dashed border-slate-300 bg-slate-50 px-3 py-5 text-sm text-slate-500">
-                  当前 Deployment 没有可展示的镜像信息
-                </div>
-              )}
-            </section>
-
-            <section>
-              <Typography.Title level={5} className="!mb-3">
-                Selector
-              </Typography.Title>
-              {detailSelector.length > 0 ? (
-                <Space size={[8, 8]} wrap>
-                  {detailSelector.map((item) => (
-                    <Tag key={item}>{item}</Tag>
-                  ))}
-                </Space>
-              ) : (
-                <div className="rounded-[14px] border border-dashed border-slate-300 bg-slate-50 px-3 py-5 text-sm text-slate-500">
-                  当前 Deployment 没有 selector
-                </div>
-              )}
-            </section>
-
-            <section>
-              <Typography.Title level={5} className="!mb-3">
-                Matched Pods
-              </Typography.Title>
-              {detailPods.length > 0 ? (
-                <div className="space-y-2">
-                  {detailPods.map((pod: DeploymentPodItem) => (
-                    <div
-                      key={pod.name}
-                      className="rounded-[14px] border border-slate-200 bg-white px-3 py-3"
-                    >
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Typography.Text strong>{pod.name}</Typography.Text>
-                        <Tag color={deploymentPodStatusColor(pod.status)}>{pod.status}</Tag>
-                        <Tag color={pod.readyContainers === pod.totalContainers ? 'green' : 'orange'}>
-                          Ready {pod.readyContainers}/{pod.totalContainers}
-                        </Tag>
-                        <Tag color={restartTone(pod.restartCount)}>Restarts {pod.restartCount}</Tag>
-                      </div>
-                      <div className="mt-2 text-sm text-slate-600">
-                        {pod.nodeName || '-'} · CPU {pod.cpuUsage ?? '-'} · Memory{' '}
-                        {pod.memoryUsage ?? '-'}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="rounded-[14px] border border-dashed border-slate-300 bg-slate-50 px-3 py-5 text-sm text-slate-500">
-                  当前 Deployment 没有关联 Pod
-                </div>
-              )}
-            </section>
-
-            <section>
-              <Typography.Title level={5} className="!mb-3">
-                Conditions
-              </Typography.Title>
-              {detailConditions.length > 0 ? (
-                <div className="space-y-2">
-                  {detailConditions.map((condition) => (
-                    <div
-                      key={condition.type}
-                      className="rounded-[14px] border border-slate-200 bg-white px-3 py-2.5"
-                    >
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Typography.Text strong>{condition.type}</Typography.Text>
-                        <Tag color={conditionTagColor(condition)}>{condition.status}</Tag>
-                      </div>
-                      {condition.reason ? (
-                        <div className="mt-1 text-sm text-slate-600">{condition.reason}</div>
-                      ) : null}
-                      {condition.message ? (
-                        <div className="mt-1 text-xs text-slate-500">{condition.message}</div>
-                      ) : null}
-                      {condition.lastUpdateTime ? (
-                        <div className="mt-1 text-xs text-slate-500">
-                          Last Update: {condition.lastUpdateTime}
-                        </div>
-                      ) : null}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="rounded-[14px] border border-dashed border-slate-300 bg-slate-50 px-3 py-5 text-sm text-slate-500">
-                  当前 Deployment 没有可展示的 conditions
-                </div>
-              )}
-            </section>
-
-            <section>
-              <Typography.Title level={5} className="!mb-3">
-                Labels
-              </Typography.Title>
-              {detailLabels.length > 0 ? (
-                <Space size={[8, 8]} wrap>
-                  {detailLabels.map((label) => (
-                    <Tag key={label}>{label}</Tag>
-                  ))}
-                </Space>
-              ) : (
-                <div className="rounded-[14px] border border-dashed border-slate-300 bg-slate-50 px-3 py-5 text-sm text-slate-500">
-                  当前 Deployment 没有 labels
-                </div>
-              )}
-            </section>
-          </section>
-        ) : null}
-      </Drawer>
 
       <Modal
         title={
