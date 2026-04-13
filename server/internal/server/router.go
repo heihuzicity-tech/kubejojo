@@ -47,6 +47,10 @@ type suspendRequest struct {
 	Suspend bool `json:"suspend"`
 }
 
+type yamlUpdateRequest struct {
+	Content string `json:"content"`
+}
+
 type websocketTextWriter struct {
 	conn *websocket.Conn
 	mu   sync.Mutex
@@ -389,6 +393,27 @@ func newRouter(clusterFactory *kube.Factory) *gin.Engine {
 				c.JSON(http.StatusOK, response.Success(result))
 			})
 
+			authorized.PUT("/pods/:namespace/:name/yaml", func(c *gin.Context) {
+				var req yamlUpdateRequest
+				if err := c.ShouldBindJSON(&req); err != nil {
+					c.JSON(http.StatusBadRequest, response.Failure("INVALID_YAML_UPDATE_REQUEST", "请求体格式不正确"))
+					return
+				}
+
+				result, err := mustClusterService(c).UpdatePodYAML(
+					c.Request.Context(),
+					c.Param("namespace"),
+					c.Param("name"),
+					req.Content,
+				)
+				if err != nil {
+					respondWithClusterError(c, "UPDATE_POD_YAML_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(result))
+			})
+
 			authorized.GET("/pods/:namespace/:name/describe", func(c *gin.Context) {
 				result, err := mustClusterService(c).GetPodDescribe(
 					c.Request.Context(),
@@ -428,6 +453,41 @@ func newRouter(clusterFactory *kube.Factory) *gin.Engine {
 				}
 
 				c.JSON(http.StatusOK, response.Success(items))
+			})
+
+			authorized.GET("/deployments/:namespace/:name/yaml", func(c *gin.Context) {
+				result, err := mustClusterService(c).GetDeploymentYAML(
+					c.Request.Context(),
+					c.Param("namespace"),
+					c.Param("name"),
+				)
+				if err != nil {
+					respondWithClusterError(c, "GET_DEPLOYMENT_YAML_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(result))
+			})
+
+			authorized.PUT("/deployments/:namespace/:name/yaml", func(c *gin.Context) {
+				var req yamlUpdateRequest
+				if err := c.ShouldBindJSON(&req); err != nil {
+					c.JSON(http.StatusBadRequest, response.Failure("INVALID_YAML_UPDATE_REQUEST", "请求体格式不正确"))
+					return
+				}
+
+				result, err := mustClusterService(c).UpdateDeploymentYAML(
+					c.Request.Context(),
+					c.Param("namespace"),
+					c.Param("name"),
+					req.Content,
+				)
+				if err != nil {
+					respondWithClusterError(c, "UPDATE_DEPLOYMENT_YAML_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(result))
 			})
 
 			authorized.POST("/deployments/:namespace/:name/scale", func(c *gin.Context) {
@@ -482,6 +542,41 @@ func newRouter(clusterFactory *kube.Factory) *gin.Engine {
 				c.JSON(http.StatusOK, response.Success(items))
 			})
 
+			authorized.GET("/statefulsets/:namespace/:name/yaml", func(c *gin.Context) {
+				result, err := mustClusterService(c).GetStatefulSetYAML(
+					c.Request.Context(),
+					c.Param("namespace"),
+					c.Param("name"),
+				)
+				if err != nil {
+					respondWithClusterError(c, "GET_STATEFULSET_YAML_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(result))
+			})
+
+			authorized.PUT("/statefulsets/:namespace/:name/yaml", func(c *gin.Context) {
+				var req yamlUpdateRequest
+				if err := c.ShouldBindJSON(&req); err != nil {
+					c.JSON(http.StatusBadRequest, response.Failure("INVALID_YAML_UPDATE_REQUEST", "请求体格式不正确"))
+					return
+				}
+
+				result, err := mustClusterService(c).UpdateStatefulSetYAML(
+					c.Request.Context(),
+					c.Param("namespace"),
+					c.Param("name"),
+					req.Content,
+				)
+				if err != nil {
+					respondWithClusterError(c, "UPDATE_STATEFULSET_YAML_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(result))
+			})
+
 			authorized.POST("/statefulsets/:namespace/:name/scale", func(c *gin.Context) {
 				var req scaleDeploymentRequest
 				if err := c.ShouldBindJSON(&req); err != nil {
@@ -534,6 +629,41 @@ func newRouter(clusterFactory *kube.Factory) *gin.Engine {
 				c.JSON(http.StatusOK, response.Success(items))
 			})
 
+			authorized.GET("/jobs/:namespace/:name/yaml", func(c *gin.Context) {
+				result, err := mustClusterService(c).GetJobYAML(
+					c.Request.Context(),
+					c.Param("namespace"),
+					c.Param("name"),
+				)
+				if err != nil {
+					respondWithClusterError(c, "GET_JOB_YAML_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(result))
+			})
+
+			authorized.PUT("/jobs/:namespace/:name/yaml", func(c *gin.Context) {
+				var req yamlUpdateRequest
+				if err := c.ShouldBindJSON(&req); err != nil {
+					c.JSON(http.StatusBadRequest, response.Failure("INVALID_YAML_UPDATE_REQUEST", "请求体格式不正确"))
+					return
+				}
+
+				result, err := mustClusterService(c).UpdateJobYAML(
+					c.Request.Context(),
+					c.Param("namespace"),
+					c.Param("name"),
+					req.Content,
+				)
+				if err != nil {
+					respondWithClusterError(c, "UPDATE_JOB_YAML_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(result))
+			})
+
 			authorized.POST("/jobs/:namespace/:name/suspend", func(c *gin.Context) {
 				var req suspendRequest
 				if err := c.ShouldBindJSON(&req); err != nil {
@@ -568,6 +698,41 @@ func newRouter(clusterFactory *kube.Factory) *gin.Engine {
 				c.JSON(http.StatusOK, response.Success(items))
 			})
 
+			authorized.GET("/cronjobs/:namespace/:name/yaml", func(c *gin.Context) {
+				result, err := mustClusterService(c).GetCronJobYAML(
+					c.Request.Context(),
+					c.Param("namespace"),
+					c.Param("name"),
+				)
+				if err != nil {
+					respondWithClusterError(c, "GET_CRONJOB_YAML_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(result))
+			})
+
+			authorized.PUT("/cronjobs/:namespace/:name/yaml", func(c *gin.Context) {
+				var req yamlUpdateRequest
+				if err := c.ShouldBindJSON(&req); err != nil {
+					c.JSON(http.StatusBadRequest, response.Failure("INVALID_YAML_UPDATE_REQUEST", "请求体格式不正确"))
+					return
+				}
+
+				result, err := mustClusterService(c).UpdateCronJobYAML(
+					c.Request.Context(),
+					c.Param("namespace"),
+					c.Param("name"),
+					req.Content,
+				)
+				if err != nil {
+					respondWithClusterError(c, "UPDATE_CRONJOB_YAML_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(result))
+			})
+
 			authorized.POST("/cronjobs/:namespace/:name/suspend", func(c *gin.Context) {
 				var req suspendRequest
 				if err := c.ShouldBindJSON(&req); err != nil {
@@ -600,6 +765,41 @@ func newRouter(clusterFactory *kube.Factory) *gin.Engine {
 				}
 
 				c.JSON(http.StatusOK, response.Success(items))
+			})
+
+			authorized.GET("/replicasets/:namespace/:name/yaml", func(c *gin.Context) {
+				result, err := mustClusterService(c).GetReplicaSetYAML(
+					c.Request.Context(),
+					c.Param("namespace"),
+					c.Param("name"),
+				)
+				if err != nil {
+					respondWithClusterError(c, "GET_REPLICASET_YAML_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(result))
+			})
+
+			authorized.PUT("/replicasets/:namespace/:name/yaml", func(c *gin.Context) {
+				var req yamlUpdateRequest
+				if err := c.ShouldBindJSON(&req); err != nil {
+					c.JSON(http.StatusBadRequest, response.Failure("INVALID_YAML_UPDATE_REQUEST", "请求体格式不正确"))
+					return
+				}
+
+				result, err := mustClusterService(c).UpdateReplicaSetYAML(
+					c.Request.Context(),
+					c.Param("namespace"),
+					c.Param("name"),
+					req.Content,
+				)
+				if err != nil {
+					respondWithClusterError(c, "UPDATE_REPLICASET_YAML_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(result))
 			})
 
 			authorized.POST("/replicasets/:namespace/:name/scale", func(c *gin.Context) {
@@ -638,6 +838,41 @@ func newRouter(clusterFactory *kube.Factory) *gin.Engine {
 				}
 
 				c.JSON(http.StatusOK, response.Success(items))
+			})
+
+			authorized.GET("/daemonsets/:namespace/:name/yaml", func(c *gin.Context) {
+				result, err := mustClusterService(c).GetDaemonSetYAML(
+					c.Request.Context(),
+					c.Param("namespace"),
+					c.Param("name"),
+				)
+				if err != nil {
+					respondWithClusterError(c, "GET_DAEMONSET_YAML_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(result))
+			})
+
+			authorized.PUT("/daemonsets/:namespace/:name/yaml", func(c *gin.Context) {
+				var req yamlUpdateRequest
+				if err := c.ShouldBindJSON(&req); err != nil {
+					c.JSON(http.StatusBadRequest, response.Failure("INVALID_YAML_UPDATE_REQUEST", "请求体格式不正确"))
+					return
+				}
+
+				result, err := mustClusterService(c).UpdateDaemonSetYAML(
+					c.Request.Context(),
+					c.Param("namespace"),
+					c.Param("name"),
+					req.Content,
+				)
+				if err != nil {
+					respondWithClusterError(c, "UPDATE_DAEMONSET_YAML_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(result))
 			})
 
 			authorized.POST("/daemonsets/:namespace/:name/restart", func(c *gin.Context) {

@@ -496,6 +496,14 @@ export async function getPodYaml(namespace: string, name: string) {
   return data.data;
 }
 
+export async function updatePodYaml(namespace: string, name: string, content: string) {
+  const { data } = await http.put<Envelope<WorkloadActionResult>>(
+    `/pods/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/yaml`,
+    { content },
+  );
+  return data.data;
+}
+
 export async function getPodDescribe(namespace: string, name: string) {
   const { data } = await http.get<Envelope<ResourceTextResult>>(
     `/pods/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/describe`,
@@ -531,6 +539,21 @@ export async function getDeployments(namespace?: string) {
   const { data } = await http.get<Envelope<DeploymentItem[]>>('/deployments', {
     params: namespace ? { namespace } : undefined,
   });
+  return data.data;
+}
+
+export async function getDeploymentYaml(namespace: string, name: string) {
+  const { data } = await http.get<Envelope<ResourceTextResult>>(
+    `/deployments/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/yaml`,
+  );
+  return data.data;
+}
+
+export async function updateDeploymentYaml(namespace: string, name: string, content: string) {
+  const { data } = await http.put<Envelope<WorkloadActionResult>>(
+    `/deployments/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/yaml`,
+    { content },
+  );
   return data.data;
 }
 
@@ -571,10 +594,32 @@ export async function getStatefulSets(namespace?: string) {
   return data.data;
 }
 
+export async function getStatefulSetYaml(namespace: string, name: string) {
+  const { data } = await http.get<Envelope<ResourceTextResult>>(
+    `/statefulsets/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/yaml`,
+  );
+  return data.data;
+}
+
+export async function updateStatefulSetYaml(namespace: string, name: string, content: string) {
+  const { data } = await http.put<Envelope<WorkloadActionResult>>(
+    `/statefulsets/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/yaml`,
+    { content },
+  );
+  return data.data;
+}
+
 export async function getReplicaSets(namespace?: string) {
   const { data } = await http.get<Envelope<ReplicaSetItem[]>>('/replicasets', {
     params: namespace ? { namespace } : undefined,
   });
+  return data.data;
+}
+
+export async function getReplicaSetYaml(namespace: string, name: string) {
+  const { data } = await http.get<Envelope<ResourceTextResult>>(
+    `/replicasets/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/yaml`,
+  );
   return data.data;
 }
 
@@ -586,6 +631,14 @@ export async function scaleReplicaSet(namespace: string, name: string, replicas:
   return data.data;
 }
 
+export async function updateReplicaSetYaml(namespace: string, name: string, content: string) {
+  const { data } = await http.put<Envelope<WorkloadActionResult>>(
+    `/replicasets/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/yaml`,
+    { content },
+  );
+  return data.data;
+}
+
 export async function getDaemonSets(namespace?: string) {
   const { data } = await http.get<Envelope<DaemonSetItem[]>>('/daemonsets', {
     params: namespace ? { namespace } : undefined,
@@ -593,9 +646,24 @@ export async function getDaemonSets(namespace?: string) {
   return data.data;
 }
 
+export async function getDaemonSetYaml(namespace: string, name: string) {
+  const { data } = await http.get<Envelope<ResourceTextResult>>(
+    `/daemonsets/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/yaml`,
+  );
+  return data.data;
+}
+
 export async function restartDaemonSet(namespace: string, name: string) {
   const { data } = await http.post<Envelope<WorkloadActionResult>>(
     `/daemonsets/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/restart`,
+  );
+  return data.data;
+}
+
+export async function updateDaemonSetYaml(namespace: string, name: string, content: string) {
+  const { data } = await http.put<Envelope<WorkloadActionResult>>(
+    `/daemonsets/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/yaml`,
+    { content },
   );
   return data.data;
 }
@@ -607,10 +675,25 @@ export async function getJobs(namespace?: string) {
   return data.data;
 }
 
+export async function getJobYaml(namespace: string, name: string) {
+  const { data } = await http.get<Envelope<ResourceTextResult>>(
+    `/jobs/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/yaml`,
+  );
+  return data.data;
+}
+
 export async function setJobSuspend(namespace: string, name: string, suspend: boolean) {
   const { data } = await http.post<Envelope<WorkloadActionResult>>(
     `/jobs/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/suspend`,
     { suspend },
+  );
+  return data.data;
+}
+
+export async function updateJobYaml(namespace: string, name: string, content: string) {
+  const { data } = await http.put<Envelope<WorkloadActionResult>>(
+    `/jobs/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/yaml`,
+    { content },
   );
   return data.data;
 }
@@ -622,10 +705,25 @@ export async function getCronJobs(namespace?: string) {
   return data.data;
 }
 
+export async function getCronJobYaml(namespace: string, name: string) {
+  const { data } = await http.get<Envelope<ResourceTextResult>>(
+    `/cronjobs/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/yaml`,
+  );
+  return data.data;
+}
+
 export async function setCronJobSuspend(namespace: string, name: string, suspend: boolean) {
   const { data } = await http.post<Envelope<WorkloadActionResult>>(
     `/cronjobs/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/suspend`,
     { suspend },
+  );
+  return data.data;
+}
+
+export async function updateCronJobYaml(namespace: string, name: string, content: string) {
+  const { data } = await http.put<Envelope<WorkloadActionResult>>(
+    `/cronjobs/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/yaml`,
+    { content },
   );
   return data.data;
 }

@@ -5,14 +5,17 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { Alert, Button, Drawer, Dropdown, InputNumber, Modal, Popconfirm, Space, Tag, Typography } from 'antd';
 import { useMemo, useState } from 'react';
 
+import { ResourceYamlEditorModal } from '../components/workload/ResourceYamlEditorModal';
 import { ResourceListPage, type ResourceMetric } from '../components/resource-list/ResourceListPage';
 import {
   type StatefulSetConditionItem,
   type StatefulSetItem,
   type StatefulSetPodItem,
+  getStatefulSetYaml,
   getStatefulSets,
   restartStatefulSet,
   scaleStatefulSet,
+  updateStatefulSetYaml,
 } from '../services/cluster';
 import { useAppStore } from '../stores/appStore';
 
@@ -167,6 +170,7 @@ export function StatefulSetsPage() {
   const [detailItem, setDetailItem] = useState<StatefulSetItem>();
   const [scaleTarget, setScaleTarget] = useState<StatefulSetItem>();
   const [scaleValue, setScaleValue] = useState(1);
+  const [yamlEditTarget, setYamlEditTarget] = useState<StatefulSetItem>();
 
   const statefulSetsQuery = useQuery({
     queryKey: ['statefulsets', currentNamespace],
@@ -202,6 +206,22 @@ export function StatefulSetsPage() {
       void message.success(result.message);
       setDetailItem(undefined);
       await refreshStatefulSets();
+    },
+  });
+
+  const statefulSetYamlQuery = useQuery({
+    queryKey: ['statefulset-yaml', yamlEditTarget?.namespace, yamlEditTarget?.name],
+    queryFn: () => getStatefulSetYaml(yamlEditTarget!.namespace, yamlEditTarget!.name),
+    enabled: sessionMode === 'token' && Boolean(yamlEditTarget),
+  });
+
+  const updateStatefulSetYamlMutation = useMutation({
+    mutationFn: ({ namespace, name, content }: { namespace: string; name: string; content: string }) =>
+      updateStatefulSetYaml(namespace, name, content),
+    onSuccess: (result) => {
+      void message.success(result.message);
+      void refreshStatefulSets();
+      void statefulSetYamlQuery.refetch();
     },
   });
 
@@ -347,12 +367,17 @@ export function StatefulSetsPage() {
               menu={{
                 items: [
                   { key: 'scale', label: 'Scale' },
+                  { key: 'edit-yaml', label: 'Edit YAML' },
                   { key: 'restart', label: <span className="text-amber-700">Restart</span> },
                 ],
                 onClick: ({ key, domEvent }) => {
                   domEvent.stopPropagation();
                   if (key === 'scale') {
                     openScaleModal(item);
+                    return;
+                  }
+                  if (key === 'edit-yaml') {
+                    setYamlEditTarget(item);
                     return;
                   }
                   if (key === 'restart') {
@@ -439,6 +464,9 @@ export function StatefulSetsPage() {
                 <Space size={8} onClick={(event) => event.stopPropagation()}>
                   <Button size="small" onClick={() => openScaleModal(detailItem)}>
                     Scale
+                  </Button>
+                  <Button size="small" onClick={() => setYamlEditTarget(detailItem)}>
+                    Edit YAML
                   </Button>
                   <Popconfirm
                     title={`重启 ${detailItem.name} ?`}
@@ -621,6 +649,37 @@ export function StatefulSetsPage() {
           </div>
         </section>
       </Modal>
+
+      <ResourceYamlEditorModal
+        open={Boolean(yamlEditTarget)}
+        title={
+          yamlEditTarget
+            ? `Edit StatefulSet YAML / ${yamlEditTarget.namespace}/${yamlEditTarget.name}`
+            : 'Edit StatefulSet YAML'
+        }
+        resourceKind="StatefulSet"
+        resourceLabel={yamlEditTarget ? `${yamlEditTarget.namespace}/${yamlEditTarget.name}` : '-'}
+        result={statefulSetYamlQuery.data}
+        loading={statefulSetYamlQuery.isFetching}
+        saving={updateStatefulSetYamlMutation.isPending}
+        error={statefulSetYamlQuery.error}
+        errorMessage="StatefulSet YAML 加载失败"
+        onClose={() => setYamlEditTarget(undefined)}
+        onRefresh={() => {
+          void statefulSetYamlQuery.refetch();
+        }}
+        onSave={(content) => {
+          if (!yamlEditTarget) {
+            return Promise.resolve();
+          }
+
+          return updateStatefulSetYamlMutation.mutateAsync({
+            namespace: yamlEditTarget.namespace,
+            name: yamlEditTarget.name,
+            content,
+          });
+        }}
+      />
     </section>
   );
 }

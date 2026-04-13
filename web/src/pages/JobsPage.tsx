@@ -5,13 +5,16 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { Alert, Button, Drawer, Dropdown, Space, Tag, Typography } from 'antd';
 import { useMemo, useState } from 'react';
 
+import { ResourceYamlEditorModal } from '../components/workload/ResourceYamlEditorModal';
 import { ResourceListPage, type ResourceMetric } from '../components/resource-list/ResourceListPage';
 import {
   type JobConditionItem,
   type JobItem,
   type JobPodItem,
+  getJobYaml,
   getJobs,
   setJobSuspend,
+  updateJobYaml,
 } from '../services/cluster';
 import { useAppStore } from '../stores/appStore';
 
@@ -182,6 +185,7 @@ export function JobsPage() {
   const sessionMode = useAppStore((state) => state.sessionMode);
   const currentNamespace = useAppStore((state) => state.namespace);
   const [detailItem, setDetailItem] = useState<JobItem>();
+  const [yamlEditTarget, setYamlEditTarget] = useState<JobItem>();
 
   const jobsQuery = useQuery({
     queryKey: ['jobs', currentNamespace],
@@ -203,6 +207,22 @@ export function JobsPage() {
       void message.success(result.message);
       setDetailItem(undefined);
       await refreshJobs();
+    },
+  });
+
+  const jobYamlQuery = useQuery({
+    queryKey: ['job-yaml', yamlEditTarget?.namespace, yamlEditTarget?.name],
+    queryFn: () => getJobYaml(yamlEditTarget!.namespace, yamlEditTarget!.name),
+    enabled: sessionMode === 'token' && Boolean(yamlEditTarget),
+  });
+
+  const updateJobYamlMutation = useMutation({
+    mutationFn: ({ namespace, name, content }: { namespace: string; name: string; content: string }) =>
+      updateJobYaml(namespace, name, content),
+    onSuccess: (result) => {
+      void message.success(result.message);
+      void refreshJobs();
+      void jobYamlQuery.refetch();
     },
   });
 
@@ -323,14 +343,23 @@ export function JobsPage() {
       render: (_, item) =>
         sessionMode === 'demo' ? (
           <Tag>Demo</Tag>
-        ) : !canToggleJobSuspend(item) ? null : (
+        ) : (
           <div onClick={(event) => event.stopPropagation()}>
             <Dropdown
               trigger={['click']}
               menu={{
-                items: [{ key: 'suspend', label: nextJobSuspendAction(item) }],
+                items: [
+                  { key: 'edit-yaml', label: 'Edit YAML' },
+                  ...(canToggleJobSuspend(item)
+                    ? [{ key: 'suspend', label: nextJobSuspendAction(item) }]
+                    : []),
+                ],
                 onClick: ({ key, domEvent }) => {
                   domEvent.stopPropagation();
+                  if (key === 'edit-yaml') {
+                    setYamlEditTarget(item);
+                    return;
+                  }
                   if (key === 'suspend') {
                     openSuspendConfirm(item);
                   }
@@ -409,14 +438,21 @@ export function JobsPage() {
                 {detailItem.metricsAvailable ? 'Metrics Ready' : 'Metrics Unavailable'}
               </Tag>
               <Tag color="blue">{ownerSummary(detailItem)}</Tag>
-              {sessionMode === 'token' && canToggleJobSuspend(detailItem) ? (
-                <Button
-                  size="small"
-                  loading={suspendMutation.isPending}
-                  onClick={() => openSuspendConfirm(detailItem)}
-                >
-                  {nextJobSuspendAction(detailItem)}
-                </Button>
+              {sessionMode === 'token' ? (
+                <Space size={8} onClick={(event) => event.stopPropagation()}>
+                  <Button size="small" onClick={() => setYamlEditTarget(detailItem)}>
+                    Edit YAML
+                  </Button>
+                  {canToggleJobSuspend(detailItem) ? (
+                    <Button
+                      size="small"
+                      loading={suspendMutation.isPending}
+                      onClick={() => openSuspendConfirm(detailItem)}
+                    >
+                      {nextJobSuspendAction(detailItem)}
+                    </Button>
+                  ) : null}
+                </Space>
               ) : null}
             </div>
 
@@ -568,6 +604,37 @@ export function JobsPage() {
           </section>
         ) : null}
       </Drawer>
+
+      <ResourceYamlEditorModal
+        open={Boolean(yamlEditTarget)}
+        title={
+          yamlEditTarget
+            ? `Edit Job YAML / ${yamlEditTarget.namespace}/${yamlEditTarget.name}`
+            : 'Edit Job YAML'
+        }
+        resourceKind="Job"
+        resourceLabel={yamlEditTarget ? `${yamlEditTarget.namespace}/${yamlEditTarget.name}` : '-'}
+        result={jobYamlQuery.data}
+        loading={jobYamlQuery.isFetching}
+        saving={updateJobYamlMutation.isPending}
+        error={jobYamlQuery.error}
+        errorMessage="Job YAML 加载失败"
+        onClose={() => setYamlEditTarget(undefined)}
+        onRefresh={() => {
+          void jobYamlQuery.refetch();
+        }}
+        onSave={(content) => {
+          if (!yamlEditTarget) {
+            return Promise.resolve();
+          }
+
+          return updateJobYamlMutation.mutateAsync({
+            namespace: yamlEditTarget.namespace,
+            name: yamlEditTarget.name,
+            content,
+          });
+        }}
+      />
     </section>
   );
 }

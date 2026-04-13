@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	yamlv3 "gopkg.in/yaml.v3"
 	appsv1 "k8s.io/api/apps/v1"
 	authv1 "k8s.io/api/authentication/v1"
 	batchv1 "k8s.io/api/batch/v1"
@@ -157,6 +159,17 @@ type ResourceTextResult struct {
 	Name        string `json:"name"`
 	Content     string `json:"content"`
 	GeneratedAt string `json:"generatedAt"`
+}
+
+type resourceManifestMetadata struct {
+	Name      string `yaml:"name"`
+	Namespace string `yaml:"namespace"`
+}
+
+type resourceManifestIdentity struct {
+	APIVersion string                   `yaml:"apiVersion"`
+	Kind       string                   `yaml:"kind"`
+	Metadata   resourceManifestMetadata `yaml:"metadata"`
 }
 
 type PodContainerItem struct {
@@ -761,32 +774,7 @@ func (s *ClusterService) GetPodYAML(
 	namespace string,
 	name string,
 ) (ResourceTextResult, error) {
-	namespace = strings.TrimSpace(namespace)
-	name = strings.TrimSpace(name)
-
-	if namespace == "" {
-		return ResourceTextResult{}, fmt.Errorf("pod namespace is required")
-	}
-	if name == "" {
-		return ResourceTextResult{}, fmt.Errorf("pod name is required")
-	}
-
-	pod, err := s.client.Kubernetes.CoreV1().Pods(namespace).Get(ctx, name, metav1.GetOptions{})
-	if err != nil {
-		return ResourceTextResult{}, fmt.Errorf("get pod %s/%s: %w", namespace, name, err)
-	}
-
-	raw, err := yaml.Marshal(pod)
-	if err != nil {
-		return ResourceTextResult{}, fmt.Errorf("marshal pod %s/%s yaml: %w", namespace, name, err)
-	}
-
-	return ResourceTextResult{
-		Namespace:   namespace,
-		Name:        name,
-		Content:     string(raw),
-		GeneratedAt: time.Now().Format("2006-01-02 15:04:05"),
-	}, nil
+	return s.GetResourceYAML(ctx, "pod", "Pod", namespace, name)
 }
 
 func (s *ClusterService) GetPodDescribe(
@@ -834,6 +822,117 @@ func (s *ClusterService) GetPodDescribe(
 		Content:     string(output),
 		GeneratedAt: time.Now().Format("2006-01-02 15:04:05"),
 	}, nil
+}
+
+func (s *ClusterService) UpdatePodYAML(
+	ctx context.Context,
+	namespace string,
+	name string,
+	content string,
+) (WorkloadActionResult, error) {
+	return s.ApplyResourceYAML(ctx, "pod", "Pod", namespace, name, content)
+}
+
+func (s *ClusterService) GetDeploymentYAML(
+	ctx context.Context,
+	namespace string,
+	name string,
+) (ResourceTextResult, error) {
+	return s.GetResourceYAML(ctx, "deployment", "Deployment", namespace, name)
+}
+
+func (s *ClusterService) UpdateDeploymentYAML(
+	ctx context.Context,
+	namespace string,
+	name string,
+	content string,
+) (WorkloadActionResult, error) {
+	return s.ApplyResourceYAML(ctx, "deployment", "Deployment", namespace, name, content)
+}
+
+func (s *ClusterService) GetStatefulSetYAML(
+	ctx context.Context,
+	namespace string,
+	name string,
+) (ResourceTextResult, error) {
+	return s.GetResourceYAML(ctx, "statefulset", "StatefulSet", namespace, name)
+}
+
+func (s *ClusterService) UpdateStatefulSetYAML(
+	ctx context.Context,
+	namespace string,
+	name string,
+	content string,
+) (WorkloadActionResult, error) {
+	return s.ApplyResourceYAML(ctx, "statefulset", "StatefulSet", namespace, name, content)
+}
+
+func (s *ClusterService) GetReplicaSetYAML(
+	ctx context.Context,
+	namespace string,
+	name string,
+) (ResourceTextResult, error) {
+	return s.GetResourceYAML(ctx, "replicaset", "ReplicaSet", namespace, name)
+}
+
+func (s *ClusterService) UpdateReplicaSetYAML(
+	ctx context.Context,
+	namespace string,
+	name string,
+	content string,
+) (WorkloadActionResult, error) {
+	return s.ApplyResourceYAML(ctx, "replicaset", "ReplicaSet", namespace, name, content)
+}
+
+func (s *ClusterService) GetDaemonSetYAML(
+	ctx context.Context,
+	namespace string,
+	name string,
+) (ResourceTextResult, error) {
+	return s.GetResourceYAML(ctx, "daemonset", "DaemonSet", namespace, name)
+}
+
+func (s *ClusterService) UpdateDaemonSetYAML(
+	ctx context.Context,
+	namespace string,
+	name string,
+	content string,
+) (WorkloadActionResult, error) {
+	return s.ApplyResourceYAML(ctx, "daemonset", "DaemonSet", namespace, name, content)
+}
+
+func (s *ClusterService) GetJobYAML(
+	ctx context.Context,
+	namespace string,
+	name string,
+) (ResourceTextResult, error) {
+	return s.GetResourceYAML(ctx, "job", "Job", namespace, name)
+}
+
+func (s *ClusterService) UpdateJobYAML(
+	ctx context.Context,
+	namespace string,
+	name string,
+	content string,
+) (WorkloadActionResult, error) {
+	return s.ApplyResourceYAML(ctx, "job", "Job", namespace, name, content)
+}
+
+func (s *ClusterService) GetCronJobYAML(
+	ctx context.Context,
+	namespace string,
+	name string,
+) (ResourceTextResult, error) {
+	return s.GetResourceYAML(ctx, "cronjob", "CronJob", namespace, name)
+}
+
+func (s *ClusterService) UpdateCronJobYAML(
+	ctx context.Context,
+	namespace string,
+	name string,
+	content string,
+) (WorkloadActionResult, error) {
+	return s.ApplyResourceYAML(ctx, "cronjob", "CronJob", namespace, name, content)
 }
 
 func (s *ClusterService) BuildPodExecCommand(
@@ -901,6 +1000,216 @@ func (s *ClusterService) BuildPodExecCommand(
 	cmd := exec.CommandContext(ctx, "kubectl", args...)
 
 	return cmd, container, nil
+}
+
+func (s *ClusterService) GetResourceYAML(
+	ctx context.Context,
+	resourceName string,
+	kind string,
+	namespace string,
+	name string,
+) (ResourceTextResult, error) {
+	namespace = strings.TrimSpace(namespace)
+	name = strings.TrimSpace(name)
+
+	if namespace == "" {
+		return ResourceTextResult{}, fmt.Errorf("%s namespace is required", strings.ToLower(kind))
+	}
+	if name == "" {
+		return ResourceTextResult{}, fmt.Errorf("%s name is required", strings.ToLower(kind))
+	}
+
+	args := []string{
+		"get",
+		resourceName,
+		"-n", namespace,
+		name,
+		"-o", "yaml",
+	}
+
+	output, err := s.runKubectlCommand(ctx, nil, args...)
+	if err != nil {
+		return ResourceTextResult{}, fmt.Errorf("get %s %s/%s yaml: %w", strings.ToLower(kind), namespace, name, err)
+	}
+
+	content, err := sanitizeManifestYAML(output)
+	if err != nil {
+		return ResourceTextResult{}, fmt.Errorf("sanitize %s %s/%s yaml: %w", strings.ToLower(kind), namespace, name, err)
+	}
+
+	return ResourceTextResult{
+		Namespace:   namespace,
+		Name:        name,
+		Content:     string(content),
+		GeneratedAt: time.Now().Format("2006-01-02 15:04:05"),
+	}, nil
+}
+
+func (s *ClusterService) ApplyResourceYAML(
+	ctx context.Context,
+	resourceName string,
+	kind string,
+	namespace string,
+	name string,
+	content string,
+) (WorkloadActionResult, error) {
+	namespace = strings.TrimSpace(namespace)
+	name = strings.TrimSpace(name)
+	content = strings.TrimSpace(content)
+
+	if namespace == "" {
+		return WorkloadActionResult{}, fmt.Errorf("%s namespace is required", strings.ToLower(kind))
+	}
+	if name == "" {
+		return WorkloadActionResult{}, fmt.Errorf("%s name is required", strings.ToLower(kind))
+	}
+	if content == "" {
+		return WorkloadActionResult{}, fmt.Errorf("yaml content is required")
+	}
+
+	var manifest resourceManifestIdentity
+	if err := yaml.Unmarshal([]byte(content), &manifest); err != nil {
+		return WorkloadActionResult{}, fmt.Errorf("parse %s yaml: %w", strings.ToLower(kind), err)
+	}
+
+	if !strings.EqualFold(strings.TrimSpace(manifest.Kind), kind) {
+		return WorkloadActionResult{}, fmt.Errorf("yaml kind must be %s", kind)
+	}
+	if strings.TrimSpace(manifest.Metadata.Namespace) != namespace {
+		return WorkloadActionResult{}, fmt.Errorf("yaml namespace must be %s", namespace)
+	}
+	if strings.TrimSpace(manifest.Metadata.Name) != name {
+		return WorkloadActionResult{}, fmt.Errorf("yaml name must be %s", name)
+	}
+
+	if _, err := s.runKubectlCommand(ctx, bytes.NewBufferString(content), "apply", "-f", "-"); err != nil {
+		return WorkloadActionResult{}, fmt.Errorf("apply %s %s/%s yaml: %w", strings.ToLower(kind), namespace, name, err)
+	}
+
+	return WorkloadActionResult{
+		Kind:      kind,
+		Namespace: namespace,
+		Name:      name,
+		Operation: "apply",
+		Message:   fmt.Sprintf("%s YAML 已更新", kind),
+		Timestamp: time.Now().Format("2006-01-02 15:04:05"),
+	}, nil
+}
+
+func (s *ClusterService) runKubectlCommand(
+	ctx context.Context,
+	stdin *bytes.Buffer,
+	args ...string,
+) ([]byte, error) {
+	if strings.TrimSpace(s.client.ConfigPath) == "" {
+		return nil, fmt.Errorf("kubeconfig path is required")
+	}
+	if strings.TrimSpace(s.client.AccessToken) == "" {
+		return nil, fmt.Errorf("access token is required")
+	}
+
+	baseArgs := []string{
+		"--kubeconfig", s.client.ConfigPath,
+		"--token", s.client.AccessToken,
+	}
+	commandArgs := append(baseArgs, args...)
+
+	cmd := exec.CommandContext(ctx, "kubectl", commandArgs...)
+	if stdin != nil {
+		cmd.Stdin = stdin
+	}
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("%w: %s", err, strings.TrimSpace(string(output)))
+	}
+
+	return output, nil
+}
+
+func sanitizeManifestYAML(content []byte) ([]byte, error) {
+	var document yamlv3.Node
+	if err := yamlv3.Unmarshal(content, &document); err != nil {
+		return nil, err
+	}
+
+	if len(document.Content) == 0 {
+		return content, nil
+	}
+
+	root := document.Content[0]
+	if root.Kind != yamlv3.MappingNode {
+		return content, nil
+	}
+
+	removeMappingKey(root, "status")
+
+	metadata := lookupMappingValue(root, "metadata")
+	if metadata != nil && metadata.Kind == yamlv3.MappingNode {
+		for _, key := range []string{
+			"creationTimestamp",
+			"deletionGracePeriodSeconds",
+			"deletionTimestamp",
+			"generation",
+			"managedFields",
+			"resourceVersion",
+			"selfLink",
+			"uid",
+		} {
+			removeMappingKey(metadata, key)
+		}
+
+		annotations := lookupMappingValue(metadata, "annotations")
+		if annotations != nil && annotations.Kind == yamlv3.MappingNode {
+			removeMappingKey(annotations, "kubectl.kubernetes.io/last-applied-configuration")
+			if len(annotations.Content) == 0 {
+				removeMappingKey(metadata, "annotations")
+			}
+		}
+	}
+
+	var buffer bytes.Buffer
+	encoder := yamlv3.NewEncoder(&buffer)
+	encoder.SetIndent(2)
+	if err := encoder.Encode(&document); err != nil {
+		return nil, err
+	}
+	if err := encoder.Close(); err != nil {
+		return nil, err
+	}
+
+	return bytes.TrimSpace(buffer.Bytes()), nil
+}
+
+func lookupMappingValue(node *yamlv3.Node, key string) *yamlv3.Node {
+	if node == nil || node.Kind != yamlv3.MappingNode {
+		return nil
+	}
+
+	for index := 0; index+1 < len(node.Content); index += 2 {
+		if node.Content[index].Value == key {
+			return node.Content[index+1]
+		}
+	}
+
+	return nil
+}
+
+func removeMappingKey(node *yamlv3.Node, key string) bool {
+	if node == nil || node.Kind != yamlv3.MappingNode {
+		return false
+	}
+
+	for index := 0; index+1 < len(node.Content); index += 2 {
+		if node.Content[index].Value != key {
+			continue
+		}
+
+		node.Content = append(node.Content[:index], node.Content[index+2:]...)
+		return true
+	}
+
+	return false
 }
 
 func (s *ClusterService) ListDeployments(ctx context.Context, namespace string) ([]DeploymentItem, error) {

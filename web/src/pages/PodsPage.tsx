@@ -6,6 +6,7 @@ import { Alert, Button, Drawer, Dropdown, Modal, Select, Space, Tabs, Tag, Typog
 import { useMemo, useState } from 'react';
 
 import { PodExecTerminalModal } from '../components/pod/PodExecTerminalModal';
+import { ResourceYamlEditorModal } from '../components/workload/ResourceYamlEditorModal';
 import { ResourceListPage, type ResourceMetric } from '../components/resource-list/ResourceListPage';
 import {
   type PodConditionItem,
@@ -20,6 +21,7 @@ import {
   getPodLogs,
   getPods,
   getPodYaml,
+  updatePodYaml,
 } from '../services/cluster';
 import { useAppStore } from '../stores/appStore';
 
@@ -392,6 +394,7 @@ export function PodsPage() {
   const [execTarget, setExecTarget] = useState<PodItem>();
   const [inspectTarget, setInspectTarget] = useState<PodItem>();
   const [inspectTab, setInspectTab] = useState<'yaml' | 'describe'>('yaml');
+  const [yamlEditTarget, setYamlEditTarget] = useState<PodItem>();
 
   const podsQuery = useQuery({
     queryKey: ['pods', currentNamespace],
@@ -417,6 +420,19 @@ export function PodsPage() {
     },
   });
 
+  const updatePodYamlMutation = useMutation({
+    mutationFn: ({ namespace, name, content }: { namespace: string; name: string; content: string }) =>
+      updatePodYaml(namespace, name, content),
+    onSuccess: (result) => {
+      void message.success(result.message);
+      void refreshPods();
+      void podYamlEditorQuery.refetch();
+      if (inspectTarget && inspectTab === 'yaml') {
+        void podYamlQuery.refetch();
+      }
+    },
+  });
+
   const podEventsQuery = useQuery({
     queryKey: ['pod-events', detailItem?.namespace, detailItem?.name],
     queryFn: () => getPodEvents(detailItem!.namespace, detailItem!.name),
@@ -439,6 +455,12 @@ export function PodsPage() {
     queryKey: ['pod-describe', inspectTarget?.namespace, inspectTarget?.name],
     queryFn: () => getPodDescribe(inspectTarget!.namespace, inspectTarget!.name),
     enabled: sessionMode === 'token' && Boolean(inspectTarget),
+  });
+
+  const podYamlEditorQuery = useQuery({
+    queryKey: ['pod-yaml-editor', yamlEditTarget?.namespace, yamlEditTarget?.name],
+    queryFn: () => getPodYaml(yamlEditTarget!.namespace, yamlEditTarget!.name),
+    enabled: sessionMode === 'token' && Boolean(yamlEditTarget),
   });
 
   const openLogModal = (item: PodItem) => {
@@ -583,6 +605,7 @@ export function PodsPage() {
                 items: [
                   { key: 'yaml', label: 'YAML' },
                   { key: 'describe', label: 'Describe' },
+                  { key: 'edit-yaml', label: 'Edit YAML' },
                   { key: 'exec', label: 'Exec' },
                   { key: 'logs', label: 'Logs' },
                   { key: 'delete', label: <span className="text-red-600">Delete</span> },
@@ -594,6 +617,9 @@ export function PodsPage() {
                   }
                   if (key === 'describe') {
                     openInspectModal(item, 'describe');
+                  }
+                  if (key === 'edit-yaml') {
+                    setYamlEditTarget(item);
                   }
                   if (key === 'exec') {
                     openExecModal(item);
@@ -713,6 +739,11 @@ export function PodsPage() {
               {sessionMode === 'token' ? (
                 <Button size="small" onClick={() => openInspectModal(detailItem, 'describe')}>
                   Describe
+                </Button>
+              ) : null}
+              {sessionMode === 'token' ? (
+                <Button size="small" onClick={() => setYamlEditTarget(detailItem)}>
+                  Edit YAML
                 </Button>
               ) : null}
               {sessionMode === 'token' ? (
@@ -912,6 +943,37 @@ export function PodsPage() {
         target={execTarget}
         token={token}
         onClose={() => setExecTarget(undefined)}
+      />
+
+      <ResourceYamlEditorModal
+        open={Boolean(yamlEditTarget)}
+        title={
+          yamlEditTarget
+            ? `Edit Pod YAML / ${yamlEditTarget.namespace}/${yamlEditTarget.name}`
+            : 'Edit Pod YAML'
+        }
+        resourceKind="Pod"
+        resourceLabel={yamlEditTarget ? `${yamlEditTarget.namespace}/${yamlEditTarget.name}` : '-'}
+        result={podYamlEditorQuery.data}
+        loading={podYamlEditorQuery.isFetching}
+        saving={updatePodYamlMutation.isPending}
+        error={podYamlEditorQuery.error}
+        errorMessage="Pod YAML 加载失败"
+        onClose={() => setYamlEditTarget(undefined)}
+        onRefresh={() => {
+          void podYamlEditorQuery.refetch();
+        }}
+        onSave={(content) => {
+          if (!yamlEditTarget) {
+            return Promise.resolve();
+          }
+
+          return updatePodYamlMutation.mutateAsync({
+            namespace: yamlEditTarget.namespace,
+            name: yamlEditTarget.name,
+            content,
+          });
+        }}
       />
 
       <Modal

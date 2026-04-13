@@ -5,14 +5,17 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { Alert, Button, Drawer, Dropdown, InputNumber, Modal, Popconfirm, Space, Tag, Typography } from 'antd';
 import { useMemo, useState } from 'react';
 
+import { ResourceYamlEditorModal } from '../components/workload/ResourceYamlEditorModal';
 import { ResourceListPage, type ResourceMetric } from '../components/resource-list/ResourceListPage';
 import {
   type DeploymentConditionItem,
   type DeploymentItem,
   type DeploymentPodItem,
+  getDeploymentYaml,
   getDeployments,
   restartDeployment,
   scaleDeployment,
+  updateDeploymentYaml,
 } from '../services/cluster';
 import { useAppStore } from '../stores/appStore';
 
@@ -222,6 +225,7 @@ export function DeploymentsPage() {
   const [detailItem, setDetailItem] = useState<DeploymentItem>();
   const [scaleTarget, setScaleTarget] = useState<DeploymentItem>();
   const [scaleValue, setScaleValue] = useState(1);
+  const [yamlEditTarget, setYamlEditTarget] = useState<DeploymentItem>();
 
   const deploymentsQuery = useQuery({
     queryKey: ['deployments', currentNamespace],
@@ -256,6 +260,22 @@ export function DeploymentsPage() {
       void message.success(result.message);
       setDetailItem(undefined);
       await refreshDeployments();
+    },
+  });
+
+  const deploymentYamlQuery = useQuery({
+    queryKey: ['deployment-yaml', yamlEditTarget?.namespace, yamlEditTarget?.name],
+    queryFn: () => getDeploymentYaml(yamlEditTarget!.namespace, yamlEditTarget!.name),
+    enabled: sessionMode === 'token' && Boolean(yamlEditTarget),
+  });
+
+  const updateDeploymentYamlMutation = useMutation({
+    mutationFn: ({ namespace, name, content }: { namespace: string; name: string; content: string }) =>
+      updateDeploymentYaml(namespace, name, content),
+    onSuccess: (result) => {
+      void message.success(result.message);
+      void refreshDeployments();
+      void deploymentYamlQuery.refetch();
     },
   });
 
@@ -404,11 +424,16 @@ export function DeploymentsPage() {
               trigger={['click']}
               menu={{
                 items: [
+                  { key: 'edit-yaml', label: 'Edit YAML' },
                   { key: 'scale', label: 'Scale' },
                   { key: 'restart', label: <span className="text-amber-700">Restart</span> },
                 ],
                 onClick: ({ key, domEvent }) => {
                   domEvent.stopPropagation();
+                  if (key === 'edit-yaml') {
+                    setYamlEditTarget(item);
+                    return;
+                  }
                   if (key === 'scale') {
                     openScaleModal(item);
                     return;
@@ -502,6 +527,9 @@ export function DeploymentsPage() {
                 <Space size={8} onClick={(event) => event.stopPropagation()}>
                   <Button size="small" onClick={() => openScaleModal(detailItem)}>
                     Scale
+                  </Button>
+                  <Button size="small" onClick={() => setYamlEditTarget(detailItem)}>
+                    Edit YAML
                   </Button>
                   <Popconfirm
                     title={`重启 ${detailItem.name} ?`}
@@ -709,6 +737,37 @@ export function DeploymentsPage() {
           </div>
         </section>
       </Modal>
+
+      <ResourceYamlEditorModal
+        open={Boolean(yamlEditTarget)}
+        title={
+          yamlEditTarget
+            ? `Edit Deployment YAML / ${yamlEditTarget.namespace}/${yamlEditTarget.name}`
+            : 'Edit Deployment YAML'
+        }
+        resourceKind="Deployment"
+        resourceLabel={yamlEditTarget ? `${yamlEditTarget.namespace}/${yamlEditTarget.name}` : '-'}
+        result={deploymentYamlQuery.data}
+        loading={deploymentYamlQuery.isFetching}
+        saving={updateDeploymentYamlMutation.isPending}
+        error={deploymentYamlQuery.error}
+        errorMessage="Deployment YAML 加载失败"
+        onClose={() => setYamlEditTarget(undefined)}
+        onRefresh={() => {
+          void deploymentYamlQuery.refetch();
+        }}
+        onSave={(content) => {
+          if (!yamlEditTarget) {
+            return Promise.resolve();
+          }
+
+          return updateDeploymentYamlMutation.mutateAsync({
+            namespace: yamlEditTarget.namespace,
+            name: yamlEditTarget.name,
+            content,
+          });
+        }}
+      />
     </section>
   );
 }

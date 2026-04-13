@@ -5,13 +5,16 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { Alert, Button, Drawer, Dropdown, InputNumber, Modal, Space, Tag, Typography } from 'antd';
 import { useMemo, useState } from 'react';
 
+import { ResourceYamlEditorModal } from '../components/workload/ResourceYamlEditorModal';
 import { ResourceListPage, type ResourceMetric } from '../components/resource-list/ResourceListPage';
 import {
   type ReplicaSetConditionItem,
   type ReplicaSetItem,
   type ReplicaSetPodItem,
+  getReplicaSetYaml,
   getReplicaSets,
   scaleReplicaSet,
+  updateReplicaSetYaml,
 } from '../services/cluster';
 import { useAppStore } from '../stores/appStore';
 
@@ -174,6 +177,7 @@ export function ReplicaSetsPage() {
   const [detailItem, setDetailItem] = useState<ReplicaSetItem>();
   const [scaleTarget, setScaleTarget] = useState<ReplicaSetItem>();
   const [scaleValue, setScaleValue] = useState(1);
+  const [yamlEditTarget, setYamlEditTarget] = useState<ReplicaSetItem>();
 
   const replicaSetsQuery = useQuery({
     queryKey: ['replicasets', currentNamespace],
@@ -199,6 +203,22 @@ export function ReplicaSetsPage() {
       setScaleTarget(undefined);
       setDetailItem(undefined);
       await refreshReplicaSets();
+    },
+  });
+
+  const replicaSetYamlQuery = useQuery({
+    queryKey: ['replicaset-yaml', yamlEditTarget?.namespace, yamlEditTarget?.name],
+    queryFn: () => getReplicaSetYaml(yamlEditTarget!.namespace, yamlEditTarget!.name),
+    enabled: sessionMode === 'token' && Boolean(yamlEditTarget),
+  });
+
+  const updateReplicaSetYamlMutation = useMutation({
+    mutationFn: ({ namespace, name, content }: { namespace: string; name: string; content: string }) =>
+      updateReplicaSetYaml(namespace, name, content),
+    onSuccess: (result) => {
+      void message.success(result.message);
+      void refreshReplicaSets();
+      void replicaSetYamlQuery.refetch();
     },
   });
 
@@ -322,18 +342,23 @@ export function ReplicaSetsPage() {
       render: (_, item) =>
         sessionMode === 'demo' ? (
           <Tag>Demo</Tag>
-        ) : !isStandaloneReplicaSet(item) ? (
-          <Tag>Managed</Tag>
         ) : (
           <div onClick={(event) => event.stopPropagation()}>
             <Dropdown
               trigger={['click']}
               menu={{
-                items: [{ key: 'scale', label: 'Scale' }],
+                items: [
+                  ...(isStandaloneReplicaSet(item) ? [{ key: 'scale', label: 'Scale' }] : []),
+                  { key: 'edit-yaml', label: 'Edit YAML' },
+                ],
                 onClick: ({ key, domEvent }) => {
                   domEvent.stopPropagation();
                   if (key === 'scale') {
                     openScaleModal(item);
+                    return;
+                  }
+                  if (key === 'edit-yaml') {
+                    setYamlEditTarget(item);
                   }
                 },
               }}
@@ -411,10 +436,17 @@ export function ReplicaSetsPage() {
                 {detailItem.metricsAvailable ? 'Metrics Ready' : 'Metrics Unavailable'}
               </Tag>
               <Tag color="blue">{ownerSummary(detailItem)}</Tag>
-              {sessionMode === 'token' && isStandaloneReplicaSet(detailItem) ? (
-                <Button size="small" onClick={() => openScaleModal(detailItem)}>
-                  Scale
-                </Button>
+              {sessionMode === 'token' ? (
+                <Space size={8} onClick={(event) => event.stopPropagation()}>
+                  {isStandaloneReplicaSet(detailItem) ? (
+                    <Button size="small" onClick={() => openScaleModal(detailItem)}>
+                      Scale
+                    </Button>
+                  ) : null}
+                  <Button size="small" onClick={() => setYamlEditTarget(detailItem)}>
+                    Edit YAML
+                  </Button>
+                </Space>
               ) : null}
             </div>
 
@@ -578,6 +610,37 @@ export function ReplicaSetsPage() {
           </div>
         </section>
       </Modal>
+
+      <ResourceYamlEditorModal
+        open={Boolean(yamlEditTarget)}
+        title={
+          yamlEditTarget
+            ? `Edit ReplicaSet YAML / ${yamlEditTarget.namespace}/${yamlEditTarget.name}`
+            : 'Edit ReplicaSet YAML'
+        }
+        resourceKind="ReplicaSet"
+        resourceLabel={yamlEditTarget ? `${yamlEditTarget.namespace}/${yamlEditTarget.name}` : '-'}
+        result={replicaSetYamlQuery.data}
+        loading={replicaSetYamlQuery.isFetching}
+        saving={updateReplicaSetYamlMutation.isPending}
+        error={replicaSetYamlQuery.error}
+        errorMessage="ReplicaSet YAML 加载失败"
+        onClose={() => setYamlEditTarget(undefined)}
+        onRefresh={() => {
+          void replicaSetYamlQuery.refetch();
+        }}
+        onSave={(content) => {
+          if (!yamlEditTarget) {
+            return Promise.resolve();
+          }
+
+          return updateReplicaSetYamlMutation.mutateAsync({
+            namespace: yamlEditTarget.namespace,
+            name: yamlEditTarget.name,
+            content,
+          });
+        }}
+      />
     </section>
   );
 }

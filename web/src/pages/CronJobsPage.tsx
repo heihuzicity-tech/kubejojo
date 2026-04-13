@@ -5,12 +5,15 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { Alert, Button, Drawer, Dropdown, Space, Tag, Typography } from 'antd';
 import { useMemo, useState } from 'react';
 
+import { ResourceYamlEditorModal } from '../components/workload/ResourceYamlEditorModal';
 import { ResourceListPage, type ResourceMetric } from '../components/resource-list/ResourceListPage';
 import {
   type CronJobItem,
   type CronJobJobItem,
+  getCronJobYaml,
   getCronJobs,
   setCronJobSuspend,
+  updateCronJobYaml,
 } from '../services/cluster';
 import { useAppStore } from '../stores/appStore';
 
@@ -128,6 +131,7 @@ export function CronJobsPage() {
   const sessionMode = useAppStore((state) => state.sessionMode);
   const currentNamespace = useAppStore((state) => state.namespace);
   const [detailItem, setDetailItem] = useState<CronJobItem>();
+  const [yamlEditTarget, setYamlEditTarget] = useState<CronJobItem>();
 
   const cronJobsQuery = useQuery({
     queryKey: ['cronjobs', currentNamespace],
@@ -149,6 +153,22 @@ export function CronJobsPage() {
       void message.success(result.message);
       setDetailItem(undefined);
       await refreshCronJobs();
+    },
+  });
+
+  const cronJobYamlQuery = useQuery({
+    queryKey: ['cronjob-yaml', yamlEditTarget?.namespace, yamlEditTarget?.name],
+    queryFn: () => getCronJobYaml(yamlEditTarget!.namespace, yamlEditTarget!.name),
+    enabled: sessionMode === 'token' && Boolean(yamlEditTarget),
+  });
+
+  const updateCronJobYamlMutation = useMutation({
+    mutationFn: ({ namespace, name, content }: { namespace: string; name: string; content: string }) =>
+      updateCronJobYaml(namespace, name, content),
+    onSuccess: (result) => {
+      void message.success(result.message);
+      void refreshCronJobs();
+      void cronJobYamlQuery.refetch();
     },
   });
 
@@ -273,9 +293,16 @@ export function CronJobsPage() {
             <Dropdown
               trigger={['click']}
               menu={{
-                items: [{ key: 'suspend', label: nextCronJobSuspendAction(item) }],
+                items: [
+                  { key: 'edit-yaml', label: 'Edit YAML' },
+                  { key: 'suspend', label: nextCronJobSuspendAction(item) },
+                ],
                 onClick: ({ key, domEvent }) => {
                   domEvent.stopPropagation();
+                  if (key === 'edit-yaml') {
+                    setYamlEditTarget(item);
+                    return;
+                  }
                   if (key === 'suspend') {
                     openSuspendConfirm(item);
                   }
@@ -356,13 +383,18 @@ export function CronJobsPage() {
                 {detailItem.metricsAvailable ? 'Metrics Ready' : 'Metrics Unavailable'}
               </Tag>
               {sessionMode === 'token' ? (
-                <Button
-                  size="small"
-                  loading={suspendMutation.isPending}
-                  onClick={() => openSuspendConfirm(detailItem)}
-                >
-                  {nextCronJobSuspendAction(detailItem)}
-                </Button>
+                <Space size={8} onClick={(event) => event.stopPropagation()}>
+                  <Button size="small" onClick={() => setYamlEditTarget(detailItem)}>
+                    Edit YAML
+                  </Button>
+                  <Button
+                    size="small"
+                    loading={suspendMutation.isPending}
+                    onClick={() => openSuspendConfirm(detailItem)}
+                  >
+                    {nextCronJobSuspendAction(detailItem)}
+                  </Button>
+                </Space>
               ) : null}
             </div>
 
@@ -490,6 +522,37 @@ export function CronJobsPage() {
           </section>
         ) : null}
       </Drawer>
+
+      <ResourceYamlEditorModal
+        open={Boolean(yamlEditTarget)}
+        title={
+          yamlEditTarget
+            ? `Edit CronJob YAML / ${yamlEditTarget.namespace}/${yamlEditTarget.name}`
+            : 'Edit CronJob YAML'
+        }
+        resourceKind="CronJob"
+        resourceLabel={yamlEditTarget ? `${yamlEditTarget.namespace}/${yamlEditTarget.name}` : '-'}
+        result={cronJobYamlQuery.data}
+        loading={cronJobYamlQuery.isFetching}
+        saving={updateCronJobYamlMutation.isPending}
+        error={cronJobYamlQuery.error}
+        errorMessage="CronJob YAML 加载失败"
+        onClose={() => setYamlEditTarget(undefined)}
+        onRefresh={() => {
+          void cronJobYamlQuery.refetch();
+        }}
+        onSave={(content) => {
+          if (!yamlEditTarget) {
+            return Promise.resolve();
+          }
+
+          return updateCronJobYamlMutation.mutateAsync({
+            namespace: yamlEditTarget.namespace,
+            name: yamlEditTarget.name,
+            content,
+          });
+        }}
+      />
     </section>
   );
 }

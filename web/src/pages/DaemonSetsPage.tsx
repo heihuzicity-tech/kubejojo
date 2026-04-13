@@ -5,13 +5,16 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { Alert, Button, Drawer, Dropdown, Popconfirm, Space, Tag, Typography } from 'antd';
 import { useMemo, useState } from 'react';
 
+import { ResourceYamlEditorModal } from '../components/workload/ResourceYamlEditorModal';
 import { ResourceListPage, type ResourceMetric } from '../components/resource-list/ResourceListPage';
 import {
   type DaemonSetConditionItem,
   type DaemonSetItem,
   type DaemonSetPodItem,
+  getDaemonSetYaml,
   getDaemonSets,
   restartDaemonSet,
+  updateDaemonSetYaml,
 } from '../services/cluster';
 import { useAppStore } from '../stores/appStore';
 
@@ -158,6 +161,7 @@ export function DaemonSetsPage() {
   const sessionMode = useAppStore((state) => state.sessionMode);
   const currentNamespace = useAppStore((state) => state.namespace);
   const [detailItem, setDetailItem] = useState<DaemonSetItem>();
+  const [yamlEditTarget, setYamlEditTarget] = useState<DaemonSetItem>();
 
   const daemonSetsQuery = useQuery({
     queryKey: ['daemonsets', currentNamespace],
@@ -182,6 +186,22 @@ export function DaemonSetsPage() {
       void message.success(result.message);
       setDetailItem(undefined);
       await refreshDaemonSets();
+    },
+  });
+
+  const daemonSetYamlQuery = useQuery({
+    queryKey: ['daemonset-yaml', yamlEditTarget?.namespace, yamlEditTarget?.name],
+    queryFn: () => getDaemonSetYaml(yamlEditTarget!.namespace, yamlEditTarget!.name),
+    enabled: sessionMode === 'token' && Boolean(yamlEditTarget),
+  });
+
+  const updateDaemonSetYamlMutation = useMutation({
+    mutationFn: ({ namespace, name, content }: { namespace: string; name: string; content: string }) =>
+      updateDaemonSetYaml(namespace, name, content),
+    onSuccess: (result) => {
+      void message.success(result.message);
+      void refreshDaemonSets();
+      void daemonSetYamlQuery.refetch();
     },
   });
 
@@ -309,10 +329,15 @@ export function DaemonSetsPage() {
               trigger={['click']}
               menu={{
                 items: [
+                  { key: 'edit-yaml', label: 'Edit YAML' },
                   { key: 'restart', label: <span className="text-amber-700">Restart</span> },
                 ],
                 onClick: ({ key, domEvent }) => {
                   domEvent.stopPropagation();
+                  if (key === 'edit-yaml') {
+                    setYamlEditTarget(item);
+                    return;
+                  }
                   if (key === 'restart') {
                     openRestartConfirm(item);
                   }
@@ -393,6 +418,9 @@ export function DaemonSetsPage() {
               </Tag>
               {sessionMode === 'token' ? (
                 <Space size={8} onClick={(event) => event.stopPropagation()}>
+                  <Button size="small" onClick={() => setYamlEditTarget(detailItem)}>
+                    Edit YAML
+                  </Button>
                   <Popconfirm
                     title={`Restart ${detailItem.name} ?`}
                     description="This triggers a rolling update and recreates DaemonSet Pods."
@@ -536,6 +564,37 @@ export function DaemonSetsPage() {
           </section>
         ) : null}
       </Drawer>
+
+      <ResourceYamlEditorModal
+        open={Boolean(yamlEditTarget)}
+        title={
+          yamlEditTarget
+            ? `Edit DaemonSet YAML / ${yamlEditTarget.namespace}/${yamlEditTarget.name}`
+            : 'Edit DaemonSet YAML'
+        }
+        resourceKind="DaemonSet"
+        resourceLabel={yamlEditTarget ? `${yamlEditTarget.namespace}/${yamlEditTarget.name}` : '-'}
+        result={daemonSetYamlQuery.data}
+        loading={daemonSetYamlQuery.isFetching}
+        saving={updateDaemonSetYamlMutation.isPending}
+        error={daemonSetYamlQuery.error}
+        errorMessage="DaemonSet YAML 加载失败"
+        onClose={() => setYamlEditTarget(undefined)}
+        onRefresh={() => {
+          void daemonSetYamlQuery.refetch();
+        }}
+        onSave={(content) => {
+          if (!yamlEditTarget) {
+            return Promise.resolve();
+          }
+
+          return updateDaemonSetYamlMutation.mutateAsync({
+            namespace: yamlEditTarget.namespace,
+            name: yamlEditTarget.name,
+            content,
+          });
+        }}
+      />
     </section>
   );
 }
