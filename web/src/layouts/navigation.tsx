@@ -165,20 +165,6 @@ export const navigationSections: NavigationSection[] = [
         description: '网络隔离策略与访问规则查看',
         implemented: true,
       },
-      {
-        key: 'network-gateways',
-        label: 'Gateway',
-        path: '/network/gateways',
-        description: 'Gateway API 入口资源管理',
-        implemented: false,
-      },
-      {
-        key: 'network-gatewayclasses',
-        label: 'GatewayClasses',
-        path: '/network/gatewayclasses',
-        description: 'GatewayClass 控制器与接纳状态查看',
-        implemented: false,
-      },
     ],
   },
   {
