@@ -37,3 +37,7 @@ vendor/
 # Temporary files
 tmp/
 temp/
+
+# Local tooling artifacts
+.playwright-mcp/
+overview-layout.png

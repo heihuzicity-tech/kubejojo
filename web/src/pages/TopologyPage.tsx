@@ -1,5 +1,7 @@
 import {
+  AppstoreOutlined,
   AimOutlined,
+  ArrowRightOutlined,
   LinkOutlined,
   SettingOutlined,
   ShrinkOutlined,
@@ -29,6 +31,7 @@ import {
   useReactFlow,
 } from '@xyflow/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 import { TopologyEdge } from '../modules/topology/components/TopologyEdge';
 import { TopologyGroupNode, TopologyObjectNode } from '../modules/topology/components/TopologyNodes';
@@ -64,6 +67,10 @@ import {
   statusMeta,
 } from '../modules/topology/presentation';
 import {
+  getTopologyResourceNavigation,
+  hasTopologyDetailsRoute,
+} from '../modules/topology/navigation';
+import {
   getTopologyGraph,
   type TopologyGraph,
   type TopologyResource,
@@ -76,6 +83,10 @@ type SourceType = TopologyResource['source'];
 type SourceFocusMode = 'all' | SourceType;
 type FocusContext = {
   focusedIDs: Set<string>;
+  relatedIDs: Set<string>;
+};
+type NeighborhoodFocusContext = {
+  selectedIDs: Set<string>;
   relatedIDs: Set<string>;
 };
 type CanvasMotionPreset = 'none' | 'boot';
@@ -144,14 +155,27 @@ function createFocusContext(
 function resolveNodeViewState(
   node: TopologyGraphNode,
   focusContext: FocusContext | null,
+  neighborhoodContext: NeighborhoodFocusContext | null,
 ): TopologyViewState {
-  if (!focusContext) {
-    return 'default';
-  }
-
   const leafIDs = collectLeafNodes(node)
     .map((item) => item.resource?.id)
     .filter((id): id is string => Boolean(id));
+
+  if (neighborhoodContext) {
+    if (leafIDs.some((id) => neighborhoodContext.selectedIDs.has(id))) {
+      return 'focused';
+    }
+
+    if (leafIDs.some((id) => neighborhoodContext.relatedIDs.has(id))) {
+      return 'context';
+    }
+
+    return 'muted';
+  }
+
+  if (!focusContext) {
+    return 'default';
+  }
 
   if (leafIDs.some((id) => focusContext.focusedIDs.has(id))) {
     return 'focused';
@@ -168,13 +192,32 @@ function resolveEdgeViewState(
   edge: Edge,
   leafIDsByNodeID: Map<string, string[]>,
   focusContext: FocusContext | null,
+  neighborhoodContext: NeighborhoodFocusContext | null,
 ): TopologyViewState {
+  const sourceLeafIDs = leafIDsByNodeID.get(edge.source) ?? [edge.source];
+  const targetLeafIDs = leafIDsByNodeID.get(edge.target) ?? [edge.target];
+
+  if (neighborhoodContext) {
+    const sourceHasFocus = sourceLeafIDs.some((id) => neighborhoodContext.selectedIDs.has(id));
+    const targetHasFocus = targetLeafIDs.some((id) => neighborhoodContext.selectedIDs.has(id));
+    const sourceHasContext = sourceLeafIDs.some((id) => neighborhoodContext.relatedIDs.has(id));
+    const targetHasContext = targetLeafIDs.some((id) => neighborhoodContext.relatedIDs.has(id));
+
+    if (sourceHasFocus || targetHasFocus) {
+      return 'focused';
+    }
+
+    if (sourceHasContext || targetHasContext) {
+      return 'context';
+    }
+
+    return 'muted';
+  }
+
   if (!focusContext) {
     return 'default';
   }
 
-  const sourceLeafIDs = leafIDsByNodeID.get(edge.source) ?? [edge.source];
-  const targetLeafIDs = leafIDsByNodeID.get(edge.target) ?? [edge.target];
   const sourceHasFocus = sourceLeafIDs.some((id) => focusContext.focusedIDs.has(id));
   const targetHasFocus = targetLeafIDs.some((id) => focusContext.focusedIDs.has(id));
   const sourceHasContext = sourceLeafIDs.some((id) => focusContext.relatedIDs.has(id));
@@ -189,6 +232,30 @@ function resolveEdgeViewState(
   }
 
   return 'muted';
+}
+
+function createNeighborhoodFocusContext(
+  graph: TopologyGraph,
+  selectedResourceID?: string,
+): NeighborhoodFocusContext | null {
+  if (!selectedResourceID) {
+    return null;
+  }
+
+  const selectedIDs = new Set([selectedResourceID]);
+  const relatedIDs = new Set(selectedIDs);
+
+  graph.relations.forEach((relation) => {
+    if (selectedIDs.has(relation.source) || selectedIDs.has(relation.target)) {
+      relatedIDs.add(relation.source);
+      relatedIDs.add(relation.target);
+    }
+  });
+
+  return {
+    selectedIDs,
+    relatedIDs,
+  };
 }
 
 function issueFilteredGraph(graph: TopologyGraph, onlyIssues: boolean): TopologyGraph {
@@ -265,9 +332,15 @@ function getOverlayMotionClass(motionPreset: Exclude<CanvasMotionPreset, 'none'>
 function DetailsPanel({
   resource,
   graph,
+  onSelectResource,
+  onOpenDetails,
+  onOpenModule,
 }: {
   resource?: TopologyResource;
   graph: TopologyGraph;
+  onSelectResource: (resourceID: string) => void;
+  onOpenDetails: (resource: TopologyResource) => void;
+  onOpenModule: (resource: TopologyResource) => void;
 }) {
   if (!resource) {
     return null;
@@ -278,6 +351,7 @@ function DetailsPanel({
   );
   const status = statusMeta(resource.status);
   const source = sourceMeta(resource.source);
+  const navigation = getTopologyResourceNavigation(resource);
 
   return (
     <section className="space-y-5">
@@ -331,6 +405,36 @@ function DetailsPanel({
 
       <section>
         <Typography.Title level={5} className="!mb-3">
+          快捷入口
+        </Typography.Title>
+        <div className="grid gap-2 sm:grid-cols-2">
+          <Button
+            type="primary"
+            icon={<ArrowRightOutlined />}
+            disabled={!navigation.detailsPath}
+            onClick={() => onOpenDetails(resource)}
+          >
+            打开详情
+          </Button>
+          <Button
+            icon={<AppstoreOutlined />}
+            disabled={!navigation.listPath}
+            onClick={() => onOpenModule(resource)}
+          >
+            打开模块
+          </Button>
+        </div>
+        <div className="mt-2 text-xs text-slate-500">
+          {navigation.detailsPath
+            ? '当前资源已接入详情页，可直接进入完整工作台。'
+            : navigation.listPath
+              ? '当前资源还没有独立详情页，先进入所属模块。'
+              : '当前资源还没有可用的页面入口。'}
+        </div>
+      </section>
+
+      <section>
+        <Typography.Title level={5} className="!mb-3">
           关联关系
         </Typography.Title>
         <div className="space-y-2">
@@ -346,10 +450,36 @@ function DetailsPanel({
                 >
                   <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.12em] text-slate-400">
                     <LinkOutlined />
-                    {relation.label}
+                    {relation.source === resource.id ? 'Outgoing' : 'Incoming'} · {relation.label}
                   </div>
-                  <div className="mt-1 text-sm font-medium text-slate-900">
-                    {target ? `${target.kind} / ${target.name}` : relation.label}
+                  <div className="mt-1 flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium text-slate-900">
+                        {target ? `${target.kind} / ${target.name}` : relation.label}
+                      </div>
+                      {target ? (
+                        <div className="mt-1 text-xs text-slate-500">{target.summary}</div>
+                      ) : null}
+                    </div>
+
+                    {target ? (
+                      <Space size={6}>
+                        <Button size="small" onClick={() => onSelectResource(target.id)}>
+                          定位
+                        </Button>
+                        <Button
+                          size="small"
+                          type="text"
+                          onClick={() =>
+                            hasTopologyDetailsRoute(target)
+                              ? onOpenDetails(target)
+                              : onOpenModule(target)
+                          }
+                        >
+                          打开
+                        </Button>
+                      </Space>
+                    ) : null}
                   </div>
                 </div>
               );
@@ -378,6 +508,7 @@ function FloatingPanel({
 }
 
 function TopologyWorkspace() {
+  const navigate = useNavigate();
   const namespace = useAppStore((state) => state.namespace);
   const sessionMode = useAppStore((state) => state.sessionMode);
   const reactFlow = useReactFlow<Node<TopologyFlowNodeData>, Edge>();
@@ -491,6 +622,10 @@ function TopologyWorkspace() {
   const focusContext = useMemo(
     () => createFocusContext(graph, sourceFocus),
     [graph, sourceFocus],
+  );
+  const neighborhoodFocusContext = useMemo(
+    () => createNeighborhoodFocusContext(graph, detailResourceID),
+    [detailResourceID, graph],
   );
 
   const groupedGraph = useMemo(() => {
@@ -629,11 +764,15 @@ function TopologyWorkspace() {
         ...node,
         data: {
           ...node.data,
-          viewState: resolveNodeViewState(node.data.graphNode, focusContext),
+          viewState: resolveNodeViewState(
+            node.data.graphNode,
+            focusContext,
+            neighborhoodFocusContext,
+          ),
         },
         selected: detailResourceID ? node.id === detailResourceID : node.id === focusedID,
       })),
-    [detailResourceID, focusContext, focusedID, layoutedGraph.nodes],
+    [detailResourceID, focusContext, focusedID, layoutedGraph.nodes, neighborhoodFocusContext],
   );
   const renderedEdges = useMemo(
     () =>
@@ -641,10 +780,15 @@ function TopologyWorkspace() {
         ...edge,
         data: {
           ...(edge.data as TopologyFlowEdgeData | undefined),
-          viewState: resolveEdgeViewState(edge, leafIDsByVisibleNodeID, focusContext),
+          viewState: resolveEdgeViewState(
+            edge,
+            leafIDsByVisibleNodeID,
+            focusContext,
+            neighborhoodFocusContext,
+          ),
         },
       })),
-    [focusContext, leafIDsByVisibleNodeID, layoutedGraph.edges],
+    [focusContext, leafIDsByVisibleNodeID, layoutedGraph.edges, neighborhoodFocusContext],
   );
   const zoomTo = (mode: ZoomMode) => {
     viewportMovedRef.current = false;
@@ -653,6 +797,22 @@ function TopologyWorkspace() {
   const exitFocus = () => {
     setFocusedID(undefined);
     setDetailResourceID(undefined);
+  };
+  const openResourceDetails = (resource: TopologyResource) => {
+    const navigation = getTopologyResourceNavigation(resource);
+    if (navigation.detailsPath) {
+      navigate(navigation.detailsPath);
+    }
+  };
+  const openResourceModule = (resource: TopologyResource) => {
+    const navigation = getTopologyResourceNavigation(resource);
+    if (navigation.listPath) {
+      navigate(navigation.listPath);
+    }
+  };
+  const selectResourceInGraph = (resourceID: string) => {
+    setFocusedID(resourceID);
+    setDetailResourceID(resourceID);
   };
   const handleNodeClick = (_event: unknown, node: Node<TopologyFlowNodeData>) => {
     const graphNode = node.data.graphNode;
@@ -666,6 +826,19 @@ function TopologyWorkspace() {
     }
 
     setDetailResourceID(node.id);
+  };
+  const handleNodeDoubleClick = (_event: unknown, node: Node<TopologyFlowNodeData>) => {
+    const resource = graph.resources.find((item) => item.id === node.id);
+    if (!resource) {
+      return;
+    }
+
+    if (hasTopologyDetailsRoute(resource)) {
+      openResourceDetails(resource);
+      return;
+    }
+
+    openResourceModule(resource);
   };
   const viewSettingsContent = (
     <div className="w-[280px] space-y-4">
@@ -855,6 +1028,7 @@ function TopologyWorkspace() {
                     viewportMovedRef.current = true;
                   }}
                   onNodeClick={handleNodeClick}
+                  onNodeDoubleClick={handleNodeDoubleClick}
                   proOptions={{ hideAttribution: true }}
                 >
                   <Background color="#d8e0e7" gap={18} size={1} />
@@ -891,11 +1065,17 @@ function TopologyWorkspace() {
       <Drawer
         title={selectedResource ? `${selectedResource.kind} / ${selectedResource.name}` : '资源详情'}
         placement="right"
-        width={380}
+        width={420}
         open={Boolean(selectedResource)}
         onClose={() => setDetailResourceID(undefined)}
       >
-        <DetailsPanel resource={selectedResource} graph={graph} />
+        <DetailsPanel
+          resource={selectedResource}
+          graph={graph}
+          onSelectResource={selectResourceInGraph}
+          onOpenDetails={openResourceDetails}
+          onOpenModule={openResourceModule}
+        />
       </Drawer>
     </section>
   );
