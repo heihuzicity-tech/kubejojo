@@ -1,0 +1,188 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: demo-security
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: demo-shared-credentials
+  namespace: demo-security
+type: Opaque
+stringData:
+  username: demo-reader
+  password: demo-password
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: demo-regcred
+  namespace: demo-security
+type: kubernetes.io/dockerconfigjson
+stringData:
+  .dockerconfigjson: |
+    {"auths":{"https://index.docker.io/v1/":{"username":"demo","password":"demo-password","auth":"ZGVtbzpkZW1vLXBhc3N3b3Jk"}}}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: demo-reader
+  namespace: demo-security
+  labels:
+    app.kubernetes.io/name: demo-reader
+    app.kubernetes.io/part-of: security-demo
+secrets:
+  - name: demo-shared-credentials
+imagePullSecrets:
+  - name: demo-regcred
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: demo-automation
+  namespace: demo-security
+  labels:
+    app.kubernetes.io/name: demo-automation
+    app.kubernetes.io/part-of: security-demo
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: demo-pod-reader
+  namespace: demo-security
+  labels:
+    app.kubernetes.io/part-of: security-demo
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+      - pods/log
+      - configmaps
+      - events
+    verbs:
+      - get
+      - list
+      - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: demo-release-observer
+  namespace: demo-security
+  labels:
+    app.kubernetes.io/part-of: security-demo
+rules:
+  - apiGroups:
+      - apps
+    resources:
+      - deployments
+      - replicasets
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - batch
+    resources:
+      - jobs
+      - cronjobs
+    verbs:
+      - get
+      - list
+      - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: demo-pod-reader-binding
+  namespace: demo-security
+  labels:
+    app.kubernetes.io/part-of: security-demo
+subjects:
+  - kind: ServiceAccount
+    name: demo-reader
+    namespace: demo-security
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: demo-pod-reader
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: demo-release-observer-binding
+  namespace: demo-security
+  labels:
+    app.kubernetes.io/part-of: security-demo
+subjects:
+  - kind: User
+    apiGroup: rbac.authorization.k8s.io
+    name: release-bot@example.local
+  - kind: Group
+    apiGroup: rbac.authorization.k8s.io
+    name: oncall-observers
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: demo-release-observer
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-reader-app
+  namespace: demo-security
+  labels:
+    app.kubernetes.io/name: demo-reader-app
+    app.kubernetes.io/part-of: security-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: demo-reader-app
+  template:
+    metadata:
+      labels:
+        app: demo-reader-app
+        app.kubernetes.io/name: demo-reader-app
+        app.kubernetes.io/part-of: security-demo
+    spec:
+      serviceAccountName: demo-reader
+      containers:
+        - name: toolbox
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - sleep 86400
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-automation-app
+  namespace: demo-security
+  labels:
+    app.kubernetes.io/name: demo-automation-app
+    app.kubernetes.io/part-of: security-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: demo-automation-app
+  template:
+    metadata:
+      labels:
+        app: demo-automation-app
+        app.kubernetes.io/name: demo-automation-app
+        app.kubernetes.io/part-of: security-demo
+    spec:
+      serviceAccountName: demo-automation
+      automountServiceAccountToken: false
+      containers:
+        - name: toolbox
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - sleep 86400

@@ -157,13 +157,29 @@ export function AppLayout({ children }: PropsWithChildren) {
   }, [authQuery.data?.name, setUserName]);
 
   useEffect(() => {
-    const status = authQuery.error instanceof AxiosError ? authQuery.error.response?.status : undefined;
-    if (sessionMode === 'token' && (status === 401 || status === 403)) {
+    const authStatus =
+      authQuery.error instanceof AxiosError ? authQuery.error.response?.status : undefined;
+    const namespacesStatus =
+      namespacesQuery.error instanceof AxiosError
+        ? namespacesQuery.error.response?.status
+        : undefined;
+
+    if (
+      sessionMode === 'token' &&
+      [authStatus, namespacesStatus].some((status) => status === 401 || status === 403)
+    ) {
       queryClient.clear();
       clearToken();
       navigate('/login', { replace: true });
     }
-  }, [authQuery.error, clearToken, navigate, queryClient, sessionMode]);
+  }, [
+    authQuery.error,
+    clearToken,
+    navigate,
+    namespacesQuery.error,
+    queryClient,
+    sessionMode,
+  ]);
 
   const namespaceOptions =
     sessionMode === 'demo' ? demoNamespaces : namespacesQuery.data ?? [];

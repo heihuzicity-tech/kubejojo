@@ -536,17 +536,17 @@ type RoleRuleItem struct {
 }
 
 type RoleItem struct {
-	Name             string                    `json:"name"`
-	Namespace        string                    `json:"namespace"`
-	Status           string                    `json:"status"`
-	Summary          string                    `json:"summary"`
-	RuleCount        int                       `json:"ruleCount"`
-	BoundSubjectCount int                      `json:"boundSubjectCount"`
-	BoundSubjects    jsonx.Slice[string]       `json:"boundSubjects"`
-	Rules            jsonx.Slice[RoleRuleItem] `json:"rules"`
-	Labels           jsonx.Slice[string]       `json:"labels"`
-	Age              string                    `json:"age"`
-	CreatedAt        string                    `json:"createdAt"`
+	Name              string                    `json:"name"`
+	Namespace         string                    `json:"namespace"`
+	Status            string                    `json:"status"`
+	Summary           string                    `json:"summary"`
+	RuleCount         int                       `json:"ruleCount"`
+	BoundSubjectCount int                       `json:"boundSubjectCount"`
+	BoundSubjects     jsonx.Slice[string]       `json:"boundSubjects"`
+	Rules             jsonx.Slice[RoleRuleItem] `json:"rules"`
+	Labels            jsonx.Slice[string]       `json:"labels"`
+	Age               string                    `json:"age"`
+	CreatedAt         string                    `json:"createdAt"`
 }
 
 type RoleBindingSubjectItem struct {
@@ -557,19 +557,19 @@ type RoleBindingSubjectItem struct {
 }
 
 type RoleBindingItem struct {
-	Name            string                           `json:"name"`
-	Namespace       string                           `json:"namespace"`
-	Status          string                           `json:"status"`
-	Summary         string                           `json:"summary"`
-	RoleRefKind     string                           `json:"roleRefKind"`
-	RoleRefName     string                           `json:"roleRefName"`
-	RoleRefAPIGroup string                           `json:"roleRefApiGroup,omitempty"`
-	SubjectCount    int                              `json:"subjectCount"`
-	SubjectSummaries jsonx.Slice[string]             `json:"subjectSummaries"`
-	Subjects        jsonx.Slice[RoleBindingSubjectItem] `json:"subjects"`
-	Labels          jsonx.Slice[string]              `json:"labels"`
-	Age             string                           `json:"age"`
-	CreatedAt       string                           `json:"createdAt"`
+	Name             string                              `json:"name"`
+	Namespace        string                              `json:"namespace"`
+	Status           string                              `json:"status"`
+	Summary          string                              `json:"summary"`
+	RoleRefKind      string                              `json:"roleRefKind"`
+	RoleRefName      string                              `json:"roleRefName"`
+	RoleRefAPIGroup  string                              `json:"roleRefApiGroup,omitempty"`
+	SubjectCount     int                                 `json:"subjectCount"`
+	SubjectSummaries jsonx.Slice[string]                 `json:"subjectSummaries"`
+	Subjects         jsonx.Slice[RoleBindingSubjectItem] `json:"subjects"`
+	Labels           jsonx.Slice[string]                 `json:"labels"`
+	Age              string                              `json:"age"`
+	CreatedAt        string                              `json:"createdAt"`
 }
 
 type NetworkPolicyRuleItem struct {

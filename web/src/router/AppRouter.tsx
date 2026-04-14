@@ -36,9 +36,15 @@ import { PodDetailsPage } from '../pages/PodDetailsPage';
 import { PodsPage } from '../pages/PodsPage';
 import { ReplicaSetDetailsPage } from '../pages/ReplicaSetDetailsPage';
 import { ReplicaSetsPage } from '../pages/ReplicaSetsPage';
+import { RoleBindingDetailsPage } from '../pages/RoleBindingDetailsPage';
+import { RoleBindingsPage } from '../pages/RoleBindingsPage';
+import { RoleDetailsPage } from '../pages/RoleDetailsPage';
+import { RolesPage } from '../pages/RolesPage';
 import { SecretDetailsPage } from '../pages/SecretDetailsPage';
 import { SecretsPage } from '../pages/SecretsPage';
 import { ServiceDetailsPage } from '../pages/ServiceDetailsPage';
+import { ServiceAccountDetailsPage } from '../pages/ServiceAccountDetailsPage';
+import { ServiceAccountsPage } from '../pages/ServiceAccountsPage';
 import { ServicesPage } from '../pages/ServicesPage';
 import { StatefulSetDetailsPage } from '../pages/StatefulSetDetailsPage';
 import { StatefulSetsPage } from '../pages/StatefulSetsPage';
@@ -99,6 +105,18 @@ function ProtectedRoutes() {
         <Route path="/config/configmaps/:namespace/:name" element={<ConfigMapDetailsPage />} />
         <Route path="/config/secrets" element={<SecretsPage />} />
         <Route path="/config/secrets/:namespace/:name" element={<SecretDetailsPage />} />
+        <Route path="/security/serviceaccounts" element={<ServiceAccountsPage />} />
+        <Route
+          path="/security/serviceaccounts/:namespace/:name"
+          element={<ServiceAccountDetailsPage />}
+        />
+        <Route path="/security/roles" element={<RolesPage />} />
+        <Route path="/security/roles/:namespace/:name" element={<RoleDetailsPage />} />
+        <Route path="/security/rolebindings" element={<RoleBindingsPage />} />
+        <Route
+          path="/security/rolebindings/:namespace/:name"
+          element={<RoleBindingDetailsPage />}
+        />
         <Route
           path="/storage/persistentvolumeclaims"
           element={<PersistentVolumeClaimsPage />}
