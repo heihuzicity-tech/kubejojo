@@ -16,6 +16,7 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -507,6 +508,68 @@ type SecretItem struct {
 	Labels             jsonx.Slice[string] `json:"labels"`
 	Age                string              `json:"age"`
 	CreatedAt          string              `json:"createdAt"`
+}
+
+type ServiceAccountItem struct {
+	Name                 string              `json:"name"`
+	Namespace            string              `json:"namespace"`
+	Status               string              `json:"status"`
+	Summary              string              `json:"summary"`
+	AutomountToken       string              `json:"automountToken"`
+	SecretNames          jsonx.Slice[string] `json:"secretNames"`
+	SecretCount          int                 `json:"secretCount"`
+	ImagePullSecrets     jsonx.Slice[string] `json:"imagePullSecrets"`
+	ImagePullSecretCount int                 `json:"imagePullSecretCount"`
+	ReferencedPodCount   int                 `json:"referencedPodCount"`
+	ReferencedPods       jsonx.Slice[string] `json:"referencedPods"`
+	Labels               jsonx.Slice[string] `json:"labels"`
+	Age                  string              `json:"age"`
+	CreatedAt            string              `json:"createdAt"`
+}
+
+type RoleRuleItem struct {
+	APIGroups       jsonx.Slice[string] `json:"apiGroups"`
+	Resources       jsonx.Slice[string] `json:"resources"`
+	ResourceNames   jsonx.Slice[string] `json:"resourceNames"`
+	NonResourceURLs jsonx.Slice[string] `json:"nonResourceUrls"`
+	Verbs           jsonx.Slice[string] `json:"verbs"`
+}
+
+type RoleItem struct {
+	Name             string                    `json:"name"`
+	Namespace        string                    `json:"namespace"`
+	Status           string                    `json:"status"`
+	Summary          string                    `json:"summary"`
+	RuleCount        int                       `json:"ruleCount"`
+	BoundSubjectCount int                      `json:"boundSubjectCount"`
+	BoundSubjects    jsonx.Slice[string]       `json:"boundSubjects"`
+	Rules            jsonx.Slice[RoleRuleItem] `json:"rules"`
+	Labels           jsonx.Slice[string]       `json:"labels"`
+	Age              string                    `json:"age"`
+	CreatedAt        string                    `json:"createdAt"`
+}
+
+type RoleBindingSubjectItem struct {
+	Kind      string `json:"kind"`
+	Name      string `json:"name"`
+	Namespace string `json:"namespace,omitempty"`
+	APIGroup  string `json:"apiGroup,omitempty"`
+}
+
+type RoleBindingItem struct {
+	Name            string                           `json:"name"`
+	Namespace       string                           `json:"namespace"`
+	Status          string                           `json:"status"`
+	Summary         string                           `json:"summary"`
+	RoleRefKind     string                           `json:"roleRefKind"`
+	RoleRefName     string                           `json:"roleRefName"`
+	RoleRefAPIGroup string                           `json:"roleRefApiGroup,omitempty"`
+	SubjectCount    int                              `json:"subjectCount"`
+	SubjectSummaries jsonx.Slice[string]             `json:"subjectSummaries"`
+	Subjects        jsonx.Slice[RoleBindingSubjectItem] `json:"subjects"`
+	Labels          jsonx.Slice[string]              `json:"labels"`
+	Age             string                           `json:"age"`
+	CreatedAt       string                           `json:"createdAt"`
 }
 
 type NetworkPolicyRuleItem struct {
@@ -2147,6 +2210,154 @@ func (s *ClusterService) ListIngressClasses(ctx context.Context) ([]IngressClass
 	return classes, nil
 }
 
+func (s *ClusterService) ListServiceAccounts(
+	ctx context.Context,
+	namespace string,
+) ([]ServiceAccountItem, error) {
+	namespace = normalizeNamespace(namespace)
+
+	items, err := s.client.Kubernetes.CoreV1().ServiceAccounts(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list serviceaccounts: %w", err)
+	}
+
+	pods, err := s.client.Kubernetes.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list pods for serviceaccounts: %w", err)
+	}
+
+	podsByAccount := podsByServiceAccount(pods.Items)
+	accounts := make([]ServiceAccountItem, 0, len(items.Items))
+	for _, item := range items.Items {
+		referencedPods := podsByAccount[namespacedName(item.Namespace, item.Name)]
+		accounts = append(accounts, ServiceAccountItem{
+			Name:                 item.Name,
+			Namespace:            item.Namespace,
+			Status:               serviceAccountStatus(item),
+			Summary:              serviceAccountSummary(item, len(referencedPods)),
+			AutomountToken:       serviceAccountAutomountMode(item),
+			SecretNames:          jsonx.Slice[string](serviceAccountSecretNames(item)),
+			SecretCount:          len(item.Secrets),
+			ImagePullSecrets:     jsonx.Slice[string](serviceAccountImagePullSecrets(item)),
+			ImagePullSecretCount: len(item.ImagePullSecrets),
+			ReferencedPodCount:   len(referencedPods),
+			ReferencedPods:       jsonx.Slice[string](referencedPods),
+			Labels:               jsonx.Slice[string](labelPairs(item.Labels)),
+			Age:                  ageString(item.CreationTimestamp.Time),
+			CreatedAt:            item.CreationTimestamp.Time.Format("2006-01-02 15:04:05"),
+		})
+	}
+
+	sort.Slice(accounts, func(i, j int) bool {
+		leftOrder := topologyStatusOrder(accounts[i].Status)
+		rightOrder := topologyStatusOrder(accounts[j].Status)
+		if leftOrder != rightOrder {
+			return leftOrder < rightOrder
+		}
+		if accounts[i].Namespace != accounts[j].Namespace {
+			return accounts[i].Namespace < accounts[j].Namespace
+		}
+		return accounts[i].Name < accounts[j].Name
+	})
+
+	return accounts, nil
+}
+
+func (s *ClusterService) ListRoles(ctx context.Context, namespace string) ([]RoleItem, error) {
+	namespace = normalizeNamespace(namespace)
+
+	items, err := s.client.Kubernetes.RbacV1().Roles(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list roles: %w", err)
+	}
+
+	roleBindings, err := s.client.Kubernetes.RbacV1().RoleBindings(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list rolebindings for roles: %w", err)
+	}
+
+	bindingsByRole := roleBindingsByRole(roleBindings.Items)
+	roles := make([]RoleItem, 0, len(items.Items))
+	for _, item := range items.Items {
+		relatedBindings := bindingsByRole[namespacedName(item.Namespace, item.Name)]
+		boundSubjects := roleBoundSubjects(relatedBindings)
+		roles = append(roles, RoleItem{
+			Name:              item.Name,
+			Namespace:         item.Namespace,
+			Status:            roleStatus(item),
+			Summary:           roleSummary(item, len(boundSubjects)),
+			RuleCount:         len(item.Rules),
+			BoundSubjectCount: len(boundSubjects),
+			BoundSubjects:     jsonx.Slice[string](boundSubjects),
+			Rules:             jsonx.Slice[RoleRuleItem](roleRuleItems(item)),
+			Labels:            jsonx.Slice[string](labelPairs(item.Labels)),
+			Age:               ageString(item.CreationTimestamp.Time),
+			CreatedAt:         item.CreationTimestamp.Time.Format("2006-01-02 15:04:05"),
+		})
+	}
+
+	sort.Slice(roles, func(i, j int) bool {
+		leftOrder := topologyStatusOrder(roles[i].Status)
+		rightOrder := topologyStatusOrder(roles[j].Status)
+		if leftOrder != rightOrder {
+			return leftOrder < rightOrder
+		}
+		if roles[i].Namespace != roles[j].Namespace {
+			return roles[i].Namespace < roles[j].Namespace
+		}
+		return roles[i].Name < roles[j].Name
+	})
+
+	return roles, nil
+}
+
+func (s *ClusterService) ListRoleBindings(
+	ctx context.Context,
+	namespace string,
+) ([]RoleBindingItem, error) {
+	namespace = normalizeNamespace(namespace)
+
+	items, err := s.client.Kubernetes.RbacV1().RoleBindings(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list rolebindings: %w", err)
+	}
+
+	bindings := make([]RoleBindingItem, 0, len(items.Items))
+	for _, item := range items.Items {
+		subjects := roleBindingSubjectItems(item)
+		subjectSummaries := roleBindingSubjectSummaries(item)
+		bindings = append(bindings, RoleBindingItem{
+			Name:             item.Name,
+			Namespace:        item.Namespace,
+			Status:           roleBindingStatus(item),
+			Summary:          roleBindingSummary(item),
+			RoleRefKind:      item.RoleRef.Kind,
+			RoleRefName:      item.RoleRef.Name,
+			RoleRefAPIGroup:  item.RoleRef.APIGroup,
+			SubjectCount:     len(subjects),
+			SubjectSummaries: jsonx.Slice[string](subjectSummaries),
+			Subjects:         jsonx.Slice[RoleBindingSubjectItem](subjects),
+			Labels:           jsonx.Slice[string](labelPairs(item.Labels)),
+			Age:              ageString(item.CreationTimestamp.Time),
+			CreatedAt:        item.CreationTimestamp.Time.Format("2006-01-02 15:04:05"),
+		})
+	}
+
+	sort.Slice(bindings, func(i, j int) bool {
+		leftOrder := topologyStatusOrder(bindings[i].Status)
+		rightOrder := topologyStatusOrder(bindings[j].Status)
+		if leftOrder != rightOrder {
+			return leftOrder < rightOrder
+		}
+		if bindings[i].Namespace != bindings[j].Namespace {
+			return bindings[i].Namespace < bindings[j].Namespace
+		}
+		return bindings[i].Name < bindings[j].Name
+	})
+
+	return bindings, nil
+}
+
 func (s *ClusterService) ListConfigMaps(ctx context.Context, namespace string) ([]ConfigMapItem, error) {
 	namespace = normalizeNamespace(namespace)
 
@@ -2346,6 +2557,57 @@ func (s *ClusterService) UpdateIngressClassYAML(
 	content string,
 ) (WorkloadActionResult, error) {
 	return s.ApplyClusterResourceYAML(ctx, "ingressclass", "IngressClass", name, content)
+}
+
+func (s *ClusterService) GetServiceAccountYAML(
+	ctx context.Context,
+	namespace string,
+	name string,
+) (ResourceTextResult, error) {
+	return s.GetResourceYAML(ctx, "serviceaccount", "ServiceAccount", namespace, name)
+}
+
+func (s *ClusterService) UpdateServiceAccountYAML(
+	ctx context.Context,
+	namespace string,
+	name string,
+	content string,
+) (WorkloadActionResult, error) {
+	return s.ApplyResourceYAML(ctx, "serviceaccount", "ServiceAccount", namespace, name, content)
+}
+
+func (s *ClusterService) GetRoleYAML(
+	ctx context.Context,
+	namespace string,
+	name string,
+) (ResourceTextResult, error) {
+	return s.GetResourceYAML(ctx, "role", "Role", namespace, name)
+}
+
+func (s *ClusterService) UpdateRoleYAML(
+	ctx context.Context,
+	namespace string,
+	name string,
+	content string,
+) (WorkloadActionResult, error) {
+	return s.ApplyResourceYAML(ctx, "role", "Role", namespace, name, content)
+}
+
+func (s *ClusterService) GetRoleBindingYAML(
+	ctx context.Context,
+	namespace string,
+	name string,
+) (ResourceTextResult, error) {
+	return s.GetResourceYAML(ctx, "rolebinding", "RoleBinding", namespace, name)
+}
+
+func (s *ClusterService) UpdateRoleBindingYAML(
+	ctx context.Context,
+	namespace string,
+	name string,
+	content string,
+) (WorkloadActionResult, error) {
+	return s.ApplyResourceYAML(ctx, "rolebinding", "RoleBinding", namespace, name, content)
 }
 
 func (s *ClusterService) GetConfigMapYAML(
@@ -3378,6 +3640,37 @@ func podsByPersistentVolumeClaim(items []corev1.Pod) map[string][]string {
 	return index
 }
 
+func podsByServiceAccount(items []corev1.Pod) map[string][]string {
+	index := make(map[string][]string)
+	for _, item := range items {
+		accountName := strings.TrimSpace(item.Spec.ServiceAccountName)
+		if accountName == "" {
+			accountName = "default"
+		}
+
+		key := namespacedName(item.Namespace, accountName)
+		index[key] = append(index[key], item.Name)
+	}
+
+	sortPodReferenceIndex(index)
+
+	return index
+}
+
+func roleBindingsByRole(items []rbacv1.RoleBinding) map[string][]rbacv1.RoleBinding {
+	index := make(map[string][]rbacv1.RoleBinding)
+	for _, item := range items {
+		if item.RoleRef.Kind != "Role" || strings.TrimSpace(item.RoleRef.Name) == "" {
+			continue
+		}
+
+		key := namespacedName(item.Namespace, item.RoleRef.Name)
+		index[key] = append(index[key], item)
+	}
+
+	return index
+}
+
 func podsByConfigMapReference(items []corev1.Pod) map[string][]string {
 	index := make(map[string][]string)
 	for _, item := range items {
@@ -3513,6 +3806,23 @@ func sortedMapKeys[T any](items map[string]T) []string {
 	return keys
 }
 
+func uniqueSortedStrings(items []string) []string {
+	if len(items) == 0 {
+		return nil
+	}
+
+	unique := make(map[string]struct{}, len(items))
+	for _, item := range items {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		unique[item] = struct{}{}
+	}
+
+	return sortedMapKeys(unique)
+}
+
 func configMapDataKeys(item corev1.ConfigMap) []string {
 	return sortedMapKeys(item.Data)
 }
@@ -3523,6 +3833,156 @@ func configMapBinaryDataKeys(item corev1.ConfigMap) []string {
 
 func secretDataKeys(item corev1.Secret) []string {
 	return sortedMapKeys(item.Data)
+}
+
+func serviceAccountStatus(item corev1.ServiceAccount) string {
+	return TopologyStatusHealthy
+}
+
+func serviceAccountSummary(item corev1.ServiceAccount, podCount int) string {
+	return fmt.Sprintf("Pods %d · Secrets %d · PullSecrets %d", podCount, len(item.Secrets), len(item.ImagePullSecrets))
+}
+
+func serviceAccountAutomountMode(item corev1.ServiceAccount) string {
+	if item.AutomountServiceAccountToken == nil {
+		return "Inherited"
+	}
+	if *item.AutomountServiceAccountToken {
+		return "Enabled"
+	}
+	return "Disabled"
+}
+
+func serviceAccountSecretNames(item corev1.ServiceAccount) []string {
+	names := make([]string, 0, len(item.Secrets))
+	for _, secret := range item.Secrets {
+		if strings.TrimSpace(secret.Name) == "" {
+			continue
+		}
+		names = append(names, secret.Name)
+	}
+
+	return uniqueSortedStrings(names)
+}
+
+func serviceAccountImagePullSecrets(item corev1.ServiceAccount) []string {
+	names := make([]string, 0, len(item.ImagePullSecrets))
+	for _, secret := range item.ImagePullSecrets {
+		if strings.TrimSpace(secret.Name) == "" {
+			continue
+		}
+		names = append(names, secret.Name)
+	}
+
+	return uniqueSortedStrings(names)
+}
+
+func roleRuleItems(item rbacv1.Role) []RoleRuleItem {
+	if len(item.Rules) == 0 {
+		return nil
+	}
+
+	rules := make([]RoleRuleItem, 0, len(item.Rules))
+	for _, rule := range item.Rules {
+		rules = append(rules, RoleRuleItem{
+			APIGroups:       jsonx.Slice[string](append([]string(nil), rule.APIGroups...)),
+			Resources:       jsonx.Slice[string](append([]string(nil), rule.Resources...)),
+			ResourceNames:   jsonx.Slice[string](append([]string(nil), rule.ResourceNames...)),
+			NonResourceURLs: jsonx.Slice[string](append([]string(nil), rule.NonResourceURLs...)),
+			Verbs:           jsonx.Slice[string](append([]string(nil), rule.Verbs...)),
+		})
+	}
+
+	return rules
+}
+
+func roleStatus(item rbacv1.Role) string {
+	if len(item.Rules) == 0 {
+		return TopologyStatusWarning
+	}
+	return TopologyStatusHealthy
+}
+
+func roleSummary(item rbacv1.Role, boundSubjectCount int) string {
+	return fmt.Sprintf("Rules %d · Subjects %d", len(item.Rules), boundSubjectCount)
+}
+
+func roleBoundSubjects(items []rbacv1.RoleBinding) []string {
+	subjects := make([]string, 0)
+	for _, item := range items {
+		subjects = append(subjects, roleBindingSubjectSummaries(item)...)
+	}
+
+	return uniqueSortedStrings(subjects)
+}
+
+func roleBindingSubjectItems(item rbacv1.RoleBinding) []RoleBindingSubjectItem {
+	if len(item.Subjects) == 0 {
+		return nil
+	}
+
+	subjects := make([]RoleBindingSubjectItem, 0, len(item.Subjects))
+	for _, subject := range item.Subjects {
+		namespace := strings.TrimSpace(subject.Namespace)
+		if subject.Kind == "ServiceAccount" && namespace == "" {
+			namespace = item.Namespace
+		}
+
+		subjects = append(subjects, RoleBindingSubjectItem{
+			Kind:      subject.Kind,
+			Name:      subject.Name,
+			Namespace: namespace,
+			APIGroup:  subject.APIGroup,
+		})
+	}
+
+	sort.Slice(subjects, func(i, j int) bool {
+		if subjects[i].Kind != subjects[j].Kind {
+			return subjects[i].Kind < subjects[j].Kind
+		}
+		if subjects[i].Namespace != subjects[j].Namespace {
+			return subjects[i].Namespace < subjects[j].Namespace
+		}
+		return subjects[i].Name < subjects[j].Name
+	})
+
+	return subjects
+}
+
+func roleBindingSubjectSummary(subject rbacv1.Subject, defaultNamespace string) string {
+	namespace := strings.TrimSpace(subject.Namespace)
+	if subject.Kind == "ServiceAccount" {
+		if namespace == "" {
+			namespace = defaultNamespace
+		}
+		return fmt.Sprintf("ServiceAccount %s/%s", namespace, subject.Name)
+	}
+
+	if namespace != "" {
+		return fmt.Sprintf("%s %s/%s", subject.Kind, namespace, subject.Name)
+	}
+
+	return fmt.Sprintf("%s %s", subject.Kind, subject.Name)
+}
+
+func roleBindingSubjectSummaries(item rbacv1.RoleBinding) []string {
+	summaries := make([]string, 0, len(item.Subjects))
+	for _, subject := range item.Subjects {
+		summaries = append(summaries, roleBindingSubjectSummary(subject, item.Namespace))
+	}
+
+	return uniqueSortedStrings(summaries)
+}
+
+func roleBindingStatus(item rbacv1.RoleBinding) string {
+	if len(item.Subjects) == 0 {
+		return TopologyStatusWarning
+	}
+	return TopologyStatusHealthy
+}
+
+func roleBindingSummary(item rbacv1.RoleBinding) string {
+	return fmt.Sprintf("%s %s · Subjects %d", item.RoleRef.Kind, item.RoleRef.Name, len(item.Subjects))
 }
 
 func configMapStatus(item corev1.ConfigMap) string {

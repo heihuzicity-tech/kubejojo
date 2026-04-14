@@ -1076,6 +1076,150 @@ func newRouter(clusterFactory *kube.Factory) *gin.Engine {
 				c.JSON(http.StatusOK, response.Success(result))
 			})
 
+			authorized.GET("/serviceaccounts", func(c *gin.Context) {
+				items, err := mustClusterService(c).ListServiceAccounts(
+					c.Request.Context(),
+					c.Query("namespace"),
+				)
+				if err != nil {
+					respondWithClusterError(c, "LIST_SERVICEACCOUNTS_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(items))
+			})
+
+			authorized.GET("/serviceaccounts/:namespace/:name/yaml", func(c *gin.Context) {
+				result, err := mustClusterService(c).GetServiceAccountYAML(
+					c.Request.Context(),
+					c.Param("namespace"),
+					c.Param("name"),
+				)
+				if err != nil {
+					respondWithClusterError(c, "GET_SERVICEACCOUNT_YAML_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(result))
+			})
+
+			authorized.PUT("/serviceaccounts/:namespace/:name/yaml", func(c *gin.Context) {
+				var req yamlUpdateRequest
+				if err := c.ShouldBindJSON(&req); err != nil {
+					c.JSON(http.StatusBadRequest, response.Failure("INVALID_YAML_UPDATE_REQUEST", "请求体格式不正确"))
+					return
+				}
+
+				result, err := mustClusterService(c).UpdateServiceAccountYAML(
+					c.Request.Context(),
+					c.Param("namespace"),
+					c.Param("name"),
+					req.Content,
+				)
+				if err != nil {
+					respondWithClusterError(c, "UPDATE_SERVICEACCOUNT_YAML_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(result))
+			})
+
+			authorized.GET("/roles", func(c *gin.Context) {
+				items, err := mustClusterService(c).ListRoles(
+					c.Request.Context(),
+					c.Query("namespace"),
+				)
+				if err != nil {
+					respondWithClusterError(c, "LIST_ROLES_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(items))
+			})
+
+			authorized.GET("/roles/:namespace/:name/yaml", func(c *gin.Context) {
+				result, err := mustClusterService(c).GetRoleYAML(
+					c.Request.Context(),
+					c.Param("namespace"),
+					c.Param("name"),
+				)
+				if err != nil {
+					respondWithClusterError(c, "GET_ROLE_YAML_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(result))
+			})
+
+			authorized.PUT("/roles/:namespace/:name/yaml", func(c *gin.Context) {
+				var req yamlUpdateRequest
+				if err := c.ShouldBindJSON(&req); err != nil {
+					c.JSON(http.StatusBadRequest, response.Failure("INVALID_YAML_UPDATE_REQUEST", "请求体格式不正确"))
+					return
+				}
+
+				result, err := mustClusterService(c).UpdateRoleYAML(
+					c.Request.Context(),
+					c.Param("namespace"),
+					c.Param("name"),
+					req.Content,
+				)
+				if err != nil {
+					respondWithClusterError(c, "UPDATE_ROLE_YAML_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(result))
+			})
+
+			authorized.GET("/rolebindings", func(c *gin.Context) {
+				items, err := mustClusterService(c).ListRoleBindings(
+					c.Request.Context(),
+					c.Query("namespace"),
+				)
+				if err != nil {
+					respondWithClusterError(c, "LIST_ROLEBINDINGS_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(items))
+			})
+
+			authorized.GET("/rolebindings/:namespace/:name/yaml", func(c *gin.Context) {
+				result, err := mustClusterService(c).GetRoleBindingYAML(
+					c.Request.Context(),
+					c.Param("namespace"),
+					c.Param("name"),
+				)
+				if err != nil {
+					respondWithClusterError(c, "GET_ROLEBINDING_YAML_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(result))
+			})
+
+			authorized.PUT("/rolebindings/:namespace/:name/yaml", func(c *gin.Context) {
+				var req yamlUpdateRequest
+				if err := c.ShouldBindJSON(&req); err != nil {
+					c.JSON(http.StatusBadRequest, response.Failure("INVALID_YAML_UPDATE_REQUEST", "请求体格式不正确"))
+					return
+				}
+
+				result, err := mustClusterService(c).UpdateRoleBindingYAML(
+					c.Request.Context(),
+					c.Param("namespace"),
+					c.Param("name"),
+					req.Content,
+				)
+				if err != nil {
+					respondWithClusterError(c, "UPDATE_ROLEBINDING_YAML_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(result))
+			})
+
 			authorized.GET("/configmaps", func(c *gin.Context) {
 				items, err := mustClusterService(c).ListConfigMaps(
 					c.Request.Context(),

@@ -401,6 +401,68 @@ export type IngressClassItem = {
   createdAt: string;
 };
 
+export type ServiceAccountItem = {
+  name: string;
+  namespace: string;
+  status: string;
+  summary: string;
+  automountToken: string;
+  secretNames: string[];
+  secretCount: number;
+  imagePullSecrets: string[];
+  imagePullSecretCount: number;
+  referencedPodCount: number;
+  referencedPods: string[];
+  labels: string[];
+  age: string;
+  createdAt: string;
+};
+
+export type RoleRuleItem = {
+  apiGroups: string[];
+  resources: string[];
+  resourceNames: string[];
+  nonResourceUrls: string[];
+  verbs: string[];
+};
+
+export type RoleItem = {
+  name: string;
+  namespace: string;
+  status: string;
+  summary: string;
+  ruleCount: number;
+  boundSubjectCount: number;
+  boundSubjects: string[];
+  rules: RoleRuleItem[];
+  labels: string[];
+  age: string;
+  createdAt: string;
+};
+
+export type RoleBindingSubjectItem = {
+  kind: string;
+  name: string;
+  namespace?: string;
+  apiGroup?: string;
+};
+
+export type RoleBindingItem = {
+  name: string;
+  namespace: string;
+  status: string;
+  summary: string;
+  roleRefKind: string;
+  roleRefName: string;
+  roleRefApiGroup?: string;
+  subjectCount: number;
+  subjectSummaries: string[];
+  subjects: RoleBindingSubjectItem[];
+  labels: string[];
+  age: string;
+  createdAt: string;
+};
+
 export type ConfigMapItem = {
   name: string;
   namespace: string;
@@ -1005,6 +1067,72 @@ export async function getIngressClassYaml(name: string) {
 export async function updateIngressClassYaml(name: string, content: string) {
   const { data } = await http.put<Envelope<WorkloadActionResult>>(
     `/ingressclasses/${encodeURIComponent(name)}/yaml`,
+    { content },
+  );
+  return data.data;
+}
+
+export async function getServiceAccounts(namespace?: string) {
+  const { data } = await http.get<Envelope<ServiceAccountItem[]>>('/serviceaccounts', {
+    params: namespace ? { namespace } : undefined,
+  });
+  return data.data;
+}
+
+export async function getServiceAccountYaml(namespace: string, name: string) {
+  const { data } = await http.get<Envelope<ResourceTextResult>>(
+    `/serviceaccounts/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/yaml`,
+  );
+  return data.data;
+}
+
+export async function updateServiceAccountYaml(namespace: string, name: string, content: string) {
+  const { data } = await http.put<Envelope<WorkloadActionResult>>(
+    `/serviceaccounts/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/yaml`,
+    { content },
+  );
+  return data.data;
+}
+
+export async function getRoles(namespace?: string) {
+  const { data } = await http.get<Envelope<RoleItem[]>>('/roles', {
+    params: namespace ? { namespace } : undefined,
+  });
+  return data.data;
+}
+
+export async function getRoleYaml(namespace: string, name: string) {
+  const { data } = await http.get<Envelope<ResourceTextResult>>(
+    `/roles/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/yaml`,
+  );
+  return data.data;
+}
+
+export async function updateRoleYaml(namespace: string, name: string, content: string) {
+  const { data } = await http.put<Envelope<WorkloadActionResult>>(
+    `/roles/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/yaml`,
+    { content },
+  );
+  return data.data;
+}
+
+export async function getRoleBindings(namespace?: string) {
+  const { data } = await http.get<Envelope<RoleBindingItem[]>>('/rolebindings', {
+    params: namespace ? { namespace } : undefined,
+  });
+  return data.data;
+}
+
+export async function getRoleBindingYaml(namespace: string, name: string) {
+  const { data } = await http.get<Envelope<ResourceTextResult>>(
+    `/rolebindings/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/yaml`,
+  );
+  return data.data;
+}
+
+export async function updateRoleBindingYaml(namespace: string, name: string, content: string) {
+  const { data } = await http.put<Envelope<WorkloadActionResult>>(
+    `/rolebindings/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/yaml`,
     { content },
   );
   return data.data;
