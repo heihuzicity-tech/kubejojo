@@ -1,9 +1,12 @@
 import { buildCronJobRoute } from '../../components/cronjob/cronJobShared';
 import { buildDaemonSetRoute } from '../../components/daemonset/daemonSetShared';
 import { buildDeploymentRoute } from '../../components/deployment/deploymentShared';
+import { buildIngressRoute } from '../../components/ingress/ingressShared';
 import { buildJobRoute } from '../../components/job/jobShared';
+import { buildPersistentVolumeClaimRoute } from '../../components/persistentvolumeclaim/persistentVolumeClaimShared';
 import { buildPodRoute } from '../../components/pod/podShared';
 import { buildReplicaSetRoute } from '../../components/replicaset/replicaSetShared';
+import { buildServiceRoute } from '../../components/service/serviceShared';
 import { buildStatefulSetRoute } from '../../components/statefulset/statefulSetShared';
 import type { TopologyResource } from '../../services/cluster';
 
@@ -61,16 +64,19 @@ export function getTopologyResourceNavigation(
       };
     case 'Service':
       return {
+        detailsPath: buildServiceRoute(resource.namespace, resource.name),
         listPath: '/network/services',
         listLabel: 'Services',
       };
     case 'Ingress':
       return {
+        detailsPath: buildIngressRoute(resource.namespace, resource.name),
         listPath: '/network/ingresses',
         listLabel: 'Ingresses',
       };
     case 'PersistentVolumeClaim':
       return {
+        detailsPath: buildPersistentVolumeClaimRoute(resource.namespace, resource.name),
         listPath: '/storage/persistentvolumeclaims',
         listLabel: 'PersistentVolumeClaims',
       };

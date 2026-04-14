@@ -1,0 +1,162 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    app.kubernetes.io/part-of: k8s-admin-demo
+  name: demo-network
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/name: policy-web
+    app.kubernetes.io/part-of: k8s-admin-demo
+  name: policy-web
+  namespace: demo-network
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: policy-web
+  template:
+    metadata:
+      labels:
+        app: policy-web
+        app.kubernetes.io/name: policy-web
+        app.kubernetes.io/part-of: k8s-admin-demo
+    spec:
+      containers:
+        - image: nginx:1.27-alpine
+          imagePullPolicy: IfNotPresent
+          name: nginx
+          ports:
+            - containerPort: 80
+              name: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/name: policy-web
+    app.kubernetes.io/part-of: k8s-admin-demo
+  name: policy-web
+  namespace: demo-network
+spec:
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+  selector:
+    app: policy-web
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  labels:
+    app.kubernetes.io/name: policy-client
+    app.kubernetes.io/part-of: k8s-admin-demo
+    role: client
+  name: policy-client
+  namespace: demo-network
+spec:
+  containers:
+    - command:
+        - sh
+        - -c
+        - sleep 360000
+      image: busybox:1.36
+      imagePullPolicy: IfNotPresent
+      name: toolbox
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  labels:
+    app.kubernetes.io/name: policy-blocked
+    app.kubernetes.io/part-of: k8s-admin-demo
+    role: blocked
+  name: policy-blocked
+  namespace: demo-network
+spec:
+  containers:
+    - command:
+        - sh
+        - -c
+        - sleep 360000
+      image: busybox:1.36
+      imagePullPolicy: IfNotPresent
+      name: toolbox
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  labels:
+    app.kubernetes.io/name: policy-web-default-deny
+    app.kubernetes.io/part-of: k8s-admin-demo
+  name: policy-web-default-deny
+  namespace: demo-network
+spec:
+  podSelector:
+    matchLabels:
+      app: policy-web
+  policyTypes:
+    - Ingress
+  ingress: []
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  labels:
+    app.kubernetes.io/name: policy-web-allow-client
+    app.kubernetes.io/part-of: k8s-admin-demo
+  name: policy-web-allow-client
+  namespace: demo-network
+spec:
+  podSelector:
+    matchLabels:
+      app: policy-web
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              role: client
+      ports:
+        - protocol: TCP
+          port: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  labels:
+    app.kubernetes.io/name: policy-client-egress-web
+    app.kubernetes.io/part-of: k8s-admin-demo
+  name: policy-client-egress-web
+  namespace: demo-network
+spec:
+  podSelector:
+    matchLabels:
+      role: client
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: policy-web
+      ports:
+        - protocol: TCP
+          port: 80
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

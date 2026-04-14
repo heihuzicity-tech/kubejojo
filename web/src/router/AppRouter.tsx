@@ -3,6 +3,12 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AppLayout } from '../layouts/AppLayout';
 import { navigationItems } from '../layouts/navigation';
 import { useAppStore } from '../stores/appStore';
+import { EndpointDetailsPage } from '../pages/EndpointDetailsPage';
+import { EndpointsPage } from '../pages/EndpointsPage';
+import { IngressClassDetailsPage } from '../pages/IngressClassDetailsPage';
+import { IngressClassesPage } from '../pages/IngressClassesPage';
+import { StorageClassesPage } from '../pages/StorageClassesPage';
+import { StorageClassDetailsPage } from '../pages/StorageClassDetailsPage';
 import { LoginPage } from '../pages/LoginPage';
 import { DaemonSetsPage } from '../pages/DaemonSetsPage';
 import { DaemonSetDetailsPage } from '../pages/DaemonSetDetailsPage';
@@ -12,14 +18,24 @@ import { DeploymentDetailsPage } from '../pages/DeploymentDetailsPage';
 import { DeploymentsPage } from '../pages/DeploymentsPage';
 import { JobDetailsPage } from '../pages/JobDetailsPage';
 import { JobsPage } from '../pages/JobsPage';
+import { IngressDetailsPage } from '../pages/IngressDetailsPage';
+import { IngressesPage } from '../pages/IngressesPage';
+import { NetworkPoliciesPage } from '../pages/NetworkPoliciesPage';
+import { NetworkPolicyDetailsPage } from '../pages/NetworkPolicyDetailsPage';
 import { NamespacesPage } from '../pages/NamespacesPage';
 import { NodesPage } from '../pages/NodesPage';
 import { OverviewPage } from '../pages/OverviewPage';
+import { PersistentVolumeClaimDetailsPage } from '../pages/PersistentVolumeClaimDetailsPage';
+import { PersistentVolumeClaimsPage } from '../pages/PersistentVolumeClaimsPage';
+import { PersistentVolumeDetailsPage } from '../pages/PersistentVolumeDetailsPage';
+import { PersistentVolumesPage } from '../pages/PersistentVolumesPage';
 import { PlaceholderPage } from '../pages/PlaceholderPage';
 import { PodDetailsPage } from '../pages/PodDetailsPage';
 import { PodsPage } from '../pages/PodsPage';
 import { ReplicaSetDetailsPage } from '../pages/ReplicaSetDetailsPage';
 import { ReplicaSetsPage } from '../pages/ReplicaSetsPage';
+import { ServiceDetailsPage } from '../pages/ServiceDetailsPage';
+import { ServicesPage } from '../pages/ServicesPage';
 import { StatefulSetDetailsPage } from '../pages/StatefulSetDetailsPage';
 import { StatefulSetsPage } from '../pages/StatefulSetsPage';
 import { TopologyPage } from '../pages/TopologyPage';
@@ -62,6 +78,31 @@ function ProtectedRoutes() {
         <Route path="/workloads/jobs/:namespace/:name" element={<JobDetailsPage />} />
         <Route path="/workloads/cronjobs" element={<CronJobsPage />} />
         <Route path="/workloads/cronjobs/:namespace/:name" element={<CronJobDetailsPage />} />
+        <Route path="/network/services" element={<ServicesPage />} />
+        <Route path="/network/services/:namespace/:name" element={<ServiceDetailsPage />} />
+        <Route path="/network/endpoints" element={<EndpointsPage />} />
+        <Route path="/network/endpoints/:namespace/:name" element={<EndpointDetailsPage />} />
+        <Route path="/network/ingresses" element={<IngressesPage />} />
+        <Route path="/network/ingresses/:namespace/:name" element={<IngressDetailsPage />} />
+        <Route path="/network/ingressclasses" element={<IngressClassesPage />} />
+        <Route path="/network/ingressclasses/:name" element={<IngressClassDetailsPage />} />
+        <Route path="/network/networkpolicies" element={<NetworkPoliciesPage />} />
+        <Route
+          path="/network/networkpolicies/:namespace/:name"
+          element={<NetworkPolicyDetailsPage />}
+        />
+        <Route
+          path="/storage/persistentvolumeclaims"
+          element={<PersistentVolumeClaimsPage />}
+        />
+        <Route
+          path="/storage/persistentvolumeclaims/:namespace/:name"
+          element={<PersistentVolumeClaimDetailsPage />}
+        />
+        <Route path="/storage/persistentvolumes" element={<PersistentVolumesPage />} />
+        <Route path="/storage/persistentvolumes/:name" element={<PersistentVolumeDetailsPage />} />
+        <Route path="/storage/storageclasses" element={<StorageClassesPage />} />
+        <Route path="/storage/storageclasses/:name" element={<StorageClassDetailsPage />} />
         <Route path="/topology" element={<TopologyPage />} />
 
         {placeholderItems.map((item) => (

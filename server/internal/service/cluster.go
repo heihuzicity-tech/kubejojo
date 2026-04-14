@@ -15,6 +15,8 @@ import (
 	authv1 "k8s.io/api/authentication/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -404,6 +406,169 @@ type CronJobItem struct {
 	Labels                jsonx.Slice[string]         `json:"labels"`
 	Images                jsonx.Slice[string]         `json:"images"`
 	Jobs                  jsonx.Slice[CronJobJobItem] `json:"jobs"`
+}
+
+type ServicePortItem struct {
+	Name       string `json:"name,omitempty"`
+	Protocol   string `json:"protocol"`
+	Port       int32  `json:"port"`
+	TargetPort string `json:"targetPort,omitempty"`
+	NodePort   int32  `json:"nodePort,omitempty"`
+}
+
+type ServiceItem struct {
+	Name              string                       `json:"name"`
+	Namespace         string                       `json:"namespace"`
+	Status            string                       `json:"status"`
+	Type              string                       `json:"type"`
+	Summary           string                       `json:"summary"`
+	ClusterIP         string                       `json:"clusterIP"`
+	ExternalName      string                       `json:"externalName,omitempty"`
+	ExternalAddresses jsonx.Slice[string]          `json:"externalAddresses"`
+	SessionAffinity   string                       `json:"sessionAffinity"`
+	PortsSummary      string                       `json:"portsSummary"`
+	PodCount          int                          `json:"podCount"`
+	Selector          jsonx.Slice[string]          `json:"selector"`
+	Ports             jsonx.Slice[ServicePortItem] `json:"ports"`
+	Labels            jsonx.Slice[string]          `json:"labels"`
+	Age               string                       `json:"age"`
+	CreatedAt         string                       `json:"createdAt"`
+}
+
+type IngressTLSItem struct {
+	SecretName string              `json:"secretName,omitempty"`
+	Hosts      jsonx.Slice[string] `json:"hosts"`
+}
+
+type IngressItem struct {
+	Name           string                      `json:"name"`
+	Namespace      string                      `json:"namespace"`
+	Status         string                      `json:"status"`
+	IngressClass   string                      `json:"ingressClass,omitempty"`
+	Summary        string                      `json:"summary"`
+	Hosts          jsonx.Slice[string]         `json:"hosts"`
+	Addresses      jsonx.Slice[string]         `json:"addresses"`
+	ServiceNames   jsonx.Slice[string]         `json:"serviceNames"`
+	DefaultBackend string                      `json:"defaultBackend,omitempty"`
+	BackendCount   int                         `json:"backendCount"`
+	TLS            jsonx.Slice[IngressTLSItem] `json:"tls"`
+	Labels         jsonx.Slice[string]         `json:"labels"`
+	Age            string                      `json:"age"`
+	CreatedAt      string                      `json:"createdAt"`
+}
+
+type IngressClassParameterRefItem struct {
+	APIGroup  string `json:"apiGroup,omitempty"`
+	Kind      string `json:"kind"`
+	Name      string `json:"name"`
+	Scope     string `json:"scope,omitempty"`
+	Namespace string `json:"namespace,omitempty"`
+}
+
+type IngressClassItem struct {
+	Name       string                        `json:"name"`
+	Status     string                        `json:"status"`
+	Controller string                        `json:"controller"`
+	IsDefault  bool                          `json:"isDefault"`
+	Parameters *IngressClassParameterRefItem `json:"parameters,omitempty"`
+	Labels     jsonx.Slice[string]           `json:"labels"`
+	Age        string                        `json:"age"`
+	CreatedAt  string                        `json:"createdAt"`
+}
+
+type NetworkPolicyRuleItem struct {
+	Peers jsonx.Slice[string] `json:"peers"`
+	Ports jsonx.Slice[string] `json:"ports"`
+}
+
+type NetworkPolicyItem struct {
+	Name             string                             `json:"name"`
+	Namespace        string                             `json:"namespace"`
+	Status           string                             `json:"status"`
+	Summary          string                             `json:"summary"`
+	PodSelector      jsonx.Slice[string]                `json:"podSelector"`
+	PolicyTypes      jsonx.Slice[string]                `json:"policyTypes"`
+	SelectedPodCount int                                `json:"selectedPodCount"`
+	SelectedPods     jsonx.Slice[string]                `json:"selectedPods"`
+	IngressRuleCount int                                `json:"ingressRuleCount"`
+	EgressRuleCount  int                                `json:"egressRuleCount"`
+	IngressRules     jsonx.Slice[NetworkPolicyRuleItem] `json:"ingressRules"`
+	EgressRules      jsonx.Slice[NetworkPolicyRuleItem] `json:"egressRules"`
+	Labels           jsonx.Slice[string]                `json:"labels"`
+	Age              string                             `json:"age"`
+	CreatedAt        string                             `json:"createdAt"`
+}
+
+type PersistentVolumeClaimItem struct {
+	Name             string              `json:"name"`
+	Namespace        string              `json:"namespace"`
+	Status           string              `json:"status"`
+	Summary          string              `json:"summary"`
+	StorageClass     string              `json:"storageClass"`
+	VolumeName       string              `json:"volumeName,omitempty"`
+	VolumeMode       string              `json:"volumeMode"`
+	AccessModes      jsonx.Slice[string] `json:"accessModes"`
+	RequestedStorage string              `json:"requestedStorage"`
+	Capacity         string              `json:"capacity,omitempty"`
+	MountedPodCount  int                 `json:"mountedPodCount"`
+	MountedPods      jsonx.Slice[string] `json:"mountedPods"`
+	Labels           jsonx.Slice[string] `json:"labels"`
+	Age              string              `json:"age"`
+	CreatedAt        string              `json:"createdAt"`
+}
+
+type EndpointAddressItem struct {
+	IP         string `json:"ip"`
+	Ready      bool   `json:"ready"`
+	NodeName   string `json:"nodeName,omitempty"`
+	TargetKind string `json:"targetKind,omitempty"`
+	TargetName string `json:"targetName,omitempty"`
+}
+
+type EndpointItem struct {
+	Name              string                           `json:"name"`
+	Namespace         string                           `json:"namespace"`
+	Status            string                           `json:"status"`
+	ServiceName       string                           `json:"serviceName,omitempty"`
+	Subsets           int                              `json:"subsets"`
+	ReadyAddresses    int                              `json:"readyAddresses"`
+	NotReadyAddresses int                              `json:"notReadyAddresses"`
+	PortsSummary      string                           `json:"portsSummary"`
+	Addresses         jsonx.Slice[EndpointAddressItem] `json:"addresses"`
+	Labels            jsonx.Slice[string]              `json:"labels"`
+	Age               string                           `json:"age"`
+	CreatedAt         string                           `json:"createdAt"`
+}
+
+type PersistentVolumeItem struct {
+	Name           string              `json:"name"`
+	Status         string              `json:"status"`
+	Phase          string              `json:"phase"`
+	Capacity       string              `json:"capacity"`
+	AccessModes    jsonx.Slice[string] `json:"accessModes"`
+	ReclaimPolicy  string              `json:"reclaimPolicy"`
+	StorageClass   string              `json:"storageClass"`
+	VolumeMode     string              `json:"volumeMode"`
+	ClaimNamespace string              `json:"claimNamespace,omitempty"`
+	ClaimName      string              `json:"claimName,omitempty"`
+	Source         string              `json:"source"`
+	Labels         jsonx.Slice[string] `json:"labels"`
+	Age            string              `json:"age"`
+	CreatedAt      string              `json:"createdAt"`
+}
+
+type StorageClassItem struct {
+	Name                 string              `json:"name"`
+	Status               string              `json:"status"`
+	Provisioner          string              `json:"provisioner"`
+	ReclaimPolicy        string              `json:"reclaimPolicy"`
+	VolumeBindingMode    string              `json:"volumeBindingMode"`
+	AllowVolumeExpansion bool                `json:"allowVolumeExpansion"`
+	IsDefault            bool                `json:"isDefault"`
+	Parameters           jsonx.Slice[string] `json:"parameters"`
+	Labels               jsonx.Slice[string] `json:"labels"`
+	Age                  string              `json:"age"`
+	CreatedAt            string              `json:"createdAt"`
 }
 
 func normalizeNamespace(namespace string) string {
@@ -1045,6 +1210,42 @@ func (s *ClusterService) GetResourceYAML(
 	}, nil
 }
 
+func (s *ClusterService) GetClusterResourceYAML(
+	ctx context.Context,
+	resourceName string,
+	kind string,
+	name string,
+) (ResourceTextResult, error) {
+	name = strings.TrimSpace(name)
+
+	if name == "" {
+		return ResourceTextResult{}, fmt.Errorf("%s name is required", strings.ToLower(kind))
+	}
+
+	args := []string{
+		"get",
+		resourceName,
+		name,
+		"-o", "yaml",
+	}
+
+	output, err := s.runKubectlCommand(ctx, nil, args...)
+	if err != nil {
+		return ResourceTextResult{}, fmt.Errorf("get %s %s yaml: %w", strings.ToLower(kind), name, err)
+	}
+
+	content, err := sanitizeManifestYAML(output)
+	if err != nil {
+		return ResourceTextResult{}, fmt.Errorf("sanitize %s %s yaml: %w", strings.ToLower(kind), name, err)
+	}
+
+	return ResourceTextResult{
+		Name:        name,
+		Content:     string(content),
+		GeneratedAt: time.Now().Format("2006-01-02 15:04:05"),
+	}, nil
+}
+
 func (s *ClusterService) ApplyResourceYAML(
 	ctx context.Context,
 	resourceName string,
@@ -1089,6 +1290,51 @@ func (s *ClusterService) ApplyResourceYAML(
 	return WorkloadActionResult{
 		Kind:      kind,
 		Namespace: namespace,
+		Name:      name,
+		Operation: "apply",
+		Message:   fmt.Sprintf("%s YAML 已更新", kind),
+		Timestamp: time.Now().Format("2006-01-02 15:04:05"),
+	}, nil
+}
+
+func (s *ClusterService) ApplyClusterResourceYAML(
+	ctx context.Context,
+	resourceName string,
+	kind string,
+	name string,
+	content string,
+) (WorkloadActionResult, error) {
+	name = strings.TrimSpace(name)
+	content = strings.TrimSpace(content)
+
+	if name == "" {
+		return WorkloadActionResult{}, fmt.Errorf("%s name is required", strings.ToLower(kind))
+	}
+	if content == "" {
+		return WorkloadActionResult{}, fmt.Errorf("yaml content is required")
+	}
+
+	var manifest resourceManifestIdentity
+	if err := yaml.Unmarshal([]byte(content), &manifest); err != nil {
+		return WorkloadActionResult{}, fmt.Errorf("parse %s yaml: %w", strings.ToLower(kind), err)
+	}
+
+	if !strings.EqualFold(strings.TrimSpace(manifest.Kind), kind) {
+		return WorkloadActionResult{}, fmt.Errorf("yaml kind must be %s", kind)
+	}
+	if strings.TrimSpace(manifest.Metadata.Name) != name {
+		return WorkloadActionResult{}, fmt.Errorf("yaml name must be %s", name)
+	}
+	if strings.TrimSpace(manifest.Metadata.Namespace) != "" {
+		return WorkloadActionResult{}, fmt.Errorf("%s yaml must not set metadata.namespace", strings.ToLower(kind))
+	}
+
+	if _, err := s.runKubectlCommand(ctx, bytes.NewBufferString(content), "apply", "-f", "-"); err != nil {
+		return WorkloadActionResult{}, fmt.Errorf("apply %s %s yaml: %w", strings.ToLower(kind), name, err)
+	}
+
+	return WorkloadActionResult{
+		Kind:      kind,
 		Name:      name,
 		Operation: "apply",
 		Message:   fmt.Sprintf("%s YAML 已更新", kind),
@@ -1683,6 +1929,514 @@ func (s *ClusterService) ListCronJobs(ctx context.Context, namespace string) ([]
 	})
 
 	return cronJobs, nil
+}
+
+func (s *ClusterService) ListServices(ctx context.Context, namespace string) ([]ServiceItem, error) {
+	namespace = normalizeNamespace(namespace)
+
+	items, err := s.client.Kubernetes.CoreV1().Services(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list services: %w", err)
+	}
+
+	pods, err := s.client.Kubernetes.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list pods for services: %w", err)
+	}
+
+	services := make([]ServiceItem, 0, len(items.Items))
+	for _, item := range items.Items {
+		selector := labels.SelectorFromSet(item.Spec.Selector)
+		matchedPods := filterPodsBySelector(pods.Items, item.Namespace, selector)
+
+		services = append(services, ServiceItem{
+			Name:              item.Name,
+			Namespace:         item.Namespace,
+			Status:            serviceStatus(item, len(matchedPods), 0),
+			Type:              string(item.Spec.Type),
+			Summary:           serviceSummary(item),
+			ClusterIP:         serviceClusterIP(item),
+			ExternalName:      item.Spec.ExternalName,
+			ExternalAddresses: jsonx.Slice[string](serviceExternalAddresses(item)),
+			SessionAffinity:   string(item.Spec.SessionAffinity),
+			PortsSummary:      servicePorts(item),
+			PodCount:          len(matchedPods),
+			Selector:          jsonx.Slice[string](labelPairs(item.Spec.Selector)),
+			Ports:             jsonx.Slice[ServicePortItem](servicePortItems(item)),
+			Labels:            jsonx.Slice[string](labelPairs(item.Labels)),
+			Age:               ageString(item.CreationTimestamp.Time),
+			CreatedAt:         item.CreationTimestamp.Time.Format("2006-01-02 15:04:05"),
+		})
+	}
+
+	sort.Slice(services, func(i, j int) bool {
+		leftOrder := topologyStatusOrder(services[i].Status)
+		rightOrder := topologyStatusOrder(services[j].Status)
+		if leftOrder != rightOrder {
+			return leftOrder < rightOrder
+		}
+		if services[i].Namespace != services[j].Namespace {
+			return services[i].Namespace < services[j].Namespace
+		}
+		return services[i].Name < services[j].Name
+	})
+
+	return services, nil
+}
+
+func (s *ClusterService) ListIngresses(ctx context.Context, namespace string) ([]IngressItem, error) {
+	namespace = normalizeNamespace(namespace)
+
+	items, err := s.client.Kubernetes.NetworkingV1().Ingresses(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list ingresses: %w", err)
+	}
+
+	ingresses := make([]IngressItem, 0, len(items.Items))
+	for _, item := range items.Items {
+		ingresses = append(ingresses, IngressItem{
+			Name:           item.Name,
+			Namespace:      item.Namespace,
+			Status:         ingressStatus(item, 0),
+			IngressClass:   defaultString(ptrString(item.Spec.IngressClassName), "-"),
+			Summary:        ingressSummary(item),
+			Hosts:          jsonx.Slice[string](ingressHosts(item)),
+			Addresses:      jsonx.Slice[string](ingressAddresses(item)),
+			ServiceNames:   jsonx.Slice[string](ingressServiceNames(item)),
+			DefaultBackend: ingressDefaultBackend(item),
+			BackendCount:   ingressBackendCount(item),
+			TLS:            jsonx.Slice[IngressTLSItem](collectIngressTLS(item)),
+			Labels:         jsonx.Slice[string](labelPairs(item.Labels)),
+			Age:            ageString(item.CreationTimestamp.Time),
+			CreatedAt:      item.CreationTimestamp.Time.Format("2006-01-02 15:04:05"),
+		})
+	}
+
+	sort.Slice(ingresses, func(i, j int) bool {
+		leftOrder := topologyStatusOrder(ingresses[i].Status)
+		rightOrder := topologyStatusOrder(ingresses[j].Status)
+		if leftOrder != rightOrder {
+			return leftOrder < rightOrder
+		}
+		if ingresses[i].Namespace != ingresses[j].Namespace {
+			return ingresses[i].Namespace < ingresses[j].Namespace
+		}
+		return ingresses[i].Name < ingresses[j].Name
+	})
+
+	return ingresses, nil
+}
+
+func (s *ClusterService) ListPersistentVolumeClaims(
+	ctx context.Context,
+	namespace string,
+) ([]PersistentVolumeClaimItem, error) {
+	namespace = normalizeNamespace(namespace)
+
+	items, err := s.client.Kubernetes.CoreV1().PersistentVolumeClaims(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list persistentvolumeclaims: %w", err)
+	}
+
+	pods, err := s.client.Kubernetes.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list pods for persistentvolumeclaims: %w", err)
+	}
+
+	podsByClaim := podsByPersistentVolumeClaim(pods.Items)
+	claims := make([]PersistentVolumeClaimItem, 0, len(items.Items))
+	for _, item := range items.Items {
+		relatedPods := podsByClaim[namespacedName(item.Namespace, item.Name)]
+		claims = append(claims, PersistentVolumeClaimItem{
+			Name:             item.Name,
+			Namespace:        item.Namespace,
+			Status:           pvcStatus(item, 0),
+			Summary:          pvcSummary(item),
+			StorageClass:     pvcStorageClass(item),
+			VolumeName:       item.Spec.VolumeName,
+			VolumeMode:       pvcVolumeMode(item),
+			AccessModes:      jsonx.Slice[string](pvcAccessModes(item.Spec.AccessModes)),
+			RequestedStorage: pvcRequestedStorage(item),
+			Capacity:         pvcCapacity(item),
+			MountedPodCount:  len(relatedPods),
+			MountedPods:      jsonx.Slice[string](relatedPods),
+			Labels:           jsonx.Slice[string](labelPairs(item.Labels)),
+			Age:              ageString(item.CreationTimestamp.Time),
+			CreatedAt:        item.CreationTimestamp.Time.Format("2006-01-02 15:04:05"),
+		})
+	}
+
+	sort.Slice(claims, func(i, j int) bool {
+		leftOrder := topologyStatusOrder(claims[i].Status)
+		rightOrder := topologyStatusOrder(claims[j].Status)
+		if leftOrder != rightOrder {
+			return leftOrder < rightOrder
+		}
+		if claims[i].Namespace != claims[j].Namespace {
+			return claims[i].Namespace < claims[j].Namespace
+		}
+		return claims[i].Name < claims[j].Name
+	})
+
+	return claims, nil
+}
+
+func (s *ClusterService) ListIngressClasses(ctx context.Context) ([]IngressClassItem, error) {
+	items, err := s.client.Kubernetes.NetworkingV1().IngressClasses().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list ingressclasses: %w", err)
+	}
+
+	classes := make([]IngressClassItem, 0, len(items.Items))
+	for _, item := range items.Items {
+		classes = append(classes, IngressClassItem{
+			Name:       item.Name,
+			Status:     ingressClassStatus(item),
+			Controller: item.Spec.Controller,
+			IsDefault:  isDefaultIngressClass(item),
+			Parameters: ingressClassParameters(item),
+			Labels:     jsonx.Slice[string](labelPairs(item.Labels)),
+			Age:        ageString(item.CreationTimestamp.Time),
+			CreatedAt:  item.CreationTimestamp.Time.Format("2006-01-02 15:04:05"),
+		})
+	}
+
+	sort.Slice(classes, func(i, j int) bool {
+		if classes[i].IsDefault != classes[j].IsDefault {
+			return classes[i].IsDefault
+		}
+		if classes[i].Status != classes[j].Status {
+			return topologyStatusOrder(classes[i].Status) < topologyStatusOrder(classes[j].Status)
+		}
+		return classes[i].Name < classes[j].Name
+	})
+
+	return classes, nil
+}
+
+func (s *ClusterService) ListNetworkPolicies(
+	ctx context.Context,
+	namespace string,
+) ([]NetworkPolicyItem, error) {
+	namespace = normalizeNamespace(namespace)
+
+	items, err := s.client.Kubernetes.NetworkingV1().NetworkPolicies(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list networkpolicies: %w", err)
+	}
+
+	pods, err := s.client.Kubernetes.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list pods for networkpolicies: %w", err)
+	}
+
+	policies := make([]NetworkPolicyItem, 0, len(items.Items))
+	for _, item := range items.Items {
+		selectedPods := networkPolicySelectedPods(item, pods.Items)
+		policies = append(policies, NetworkPolicyItem{
+			Name:             item.Name,
+			Namespace:        item.Namespace,
+			Status:           networkPolicyStatus(item, len(selectedPods)),
+			Summary:          networkPolicySummary(item, len(selectedPods)),
+			PodSelector:      jsonx.Slice[string](selectorPairs(&item.Spec.PodSelector)),
+			PolicyTypes:      jsonx.Slice[string](networkPolicyTypes(item)),
+			SelectedPodCount: len(selectedPods),
+			SelectedPods:     jsonx.Slice[string](selectedPods),
+			IngressRuleCount: len(item.Spec.Ingress),
+			EgressRuleCount:  len(item.Spec.Egress),
+			IngressRules:     jsonx.Slice[NetworkPolicyRuleItem](networkPolicyIngressRules(item)),
+			EgressRules:      jsonx.Slice[NetworkPolicyRuleItem](networkPolicyEgressRules(item)),
+			Labels:           jsonx.Slice[string](labelPairs(item.Labels)),
+			Age:              ageString(item.CreationTimestamp.Time),
+			CreatedAt:        item.CreationTimestamp.Time.Format("2006-01-02 15:04:05"),
+		})
+	}
+
+	sort.Slice(policies, func(i, j int) bool {
+		leftOrder := topologyStatusOrder(policies[i].Status)
+		rightOrder := topologyStatusOrder(policies[j].Status)
+		if leftOrder != rightOrder {
+			return leftOrder < rightOrder
+		}
+		if policies[i].Namespace != policies[j].Namespace {
+			return policies[i].Namespace < policies[j].Namespace
+		}
+		return policies[i].Name < policies[j].Name
+	})
+
+	return policies, nil
+}
+
+func (s *ClusterService) GetServiceYAML(
+	ctx context.Context,
+	namespace string,
+	name string,
+) (ResourceTextResult, error) {
+	return s.GetResourceYAML(ctx, "service", "Service", namespace, name)
+}
+
+func (s *ClusterService) UpdateServiceYAML(
+	ctx context.Context,
+	namespace string,
+	name string,
+	content string,
+) (WorkloadActionResult, error) {
+	return s.ApplyResourceYAML(ctx, "service", "Service", namespace, name, content)
+}
+
+func (s *ClusterService) GetIngressYAML(
+	ctx context.Context,
+	namespace string,
+	name string,
+) (ResourceTextResult, error) {
+	return s.GetResourceYAML(ctx, "ingress", "Ingress", namespace, name)
+}
+
+func (s *ClusterService) UpdateIngressYAML(
+	ctx context.Context,
+	namespace string,
+	name string,
+	content string,
+) (WorkloadActionResult, error) {
+	return s.ApplyResourceYAML(ctx, "ingress", "Ingress", namespace, name, content)
+}
+
+func (s *ClusterService) GetIngressClassYAML(
+	ctx context.Context,
+	name string,
+) (ResourceTextResult, error) {
+	return s.GetClusterResourceYAML(ctx, "ingressclass", "IngressClass", name)
+}
+
+func (s *ClusterService) UpdateIngressClassYAML(
+	ctx context.Context,
+	name string,
+	content string,
+) (WorkloadActionResult, error) {
+	return s.ApplyClusterResourceYAML(ctx, "ingressclass", "IngressClass", name, content)
+}
+
+func (s *ClusterService) GetNetworkPolicyYAML(
+	ctx context.Context,
+	namespace string,
+	name string,
+) (ResourceTextResult, error) {
+	return s.GetResourceYAML(ctx, "networkpolicy", "NetworkPolicy", namespace, name)
+}
+
+func (s *ClusterService) UpdateNetworkPolicyYAML(
+	ctx context.Context,
+	namespace string,
+	name string,
+	content string,
+) (WorkloadActionResult, error) {
+	return s.ApplyResourceYAML(ctx, "networkpolicy", "NetworkPolicy", namespace, name, content)
+}
+
+func (s *ClusterService) GetPersistentVolumeClaimYAML(
+	ctx context.Context,
+	namespace string,
+	name string,
+) (ResourceTextResult, error) {
+	return s.GetResourceYAML(ctx, "persistentvolumeclaim", "PersistentVolumeClaim", namespace, name)
+}
+
+func (s *ClusterService) UpdatePersistentVolumeClaimYAML(
+	ctx context.Context,
+	namespace string,
+	name string,
+	content string,
+) (WorkloadActionResult, error) {
+	return s.ApplyResourceYAML(
+		ctx,
+		"persistentvolumeclaim",
+		"PersistentVolumeClaim",
+		namespace,
+		name,
+		content,
+	)
+}
+
+func (s *ClusterService) ListEndpoints(ctx context.Context, namespace string) ([]EndpointItem, error) {
+	namespace = normalizeNamespace(namespace)
+
+	items, err := s.client.Kubernetes.CoreV1().Endpoints(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list endpoints: %w", err)
+	}
+
+	services, err := s.client.Kubernetes.CoreV1().Services(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list services for endpoints: %w", err)
+	}
+
+	serviceNames := make(map[string]struct{}, len(services.Items))
+	for _, item := range services.Items {
+		serviceNames[namespacedName(item.Namespace, item.Name)] = struct{}{}
+	}
+
+	endpoints := make([]EndpointItem, 0, len(items.Items))
+	for _, item := range items.Items {
+		addresses, readyCount, notReadyCount := collectEndpointAddresses(item)
+		serviceName := ""
+		if _, ok := serviceNames[namespacedName(item.Namespace, item.Name)]; ok {
+			serviceName = item.Name
+		}
+
+		endpoints = append(endpoints, EndpointItem{
+			Name:              item.Name,
+			Namespace:         item.Namespace,
+			Status:            endpointStatus(item),
+			ServiceName:       serviceName,
+			Subsets:           len(item.Subsets),
+			ReadyAddresses:    readyCount,
+			NotReadyAddresses: notReadyCount,
+			PortsSummary:      endpointPorts(item),
+			Addresses:         jsonx.Slice[EndpointAddressItem](addresses),
+			Labels:            jsonx.Slice[string](labelPairs(item.Labels)),
+			Age:               ageString(item.CreationTimestamp.Time),
+			CreatedAt:         item.CreationTimestamp.Time.Format("2006-01-02 15:04:05"),
+		})
+	}
+
+	sort.Slice(endpoints, func(i, j int) bool {
+		leftOrder := topologyStatusOrder(endpoints[i].Status)
+		rightOrder := topologyStatusOrder(endpoints[j].Status)
+		if leftOrder != rightOrder {
+			return leftOrder < rightOrder
+		}
+		if endpoints[i].Namespace != endpoints[j].Namespace {
+			return endpoints[i].Namespace < endpoints[j].Namespace
+		}
+		return endpoints[i].Name < endpoints[j].Name
+	})
+
+	return endpoints, nil
+}
+
+func (s *ClusterService) ListPersistentVolumes(ctx context.Context) ([]PersistentVolumeItem, error) {
+	items, err := s.client.Kubernetes.CoreV1().PersistentVolumes().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list persistentvolumes: %w", err)
+	}
+
+	volumes := make([]PersistentVolumeItem, 0, len(items.Items))
+	for _, item := range items.Items {
+		claimNamespace := ""
+		claimName := ""
+		if item.Spec.ClaimRef != nil {
+			claimNamespace = item.Spec.ClaimRef.Namespace
+			claimName = item.Spec.ClaimRef.Name
+		}
+
+		volumes = append(volumes, PersistentVolumeItem{
+			Name:           item.Name,
+			Status:         persistentVolumeStatus(item),
+			Phase:          string(item.Status.Phase),
+			Capacity:       persistentVolumeCapacity(item),
+			AccessModes:    jsonx.Slice[string](pvcAccessModes(item.Spec.AccessModes)),
+			ReclaimPolicy:  string(item.Spec.PersistentVolumeReclaimPolicy),
+			StorageClass:   item.Spec.StorageClassName,
+			VolumeMode:     persistentVolumeVolumeMode(item),
+			ClaimNamespace: claimNamespace,
+			ClaimName:      claimName,
+			Source:         persistentVolumeSource(item),
+			Labels:         jsonx.Slice[string](labelPairs(item.Labels)),
+			Age:            ageString(item.CreationTimestamp.Time),
+			CreatedAt:      item.CreationTimestamp.Time.Format("2006-01-02 15:04:05"),
+		})
+	}
+
+	sort.Slice(volumes, func(i, j int) bool {
+		leftOrder := topologyStatusOrder(volumes[i].Status)
+		rightOrder := topologyStatusOrder(volumes[j].Status)
+		if leftOrder != rightOrder {
+			return leftOrder < rightOrder
+		}
+		return volumes[i].Name < volumes[j].Name
+	})
+
+	return volumes, nil
+}
+
+func (s *ClusterService) ListStorageClasses(ctx context.Context) ([]StorageClassItem, error) {
+	items, err := s.client.Kubernetes.StorageV1().StorageClasses().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list storageclasses: %w", err)
+	}
+
+	classes := make([]StorageClassItem, 0, len(items.Items))
+	for _, item := range items.Items {
+		classes = append(classes, StorageClassItem{
+			Name:                 item.Name,
+			Status:               TopologyStatusHealthy,
+			Provisioner:          item.Provisioner,
+			ReclaimPolicy:        storageClassReclaimPolicy(item),
+			VolumeBindingMode:    storageClassVolumeBindingMode(item),
+			AllowVolumeExpansion: item.AllowVolumeExpansion != nil && *item.AllowVolumeExpansion,
+			IsDefault:            isDefaultStorageClass(item),
+			Parameters:           jsonx.Slice[string](storageClassParameters(item.Parameters)),
+			Labels:               jsonx.Slice[string](labelPairs(item.Labels)),
+			Age:                  ageString(item.CreationTimestamp.Time),
+			CreatedAt:            item.CreationTimestamp.Time.Format("2006-01-02 15:04:05"),
+		})
+	}
+
+	sort.Slice(classes, func(i, j int) bool {
+		if classes[i].IsDefault != classes[j].IsDefault {
+			return classes[i].IsDefault
+		}
+		return classes[i].Name < classes[j].Name
+	})
+
+	return classes, nil
+}
+
+func (s *ClusterService) GetEndpointYAML(
+	ctx context.Context,
+	namespace string,
+	name string,
+) (ResourceTextResult, error) {
+	return s.GetResourceYAML(ctx, "endpoints", "Endpoints", namespace, name)
+}
+
+func (s *ClusterService) UpdateEndpointYAML(
+	ctx context.Context,
+	namespace string,
+	name string,
+	content string,
+) (WorkloadActionResult, error) {
+	return s.ApplyResourceYAML(ctx, "endpoints", "Endpoints", namespace, name, content)
+}
+
+func (s *ClusterService) GetPersistentVolumeYAML(
+	ctx context.Context,
+	name string,
+) (ResourceTextResult, error) {
+	return s.GetClusterResourceYAML(ctx, "persistentvolume", "PersistentVolume", name)
+}
+
+func (s *ClusterService) UpdatePersistentVolumeYAML(
+	ctx context.Context,
+	name string,
+	content string,
+) (WorkloadActionResult, error) {
+	return s.ApplyClusterResourceYAML(ctx, "persistentvolume", "PersistentVolume", name, content)
+}
+
+func (s *ClusterService) GetStorageClassYAML(
+	ctx context.Context,
+	name string,
+) (ResourceTextResult, error) {
+	return s.GetClusterResourceYAML(ctx, "storageclass", "StorageClass", name)
+}
+
+func (s *ClusterService) UpdateStorageClassYAML(
+	ctx context.Context,
+	name string,
+	content string,
+) (WorkloadActionResult, error) {
+	return s.ApplyClusterResourceYAML(ctx, "storageclass", "StorageClass", name, content)
 }
 
 func (s *ClusterService) ScaleReplicaSet(
@@ -2431,6 +3185,618 @@ func jobsByController(items []batchv1.Job, kind string) map[string][]batchv1.Job
 	}
 
 	return index
+}
+
+func podsByPersistentVolumeClaim(items []corev1.Pod) map[string][]string {
+	index := make(map[string][]string)
+	for _, item := range items {
+		seen := make(map[string]struct{})
+		for _, volume := range item.Spec.Volumes {
+			if volume.PersistentVolumeClaim == nil {
+				continue
+			}
+
+			key := namespacedName(item.Namespace, volume.PersistentVolumeClaim.ClaimName)
+			if _, exists := seen[key]; exists {
+				continue
+			}
+			seen[key] = struct{}{}
+			index[key] = append(index[key], item.Name)
+		}
+	}
+
+	for key := range index {
+		sort.Strings(index[key])
+	}
+
+	return index
+}
+
+func topologyStatusOrder(status string) int {
+	switch status {
+	case TopologyStatusError:
+		return 0
+	case TopologyStatusWarning:
+		return 1
+	case TopologyStatusHealthy:
+		return 2
+	default:
+		return 3
+	}
+}
+
+func serviceClusterIP(item corev1.Service) string {
+	if item.Spec.ClusterIP == "" {
+		return "-"
+	}
+	if item.Spec.ClusterIP == corev1.ClusterIPNone {
+		return "None"
+	}
+	return item.Spec.ClusterIP
+}
+
+func serviceExternalAddresses(item corev1.Service) []string {
+	addresses := make([]string, 0)
+	seen := make(map[string]struct{})
+
+	add := func(value string) {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return
+		}
+		if _, exists := seen[value]; exists {
+			return
+		}
+		seen[value] = struct{}{}
+		addresses = append(addresses, value)
+	}
+
+	for _, value := range item.Spec.ExternalIPs {
+		add(value)
+	}
+
+	if item.Spec.Type == corev1.ServiceTypeExternalName {
+		add(item.Spec.ExternalName)
+	}
+
+	for _, ingress := range item.Status.LoadBalancer.Ingress {
+		add(ingress.IP)
+		add(ingress.Hostname)
+	}
+
+	sort.Strings(addresses)
+
+	return addresses
+}
+
+func servicePortItems(item corev1.Service) []ServicePortItem {
+	ports := make([]ServicePortItem, 0, len(item.Spec.Ports))
+	for _, port := range item.Spec.Ports {
+		ports = append(ports, ServicePortItem{
+			Name:       port.Name,
+			Protocol:   string(port.Protocol),
+			Port:       port.Port,
+			TargetPort: port.TargetPort.String(),
+			NodePort:   port.NodePort,
+		})
+	}
+
+	return ports
+}
+
+func ingressHosts(item networkingv1.Ingress) []string {
+	hosts := make([]string, 0, len(item.Spec.Rules))
+	seen := make(map[string]struct{})
+	for _, rule := range item.Spec.Rules {
+		host := strings.TrimSpace(rule.Host)
+		if host == "" {
+			continue
+		}
+		if _, exists := seen[host]; exists {
+			continue
+		}
+		seen[host] = struct{}{}
+		hosts = append(hosts, host)
+	}
+
+	sort.Strings(hosts)
+
+	return hosts
+}
+
+func ingressAddresses(item networkingv1.Ingress) []string {
+	addresses := make([]string, 0, len(item.Status.LoadBalancer.Ingress))
+	for _, ingress := range item.Status.LoadBalancer.Ingress {
+		if ip := strings.TrimSpace(ingress.IP); ip != "" {
+			addresses = append(addresses, ip)
+		}
+		if hostname := strings.TrimSpace(ingress.Hostname); hostname != "" {
+			addresses = append(addresses, hostname)
+		}
+	}
+
+	sort.Strings(addresses)
+
+	return addresses
+}
+
+func ingressDefaultBackend(item networkingv1.Ingress) string {
+	if item.Spec.DefaultBackend == nil || item.Spec.DefaultBackend.Service == nil {
+		return ""
+	}
+
+	port := item.Spec.DefaultBackend.Service.Port
+	if port.Number > 0 {
+		return fmt.Sprintf("%s:%d", item.Spec.DefaultBackend.Service.Name, port.Number)
+	}
+	if port.Name != "" {
+		return fmt.Sprintf("%s:%s", item.Spec.DefaultBackend.Service.Name, port.Name)
+	}
+
+	return item.Spec.DefaultBackend.Service.Name
+}
+
+func collectIngressTLS(item networkingv1.Ingress) []IngressTLSItem {
+	tlsItems := make([]IngressTLSItem, 0, len(item.Spec.TLS))
+	for _, entry := range item.Spec.TLS {
+		hosts := append([]string(nil), entry.Hosts...)
+		sort.Strings(hosts)
+		tlsItems = append(tlsItems, IngressTLSItem{
+			SecretName: entry.SecretName,
+			Hosts:      jsonx.Slice[string](hosts),
+		})
+	}
+
+	return tlsItems
+}
+
+func pvcStorageClass(item corev1.PersistentVolumeClaim) string {
+	if item.Spec.StorageClassName == nil || strings.TrimSpace(*item.Spec.StorageClassName) == "" {
+		return "-"
+	}
+
+	return *item.Spec.StorageClassName
+}
+
+func pvcVolumeMode(item corev1.PersistentVolumeClaim) string {
+	if item.Spec.VolumeMode == nil || strings.TrimSpace(string(*item.Spec.VolumeMode)) == "" {
+		return "Filesystem"
+	}
+
+	return string(*item.Spec.VolumeMode)
+}
+
+func pvcAccessModes(items []corev1.PersistentVolumeAccessMode) []string {
+	if len(items) == 0 {
+		return []string{"-"}
+	}
+
+	modes := make([]string, 0, len(items))
+	for _, item := range items {
+		modes = append(modes, string(item))
+	}
+
+	sort.Strings(modes)
+
+	return modes
+}
+
+func pvcRequestedStorage(item corev1.PersistentVolumeClaim) string {
+	if quantity, ok := item.Spec.Resources.Requests[corev1.ResourceStorage]; ok {
+		return quantity.String()
+	}
+
+	return "-"
+}
+
+func pvcCapacity(item corev1.PersistentVolumeClaim) string {
+	if quantity, ok := item.Status.Capacity[corev1.ResourceStorage]; ok {
+		return quantity.String()
+	}
+
+	return ""
+}
+
+func endpointStatus(item corev1.Endpoints) string {
+	readyCount := 0
+	notReadyCount := 0
+	for _, subset := range item.Subsets {
+		readyCount += len(subset.Addresses)
+		notReadyCount += len(subset.NotReadyAddresses)
+	}
+
+	switch {
+	case readyCount > 0:
+		if notReadyCount > 0 {
+			return TopologyStatusWarning
+		}
+		return TopologyStatusHealthy
+	case notReadyCount > 0:
+		return TopologyStatusError
+	default:
+		return TopologyStatusWarning
+	}
+}
+
+func collectEndpointAddresses(item corev1.Endpoints) ([]EndpointAddressItem, int, int) {
+	addresses := make([]EndpointAddressItem, 0)
+	readyCount := 0
+	notReadyCount := 0
+
+	appendAddress := func(address corev1.EndpointAddress, ready bool) {
+		addresses = append(addresses, EndpointAddressItem{
+			IP:         address.IP,
+			Ready:      ready,
+			NodeName:   ptrString(address.NodeName),
+			TargetKind: targetRefKind(address.TargetRef),
+			TargetName: targetRefName(address.TargetRef),
+		})
+	}
+
+	for _, subset := range item.Subsets {
+		for _, address := range subset.Addresses {
+			appendAddress(address, true)
+			readyCount++
+		}
+		for _, address := range subset.NotReadyAddresses {
+			appendAddress(address, false)
+			notReadyCount++
+		}
+	}
+
+	sort.Slice(addresses, func(i, j int) bool {
+		if addresses[i].Ready != addresses[j].Ready {
+			return addresses[i].Ready
+		}
+		if addresses[i].TargetName != addresses[j].TargetName {
+			return addresses[i].TargetName < addresses[j].TargetName
+		}
+		return addresses[i].IP < addresses[j].IP
+	})
+
+	return addresses, readyCount, notReadyCount
+}
+
+func endpointPorts(item corev1.Endpoints) string {
+	parts := make([]string, 0)
+	for _, subset := range item.Subsets {
+		for _, port := range subset.Ports {
+			parts = append(parts, fmt.Sprintf("%d/%s", port.Port, strings.ToLower(string(port.Protocol))))
+		}
+	}
+	if len(parts) == 0 {
+		return "-"
+	}
+
+	sort.Strings(parts)
+	return strings.Join(parts, ", ")
+}
+
+func targetRefKind(ref *corev1.ObjectReference) string {
+	if ref == nil {
+		return ""
+	}
+	return ref.Kind
+}
+
+func targetRefName(ref *corev1.ObjectReference) string {
+	if ref == nil {
+		return ""
+	}
+	return ref.Name
+}
+
+func persistentVolumeStatus(item corev1.PersistentVolume) string {
+	switch item.Status.Phase {
+	case corev1.VolumeFailed:
+		return TopologyStatusError
+	case corev1.VolumeReleased, corev1.VolumePending:
+		return TopologyStatusWarning
+	default:
+		return TopologyStatusHealthy
+	}
+}
+
+func persistentVolumeCapacity(item corev1.PersistentVolume) string {
+	if quantity, ok := item.Spec.Capacity[corev1.ResourceStorage]; ok {
+		return quantity.String()
+	}
+	return "-"
+}
+
+func persistentVolumeVolumeMode(item corev1.PersistentVolume) string {
+	if item.Spec.VolumeMode == nil || strings.TrimSpace(string(*item.Spec.VolumeMode)) == "" {
+		return "Filesystem"
+	}
+	return string(*item.Spec.VolumeMode)
+}
+
+func persistentVolumeSource(item corev1.PersistentVolume) string {
+	switch {
+	case item.Spec.CSI != nil:
+		return "CSI"
+	case item.Spec.HostPath != nil:
+		return "HostPath"
+	case item.Spec.NFS != nil:
+		return "NFS"
+	case item.Spec.Local != nil:
+		return "Local"
+	case item.Spec.AWSElasticBlockStore != nil:
+		return "AWS EBS"
+	case item.Spec.GCEPersistentDisk != nil:
+		return "GCE PD"
+	case item.Spec.AzureDisk != nil:
+		return "AzureDisk"
+	case item.Spec.AzureFile != nil:
+		return "AzureFile"
+	case item.Spec.CephFS != nil:
+		return "CephFS"
+	case item.Spec.RBD != nil:
+		return "RBD"
+	case item.Spec.ISCSI != nil:
+		return "iSCSI"
+	case item.Spec.PersistentVolumeSource.FlexVolume != nil:
+		return "FlexVolume"
+	default:
+		return "Other"
+	}
+}
+
+func storageClassReclaimPolicy(item storagev1.StorageClass) string {
+	if item.ReclaimPolicy == nil || strings.TrimSpace(string(*item.ReclaimPolicy)) == "" {
+		return string(corev1.PersistentVolumeReclaimDelete)
+	}
+	return string(*item.ReclaimPolicy)
+}
+
+func storageClassVolumeBindingMode(item storagev1.StorageClass) string {
+	if item.VolumeBindingMode == nil || strings.TrimSpace(string(*item.VolumeBindingMode)) == "" {
+		return string(storagev1.VolumeBindingImmediate)
+	}
+	return string(*item.VolumeBindingMode)
+}
+
+func isDefaultStorageClass(item storagev1.StorageClass) bool {
+	return item.Annotations["storageclass.kubernetes.io/is-default-class"] == "true" ||
+		item.Annotations["storageclass.beta.kubernetes.io/is-default-class"] == "true"
+}
+
+func storageClassParameters(parameters map[string]string) []string {
+	if len(parameters) == 0 {
+		return nil
+	}
+
+	keys := make([]string, 0, len(parameters))
+	for key := range parameters {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	items := make([]string, 0, len(keys))
+	for _, key := range keys {
+		items = append(items, fmt.Sprintf("%s=%s", key, parameters[key]))
+	}
+
+	return items
+}
+
+func ingressClassStatus(item networkingv1.IngressClass) string {
+	if strings.TrimSpace(item.Spec.Controller) == "" {
+		return TopologyStatusWarning
+	}
+
+	return TopologyStatusHealthy
+}
+
+func isDefaultIngressClass(item networkingv1.IngressClass) bool {
+	return item.Annotations["ingressclass.kubernetes.io/is-default-class"] == "true"
+}
+
+func ingressClassParameters(item networkingv1.IngressClass) *IngressClassParameterRefItem {
+	if item.Spec.Parameters == nil {
+		return nil
+	}
+
+	result := &IngressClassParameterRefItem{
+		Kind:  item.Spec.Parameters.Kind,
+		Name:  item.Spec.Parameters.Name,
+		Scope: defaultString(ptrString(item.Spec.Parameters.Scope), "Cluster"),
+	}
+
+	if item.Spec.Parameters.APIGroup != nil {
+		result.APIGroup = *item.Spec.Parameters.APIGroup
+	}
+	if item.Spec.Parameters.Namespace != nil {
+		result.Namespace = *item.Spec.Parameters.Namespace
+	}
+
+	return result
+}
+
+func networkPolicyStatus(item networkingv1.NetworkPolicy, selectedPodCount int) string {
+	if len(networkPolicyTypes(item)) == 0 {
+		return TopologyStatusWarning
+	}
+	if selectedPodCount == 0 {
+		return TopologyStatusWarning
+	}
+
+	return TopologyStatusHealthy
+}
+
+func networkPolicySummary(item networkingv1.NetworkPolicy, selectedPodCount int) string {
+	return fmt.Sprintf(
+		"Pods %d · Ingress %d · Egress %d",
+		selectedPodCount,
+		len(item.Spec.Ingress),
+		len(item.Spec.Egress),
+	)
+}
+
+func networkPolicyTypes(item networkingv1.NetworkPolicy) []string {
+	seen := make(map[string]struct{})
+	types := make([]string, 0, 2)
+
+	add := func(value string) {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return
+		}
+		if _, exists := seen[value]; exists {
+			return
+		}
+		seen[value] = struct{}{}
+		types = append(types, value)
+	}
+
+	if len(item.Spec.PolicyTypes) > 0 {
+		for _, policyType := range item.Spec.PolicyTypes {
+			add(string(policyType))
+		}
+	} else {
+		add(string(networkingv1.PolicyTypeIngress))
+		if len(item.Spec.Egress) > 0 {
+			add(string(networkingv1.PolicyTypeEgress))
+		}
+	}
+
+	sort.SliceStable(types, func(i, j int) bool {
+		order := func(value string) int {
+			switch value {
+			case string(networkingv1.PolicyTypeIngress):
+				return 0
+			case string(networkingv1.PolicyTypeEgress):
+				return 1
+			default:
+				return 2
+			}
+		}
+		leftOrder := order(types[i])
+		rightOrder := order(types[j])
+		if leftOrder != rightOrder {
+			return leftOrder < rightOrder
+		}
+		return types[i] < types[j]
+	})
+
+	return types
+}
+
+func networkPolicySelectedPods(item networkingv1.NetworkPolicy, pods []corev1.Pod) []string {
+	selector, err := metav1.LabelSelectorAsSelector(&item.Spec.PodSelector)
+	if err != nil {
+		return nil
+	}
+
+	selected := make([]string, 0)
+	for _, pod := range pods {
+		if pod.Namespace != item.Namespace {
+			continue
+		}
+		if selector.Empty() || selector.Matches(labels.Set(pod.Labels)) {
+			selected = append(selected, pod.Name)
+		}
+	}
+
+	sort.Strings(selected)
+
+	return selected
+}
+
+func networkPolicyIngressRules(item networkingv1.NetworkPolicy) []NetworkPolicyRuleItem {
+	if len(item.Spec.Ingress) == 0 {
+		return nil
+	}
+
+	rules := make([]NetworkPolicyRuleItem, 0, len(item.Spec.Ingress))
+	for _, rule := range item.Spec.Ingress {
+		rules = append(rules, NetworkPolicyRuleItem{
+			Peers: jsonx.Slice[string](networkPolicyPeerSummaries(rule.From)),
+			Ports: jsonx.Slice[string](networkPolicyPortSummaries(rule.Ports)),
+		})
+	}
+
+	return rules
+}
+
+func networkPolicyEgressRules(item networkingv1.NetworkPolicy) []NetworkPolicyRuleItem {
+	if len(item.Spec.Egress) == 0 {
+		return nil
+	}
+
+	rules := make([]NetworkPolicyRuleItem, 0, len(item.Spec.Egress))
+	for _, rule := range item.Spec.Egress {
+		rules = append(rules, NetworkPolicyRuleItem{
+			Peers: jsonx.Slice[string](networkPolicyPeerSummaries(rule.To)),
+			Ports: jsonx.Slice[string](networkPolicyPortSummaries(rule.Ports)),
+		})
+	}
+
+	return rules
+}
+
+func networkPolicyPeerSummaries(peers []networkingv1.NetworkPolicyPeer) []string {
+	if len(peers) == 0 {
+		return nil
+	}
+
+	items := make([]string, 0, len(peers))
+	for _, peer := range peers {
+		switch {
+		case peer.IPBlock != nil:
+			except := append([]string(nil), peer.IPBlock.Except...)
+			sort.Strings(except)
+			if len(except) > 0 {
+				items = append(items, fmt.Sprintf("IPBlock %s except [%s]", peer.IPBlock.CIDR, strings.Join(except, ", ")))
+			} else {
+				items = append(items, fmt.Sprintf("IPBlock %s", peer.IPBlock.CIDR))
+			}
+		case peer.NamespaceSelector != nil && peer.PodSelector != nil:
+			items = append(
+				items,
+				fmt.Sprintf(
+					"Namespace %s · Pod %s",
+					strings.Join(selectorPairs(peer.NamespaceSelector), ", "),
+					strings.Join(selectorPairs(peer.PodSelector), ", "),
+				),
+			)
+		case peer.NamespaceSelector != nil:
+			items = append(items, fmt.Sprintf("Namespace %s", strings.Join(selectorPairs(peer.NamespaceSelector), ", ")))
+		case peer.PodSelector != nil:
+			items = append(items, fmt.Sprintf("Pod %s", strings.Join(selectorPairs(peer.PodSelector), ", ")))
+		default:
+			items = append(items, "All")
+		}
+	}
+
+	return items
+}
+
+func networkPolicyPortSummaries(ports []networkingv1.NetworkPolicyPort) []string {
+	if len(ports) == 0 {
+		return nil
+	}
+
+	items := make([]string, 0, len(ports))
+	for _, port := range ports {
+		protocol := string(corev1.ProtocolTCP)
+		if port.Protocol != nil && strings.TrimSpace(string(*port.Protocol)) != "" {
+			protocol = string(*port.Protocol)
+		}
+
+		switch {
+		case port.Port == nil:
+			items = append(items, fmt.Sprintf("%s/all", protocol))
+		case port.EndPort != nil && port.Port.Type == 0:
+			items = append(items, fmt.Sprintf("%s/%d-%d", protocol, port.Port.IntVal, *port.EndPort))
+		default:
+			items = append(items, fmt.Sprintf("%s/%s", protocol, port.Port.String()))
+		}
+	}
+
+	sort.Strings(items)
+
+	return items
 }
 
 func deploymentListStatus(item appsv1.Deployment) string {

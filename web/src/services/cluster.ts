@@ -333,6 +333,169 @@ export type CronJobItem = {
   jobs: CronJobJobItem[];
 };
 
+export type ServicePortItem = {
+  name?: string;
+  protocol: string;
+  port: number;
+  targetPort?: string;
+  nodePort?: number;
+};
+
+export type ServiceItem = {
+  name: string;
+  namespace: string;
+  status: string;
+  type: string;
+  summary: string;
+  clusterIP: string;
+  externalName?: string;
+  externalAddresses: string[];
+  sessionAffinity: string;
+  portsSummary: string;
+  podCount: number;
+  selector: string[];
+  ports: ServicePortItem[];
+  labels: string[];
+  age: string;
+  createdAt: string;
+};
+
+export type IngressTLSItem = {
+  secretName?: string;
+  hosts: string[];
+};
+
+export type IngressItem = {
+  name: string;
+  namespace: string;
+  status: string;
+  ingressClass?: string;
+  summary: string;
+  hosts: string[];
+  addresses: string[];
+  serviceNames: string[];
+  defaultBackend?: string;
+  backendCount: number;
+  tls: IngressTLSItem[];
+  labels: string[];
+  age: string;
+  createdAt: string;
+};
+
+export type IngressClassParameterRefItem = {
+  apiGroup?: string;
+  kind: string;
+  name: string;
+  scope?: string;
+  namespace?: string;
+};
+
+export type IngressClassItem = {
+  name: string;
+  status: string;
+  controller: string;
+  isDefault: boolean;
+  parameters?: IngressClassParameterRefItem;
+  labels: string[];
+  age: string;
+  createdAt: string;
+};
+
+export type NetworkPolicyRuleItem = {
+  peers: string[];
+  ports: string[];
+};
+
+export type NetworkPolicyItem = {
+  name: string;
+  namespace: string;
+  status: string;
+  summary: string;
+  podSelector: string[];
+  policyTypes: string[];
+  selectedPodCount: number;
+  selectedPods: string[];
+  ingressRuleCount: number;
+  egressRuleCount: number;
+  ingressRules: NetworkPolicyRuleItem[];
+  egressRules: NetworkPolicyRuleItem[];
+  labels: string[];
+  age: string;
+  createdAt: string;
+};
+
+export type PersistentVolumeClaimItem = {
+  name: string;
+  namespace: string;
+  status: string;
+  summary: string;
+  storageClass: string;
+  volumeName?: string;
+  volumeMode: string;
+  accessModes: string[];
+  requestedStorage: string;
+  capacity?: string;
+  mountedPodCount: number;
+  mountedPods: string[];
+  labels: string[];
+  age: string;
+  createdAt: string;
+};
+
+export type EndpointAddressItem = {
+  ip: string;
+  ready: boolean;
+  nodeName?: string;
+  targetKind?: string;
+  targetName?: string;
+};
+
+export type EndpointItem = {
+  name: string;
+  namespace: string;
+  status: string;
+  serviceName?: string;
+  subsets: number;
+  readyAddresses: number;
+  notReadyAddresses: number;
+  portsSummary: string;
+  addresses: EndpointAddressItem[];
+  labels: string[];
+  age: string;
+  createdAt: string;
+};
+
+export type PersistentVolumeItem = {
+  name: string;
+  status: string;
+  phase: string;
+  capacity: string;
+  accessModes: string[];
+  reclaimPolicy: string;
+  storageClass: string;
+  volumeMode: string;
+  claimNamespace?: string;
+  claimName?: string;
+  source: string;
+  labels: string[];
+  age: string;
+  createdAt: string;
+};
+
+export type StorageClassItem = {
+  name: string;
+  status: string;
+  provisioner: string;
+  reclaimPolicy: string;
+  volumeBindingMode: string;
+  allowVolumeExpansion: boolean;
+  isDefault: boolean;
+  parameters: string[];
+  labels: string[];
+  age: string;
+  createdAt: string;
+};
+
 export type NodeConditionItem = {
   type: string;
   status: string;
@@ -723,6 +886,183 @@ export async function setCronJobSuspend(namespace: string, name: string, suspend
 export async function updateCronJobYaml(namespace: string, name: string, content: string) {
   const { data } = await http.put<Envelope<WorkloadActionResult>>(
     `/cronjobs/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/yaml`,
+    { content },
+  );
+  return data.data;
+}
+
+export async function getServices(namespace?: string) {
+  const { data } = await http.get<Envelope<ServiceItem[]>>('/services', {
+    params: namespace ? { namespace } : undefined,
+  });
+  return data.data;
+}
+
+export async function getServiceYaml(namespace: string, name: string) {
+  const { data } = await http.get<Envelope<ResourceTextResult>>(
+    `/services/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/yaml`,
+  );
+  return data.data;
+}
+
+export async function updateServiceYaml(namespace: string, name: string, content: string) {
+  const { data } = await http.put<Envelope<WorkloadActionResult>>(
+    `/services/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/yaml`,
+    { content },
+  );
+  return data.data;
+}
+
+export async function getEndpoints(namespace?: string) {
+  const { data } = await http.get<Envelope<EndpointItem[]>>('/endpoints', {
+    params: namespace ? { namespace } : undefined,
+  });
+  return data.data;
+}
+
+export async function getEndpointYaml(namespace: string, name: string) {
+  const { data } = await http.get<Envelope<ResourceTextResult>>(
+    `/endpoints/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/yaml`,
+  );
+  return data.data;
+}
+
+export async function updateEndpointYaml(namespace: string, name: string, content: string) {
+  const { data } = await http.put<Envelope<WorkloadActionResult>>(
+    `/endpoints/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/yaml`,
+    { content },
+  );
+  return data.data;
+}
+
+export async function getIngresses(namespace?: string) {
+  const { data } = await http.get<Envelope<IngressItem[]>>('/ingresses', {
+    params: namespace ? { namespace } : undefined,
+  });
+  return data.data;
+}
+
+export async function getIngressYaml(namespace: string, name: string) {
+  const { data } = await http.get<Envelope<ResourceTextResult>>(
+    `/ingresses/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/yaml`,
+  );
+  return data.data;
+}
+
+export async function updateIngressYaml(namespace: string, name: string, content: string) {
+  const { data } = await http.put<Envelope<WorkloadActionResult>>(
+    `/ingresses/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/yaml`,
+    { content },
+  );
+  return data.data;
+}
+
+export async function getIngressClasses() {
+  const { data } = await http.get<Envelope<IngressClassItem[]>>('/ingressclasses');
+  return data.data;
+}
+
+export async function getIngressClassYaml(name: string) {
+  const { data } = await http.get<Envelope<ResourceTextResult>>(
+    `/ingressclasses/${encodeURIComponent(name)}/yaml`,
+  );
+  return data.data;
+}
+
+export async function updateIngressClassYaml(name: string, content: string) {
+  const { data } = await http.put<Envelope<WorkloadActionResult>>(
+    `/ingressclasses/${encodeURIComponent(name)}/yaml`,
+    { content },
+  );
+  return data.data;
+}
+
+export async function getNetworkPolicies(namespace?: string) {
+  const { data } = await http.get<Envelope<NetworkPolicyItem[]>>('/networkpolicies', {
+    params: namespace ? { namespace } : undefined,
+  });
+  return data.data;
+}
+
+export async function getNetworkPolicyYaml(namespace: string, name: string) {
+  const { data } = await http.get<Envelope<ResourceTextResult>>(
+    `/networkpolicies/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/yaml`,
+  );
+  return data.data;
+}
+
+export async function updateNetworkPolicyYaml(namespace: string, name: string, content: string) {
+  const { data } = await http.put<Envelope<WorkloadActionResult>>(
+    `/networkpolicies/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/yaml`,
+    { content },
+  );
+  return data.data;
+}
+
+export async function getPersistentVolumeClaims(namespace?: string) {
+  const { data } = await http.get<Envelope<PersistentVolumeClaimItem[]>>(
+    '/persistentvolumeclaims',
+    {
+      params: namespace ? { namespace } : undefined,
+    },
+  );
+  return data.data;
+}
+
+export async function getPersistentVolumeClaimYaml(namespace: string, name: string) {
+  const { data } = await http.get<Envelope<ResourceTextResult>>(
+    `/persistentvolumeclaims/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/yaml`,
+  );
+  return data.data;
+}
+
+export async function updatePersistentVolumeClaimYaml(
+  namespace: string,
+  name: string,
+  content: string,
+) {
+  const { data } = await http.put<Envelope<WorkloadActionResult>>(
+    `/persistentvolumeclaims/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/yaml`,
+    { content },
+  );
+  return data.data;
+}
+
+export async function getPersistentVolumes() {
+  const { data } = await http.get<Envelope<PersistentVolumeItem[]>>('/persistentvolumes');
+  return data.data;
+}
+
+export async function getPersistentVolumeYaml(name: string) {
+  const { data } = await http.get<Envelope<ResourceTextResult>>(
+    `/persistentvolumes/${encodeURIComponent(name)}/yaml`,
+  );
+  return data.data;
+}
+
+export async function updatePersistentVolumeYaml(name: string, content: string) {
+  const { data } = await http.put<Envelope<WorkloadActionResult>>(
+    `/persistentvolumes/${encodeURIComponent(name)}/yaml`,
+    { content },
+  );
+  return data.data;
+}
+
+export async function getStorageClasses() {
+  const { data } = await http.get<Envelope<StorageClassItem[]>>('/storageclasses');
+  return data.data;
+}
+
+export async function getStorageClassYaml(name: string) {
+  const { data } = await http.get<Envelope<ResourceTextResult>>(
+    `/storageclasses/${encodeURIComponent(name)}/yaml`,
+  );
+  return data.data;
+}
+
+export async function updateStorageClassYaml(name: string, content: string) {
+  const { data } = await http.put<Envelope<WorkloadActionResult>>(
+    `/storageclasses/${encodeURIComponent(name)}/yaml`,
     { content },
   );
   return data.data;

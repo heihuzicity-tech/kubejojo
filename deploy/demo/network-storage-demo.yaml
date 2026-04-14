@@ -1,0 +1,187 @@
+apiVersion: networking.k8s.io/v1
+kind: IngressClass
+metadata:
+  labels:
+    app.kubernetes.io/part-of: k8s-admin-demo
+  name: demo-shadow
+spec:
+  controller: example.com/demo-shadow-controller
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  labels:
+    app.kubernetes.io/name: demo-static-pv
+    app.kubernetes.io/part-of: k8s-admin-demo
+  name: demo-static-pv-node1
+spec:
+  accessModes:
+    - ReadWriteOnce
+  capacity:
+    storage: 2Gi
+  local:
+    path: /var/lib/k8s-admin/demo-static-pv
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - k8s-node1
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: manual-local
+  volumeMode: Filesystem
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  labels:
+    app.kubernetes.io/name: demo-static-pvc
+    app.kubernetes.io/part-of: k8s-admin-demo
+  name: demo-static-pvc
+  namespace: demo-workloads
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+  storageClassName: manual-local
+  volumeMode: Filesystem
+  volumeName: demo-static-pv-node1
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  labels:
+    app.kubernetes.io/name: demo-shared-cache
+    app.kubernetes.io/part-of: k8s-admin-demo
+  name: demo-shared-cache
+  namespace: default
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: local-path
+  volumeMode: Filesystem
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  labels:
+    app.kubernetes.io/name: demo-static-pv-reader
+    app.kubernetes.io/part-of: k8s-admin-demo
+  name: demo-static-pv-reader
+  namespace: demo-workloads
+spec:
+  containers:
+    - image: nginx:1.27-alpine
+      imagePullPolicy: IfNotPresent
+      name: nginx
+      ports:
+        - containerPort: 80
+          name: http
+      volumeMounts:
+        - mountPath: /data
+          name: data
+  nodeSelector:
+    kubernetes.io/hostname: k8s-node1
+  volumes:
+    - name: data
+      persistentVolumeClaim:
+        claimName: demo-static-pvc
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  labels:
+    app.kubernetes.io/name: demo-shared-cache-reader
+    app.kubernetes.io/part-of: k8s-admin-demo
+  name: demo-shared-cache-reader
+  namespace: default
+spec:
+  containers:
+    - image: nginx:1.27-alpine
+      imagePullPolicy: IfNotPresent
+      name: nginx
+      ports:
+        - containerPort: 80
+          name: http
+      volumeMounts:
+        - mountPath: /data
+          name: data
+  volumes:
+    - name: data
+      persistentVolumeClaim:
+        claimName: demo-shared-cache
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/name: demo-statefulset
+    app.kubernetes.io/part-of: k8s-admin-demo
+  name: demo-statefulset-web
+  namespace: demo-workloads
+spec:
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+  selector:
+    app: demo-statefulset
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  labels:
+    app.kubernetes.io/name: demo-nginx-ingress
+    app.kubernetes.io/part-of: k8s-admin-demo
+  name: demo-nginx-ingress
+  namespace: default
+spec:
+  ingressClassName: cilium
+  rules:
+    - host: nginx-demo.k8s-demo.local
+      http:
+        paths:
+          - backend:
+              service:
+                name: nginx-demo
+                port:
+                  number: 80
+            path: /
+            pathType: Prefix
+          - backend:
+              service:
+                name: nginx-demo
+                port:
+                  number: 80
+            path: /app
+            pathType: Prefix
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  labels:
+    app.kubernetes.io/name: demo-statefulset-ingress
+    app.kubernetes.io/part-of: k8s-admin-demo
+  name: demo-statefulset-ingress
+  namespace: demo-workloads
+spec:
+  ingressClassName: cilium
+  rules:
+    - host: statefulset-demo.k8s-demo.local
+      http:
+        paths:
+          - backend:
+              service:
+                name: demo-statefulset-web
+                port:
+                  number: 80
+            path: /
+            pathType: Prefix

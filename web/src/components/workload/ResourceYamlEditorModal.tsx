@@ -36,10 +36,18 @@ export function ResourceYamlEditorModal({
   const [baseline, setBaseline] = useState('');
 
   const expectedIdentity = useMemo(() => {
-    const [namespace = '', name = ''] = resourceLabel.split('/');
+    const separatorIndex = resourceLabel.indexOf('/');
+
+    if (separatorIndex < 0) {
+      return {
+        namespace: '',
+        name: resourceLabel.trim(),
+      };
+    }
+
     return {
-      namespace: namespace.trim(),
-      name: name.trim(),
+      namespace: resourceLabel.slice(0, separatorIndex).trim(),
+      name: resourceLabel.slice(separatorIndex + 1).trim(),
     };
   }, [resourceLabel]);
 
@@ -63,7 +71,7 @@ export function ResourceYamlEditorModal({
     if (!parsedName) {
       errors.push('Missing required field: metadata.name.');
     }
-    if (!parsedNamespace) {
+    if (expectedIdentity.namespace && !parsedNamespace) {
       errors.push('Missing required field: metadata.namespace.');
     }
     if (parsedKind && parsedKind !== resourceKind) {
@@ -78,6 +86,9 @@ export function ResourceYamlEditorModal({
       parsedNamespace !== expectedIdentity.namespace
     ) {
       errors.push(`metadata.namespace must remain ${expectedIdentity.namespace}.`);
+    }
+    if (!expectedIdentity.namespace && parsedNamespace) {
+      warnings.push('Cluster-scoped resources usually should not set metadata.namespace.');
     }
 
     if (resourceKind === 'Pod') {
