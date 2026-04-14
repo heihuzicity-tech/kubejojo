@@ -1076,6 +1076,102 @@ func newRouter(clusterFactory *kube.Factory) *gin.Engine {
 				c.JSON(http.StatusOK, response.Success(result))
 			})
 
+			authorized.GET("/configmaps", func(c *gin.Context) {
+				items, err := mustClusterService(c).ListConfigMaps(
+					c.Request.Context(),
+					c.Query("namespace"),
+				)
+				if err != nil {
+					respondWithClusterError(c, "LIST_CONFIGMAPS_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(items))
+			})
+
+			authorized.GET("/configmaps/:namespace/:name/yaml", func(c *gin.Context) {
+				result, err := mustClusterService(c).GetConfigMapYAML(
+					c.Request.Context(),
+					c.Param("namespace"),
+					c.Param("name"),
+				)
+				if err != nil {
+					respondWithClusterError(c, "GET_CONFIGMAP_YAML_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(result))
+			})
+
+			authorized.PUT("/configmaps/:namespace/:name/yaml", func(c *gin.Context) {
+				var req yamlUpdateRequest
+				if err := c.ShouldBindJSON(&req); err != nil {
+					c.JSON(http.StatusBadRequest, response.Failure("INVALID_YAML_UPDATE_REQUEST", "请求体格式不正确"))
+					return
+				}
+
+				result, err := mustClusterService(c).UpdateConfigMapYAML(
+					c.Request.Context(),
+					c.Param("namespace"),
+					c.Param("name"),
+					req.Content,
+				)
+				if err != nil {
+					respondWithClusterError(c, "UPDATE_CONFIGMAP_YAML_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(result))
+			})
+
+			authorized.GET("/secrets", func(c *gin.Context) {
+				items, err := mustClusterService(c).ListSecrets(
+					c.Request.Context(),
+					c.Query("namespace"),
+				)
+				if err != nil {
+					respondWithClusterError(c, "LIST_SECRETS_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(items))
+			})
+
+			authorized.GET("/secrets/:namespace/:name/yaml", func(c *gin.Context) {
+				result, err := mustClusterService(c).GetSecretYAML(
+					c.Request.Context(),
+					c.Param("namespace"),
+					c.Param("name"),
+				)
+				if err != nil {
+					respondWithClusterError(c, "GET_SECRET_YAML_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(result))
+			})
+
+			authorized.PUT("/secrets/:namespace/:name/yaml", func(c *gin.Context) {
+				var req yamlUpdateRequest
+				if err := c.ShouldBindJSON(&req); err != nil {
+					c.JSON(http.StatusBadRequest, response.Failure("INVALID_YAML_UPDATE_REQUEST", "请求体格式不正确"))
+					return
+				}
+
+				result, err := mustClusterService(c).UpdateSecretYAML(
+					c.Request.Context(),
+					c.Param("namespace"),
+					c.Param("name"),
+					req.Content,
+				)
+				if err != nil {
+					respondWithClusterError(c, "UPDATE_SECRET_YAML_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(result))
+			})
+
 			authorized.GET("/networkpolicies", func(c *gin.Context) {
 				items, err := mustClusterService(c).ListNetworkPolicies(
 					c.Request.Context(),

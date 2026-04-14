@@ -401,6 +401,39 @@ export type IngressClassItem = {
   createdAt: string;
 };
 
+export type ConfigMapItem = {
+  name: string;
+  namespace: string;
+  status: string;
+  summary: string;
+  immutable: boolean;
+  dataKeys: string[];
+  binaryDataKeys: string[];
+  dataCount: number;
+  binaryDataCount: number;
+  referencedPodCount: number;
+  referencedPods: string[];
+  labels: string[];
+  age: string;
+  createdAt: string;
+};
+
+export type SecretItem = {
+  name: string;
+  namespace: string;
+  status: string;
+  type: string;
+  summary: string;
+  immutable: boolean;
+  dataKeys: string[];
+  dataCount: number;
+  referencedPodCount: number;
+  referencedPods: string[];
+  labels: string[];
+  age: string;
+  createdAt: string;
+};
+
 export type NetworkPolicyRuleItem = {
   peers: string[];
   ports: string[];
@@ -972,6 +1005,50 @@ export async function getIngressClassYaml(name: string) {
 export async function updateIngressClassYaml(name: string, content: string) {
   const { data } = await http.put<Envelope<WorkloadActionResult>>(
     `/ingressclasses/${encodeURIComponent(name)}/yaml`,
+    { content },
+  );
+  return data.data;
+}
+
+export async function getConfigMaps(namespace?: string) {
+  const { data } = await http.get<Envelope<ConfigMapItem[]>>('/configmaps', {
+    params: namespace ? { namespace } : undefined,
+  });
+  return data.data;
+}
+
+export async function getConfigMapYaml(namespace: string, name: string) {
+  const { data } = await http.get<Envelope<ResourceTextResult>>(
+    `/configmaps/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/yaml`,
+  );
+  return data.data;
+}
+
+export async function updateConfigMapYaml(namespace: string, name: string, content: string) {
+  const { data } = await http.put<Envelope<WorkloadActionResult>>(
+    `/configmaps/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/yaml`,
+    { content },
+  );
+  return data.data;
+}
+
+export async function getSecrets(namespace?: string) {
+  const { data } = await http.get<Envelope<SecretItem[]>>('/secrets', {
+    params: namespace ? { namespace } : undefined,
+  });
+  return data.data;
+}
+
+export async function getSecretYaml(namespace: string, name: string) {
+  const { data } = await http.get<Envelope<ResourceTextResult>>(
+    `/secrets/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/yaml`,
+  );
+  return data.data;
+}
+
+export async function updateSecretYaml(namespace: string, name: string, content: string) {
+  const { data } = await http.put<Envelope<WorkloadActionResult>>(
+    `/secrets/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/yaml`,
     { content },
   );
   return data.data;

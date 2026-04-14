@@ -1,0 +1,126 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    app.kubernetes.io/part-of: k8s-admin-demo
+  name: demo-config
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  labels:
+    app.kubernetes.io/name: demo-app-config
+    app.kubernetes.io/part-of: k8s-admin-demo
+  name: demo-app-config
+  namespace: demo-config
+data:
+  APP_NAME: k8s-admin
+  LOG_LEVEL: info
+  PROFILE: demo
+binaryData:
+  banner.txt: azhzLWFkbWluLWNvbmZpZw==
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  labels:
+    app.kubernetes.io/name: demo-app-secret
+    app.kubernetes.io/part-of: k8s-admin-demo
+  name: demo-app-secret
+  namespace: demo-config
+type: Opaque
+stringData:
+  API_TOKEN: super-demo-token
+  DATABASE_URL: postgres://demo:demo@postgres.demo.svc:5432/app
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  labels:
+    app.kubernetes.io/name: demo-registry-auth
+    app.kubernetes.io/part-of: k8s-admin-demo
+  name: demo-registry-auth
+  namespace: demo-config
+type: kubernetes.io/dockerconfigjson
+stringData:
+  .dockerconfigjson: |
+    {
+      "auths": {
+        "registry.example.local": {
+          "username": "demo",
+          "password": "demo-password",
+          "auth": "ZGVtbzpkZW1vLXBhc3N3b3Jk"
+        }
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/name: demo-config-consumer
+    app.kubernetes.io/part-of: k8s-admin-demo
+  name: demo-config-consumer
+  namespace: demo-config
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: demo-config-consumer
+  template:
+    metadata:
+      labels:
+        app: demo-config-consumer
+        app.kubernetes.io/name: demo-config-consumer
+        app.kubernetes.io/part-of: k8s-admin-demo
+    spec:
+      imagePullSecrets:
+        - name: demo-registry-auth
+      containers:
+        - command:
+            - sh
+            - -c
+            - |
+              echo "APP_NAME=$APP_NAME PROFILE=$PROFILE LOG_LEVEL=$LOG_LEVEL"
+              echo "API_TOKEN=${API_TOKEN:+set} DATABASE_URL=${DATABASE_URL:+set}"
+              sleep 360000
+          env:
+            - name: PROFILE
+              valueFrom:
+                configMapKeyRef:
+                  name: demo-app-config
+                  key: PROFILE
+            - name: API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: demo-app-secret
+                  key: API_TOKEN
+          envFrom:
+            - configMapRef:
+                name: demo-app-config
+            - secretRef:
+                name: demo-app-secret
+          image: busybox:1.36
+          imagePullPolicy: IfNotPresent
+          name: toolbox
+          volumeMounts:
+            - mountPath: /config
+              name: config-volume
+            - mountPath: /secure
+              name: secret-volume
+            - mountPath: /projected
+              name: projected-settings
+      volumes:
+        - configMap:
+            name: demo-app-config
+          name: config-volume
+        - name: secret-volume
+          secret:
+            secretName: demo-app-secret
+        - name: projected-settings
+          projected:
+            sources:
+              - configMap:
+                  name: demo-app-config
+              - secret:
+                  name: demo-app-secret

@@ -1,5 +1,6 @@
-import { Typography } from 'antd';
-import type { ReactNode } from 'react';
+import { SearchOutlined } from '@ant-design/icons';
+import { Input, Typography } from 'antd';
+import { type ReactNode, useDeferredValue, useMemo, useState } from 'react';
 
 export function SectionCard({
   title,
@@ -76,6 +77,67 @@ export function HeaderMeta({
     <div className="flex items-center gap-2">
       <span className="text-slate-400">{label}</span>
       <span className="text-slate-600">{value}</span>
+    </div>
+  );
+}
+
+export function SearchableKeyList({
+  items,
+  emptyMessage,
+  searchPlaceholder = 'Search keys',
+}: {
+  items: string[];
+  emptyMessage: string;
+  searchPlaceholder?: string;
+}) {
+  const [keyword, setKeyword] = useState('');
+  const deferredKeyword = useDeferredValue(keyword.trim().toLowerCase());
+
+  const filteredItems = useMemo(() => {
+    if (!deferredKeyword) {
+      return items;
+    }
+
+    return items.filter((item) => item.toLowerCase().includes(deferredKeyword));
+  }, [deferredKeyword, items]);
+
+  if (items.length === 0) {
+    return <EmptyState message={emptyMessage} />;
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+        <Input
+          allowClear
+          value={keyword}
+          onChange={(event) => setKeyword(event.target.value)}
+          prefix={<SearchOutlined className="text-slate-400" />}
+          placeholder={searchPlaceholder}
+          className="md:max-w-[320px]"
+        />
+        <div className="text-xs text-slate-500">
+          {filteredItems.length === items.length
+            ? `${items.length} items`
+            : `${filteredItems.length} / ${items.length} items`}
+        </div>
+      </div>
+
+      <div className="overflow-hidden rounded-[16px] border border-slate-200 bg-white">
+        {filteredItems.length > 0 ? (
+          <div className="max-h-[320px] divide-y divide-slate-100 overflow-auto">
+            {filteredItems.map((item) => (
+              <div key={item} className="px-3.5 py-2.5 transition hover:bg-slate-50">
+                <Typography.Text className="!mb-0 font-mono text-[12px] leading-5 text-slate-700">
+                  {item}
+                </Typography.Text>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="px-4 py-10 text-sm text-slate-500">No matching keys.</div>
+        )}
+      </div>
     </div>
   );
 }

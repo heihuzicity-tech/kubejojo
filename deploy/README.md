@@ -17,3 +17,8 @@
 - `demo/network-policy-demo.yaml`
   - 用独立的 `demo-network` 命名空间演示 NetworkPolicy
   - 包含 `default deny`、`allow client ingress`、`egress allow web + DNS` 三种经典策略
+
+- `demo/config-demo.yaml`
+  - 用独立的 `demo-config` 命名空间演示 ConfigMaps / Secrets
+  - 包含 `ConfigMap / Opaque Secret / dockerconfigjson Secret / Deployment`
+  - 同时覆盖 `env`、`envFrom`、`configMap` 卷、`secret` 卷、`projected` 卷和 `imagePullSecrets` 引用

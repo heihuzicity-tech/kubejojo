@@ -3,6 +3,8 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AppLayout } from '../layouts/AppLayout';
 import { navigationItems } from '../layouts/navigation';
 import { useAppStore } from '../stores/appStore';
+import { ConfigMapDetailsPage } from '../pages/ConfigMapDetailsPage';
+import { ConfigMapsPage } from '../pages/ConfigMapsPage';
 import { EndpointDetailsPage } from '../pages/EndpointDetailsPage';
 import { EndpointsPage } from '../pages/EndpointsPage';
 import { IngressClassDetailsPage } from '../pages/IngressClassDetailsPage';
@@ -34,6 +36,8 @@ import { PodDetailsPage } from '../pages/PodDetailsPage';
 import { PodsPage } from '../pages/PodsPage';
 import { ReplicaSetDetailsPage } from '../pages/ReplicaSetDetailsPage';
 import { ReplicaSetsPage } from '../pages/ReplicaSetsPage';
+import { SecretDetailsPage } from '../pages/SecretDetailsPage';
+import { SecretsPage } from '../pages/SecretsPage';
 import { ServiceDetailsPage } from '../pages/ServiceDetailsPage';
 import { ServicesPage } from '../pages/ServicesPage';
 import { StatefulSetDetailsPage } from '../pages/StatefulSetDetailsPage';
@@ -91,6 +95,10 @@ function ProtectedRoutes() {
           path="/network/networkpolicies/:namespace/:name"
           element={<NetworkPolicyDetailsPage />}
         />
+        <Route path="/config/configmaps" element={<ConfigMapsPage />} />
+        <Route path="/config/configmaps/:namespace/:name" element={<ConfigMapDetailsPage />} />
+        <Route path="/config/secrets" element={<SecretsPage />} />
+        <Route path="/config/secrets/:namespace/:name" element={<SecretDetailsPage />} />
         <Route
           path="/storage/persistentvolumeclaims"
           element={<PersistentVolumeClaimsPage />}

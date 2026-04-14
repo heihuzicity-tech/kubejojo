@@ -476,6 +476,39 @@ type IngressClassItem struct {
 	CreatedAt  string                        `json:"createdAt"`
 }
 
+type ConfigMapItem struct {
+	Name               string              `json:"name"`
+	Namespace          string              `json:"namespace"`
+	Status             string              `json:"status"`
+	Summary            string              `json:"summary"`
+	Immutable          bool                `json:"immutable"`
+	DataKeys           jsonx.Slice[string] `json:"dataKeys"`
+	BinaryDataKeys     jsonx.Slice[string] `json:"binaryDataKeys"`
+	DataCount          int                 `json:"dataCount"`
+	BinaryDataCount    int                 `json:"binaryDataCount"`
+	ReferencedPodCount int                 `json:"referencedPodCount"`
+	ReferencedPods     jsonx.Slice[string] `json:"referencedPods"`
+	Labels             jsonx.Slice[string] `json:"labels"`
+	Age                string              `json:"age"`
+	CreatedAt          string              `json:"createdAt"`
+}
+
+type SecretItem struct {
+	Name               string              `json:"name"`
+	Namespace          string              `json:"namespace"`
+	Status             string              `json:"status"`
+	Type               string              `json:"type"`
+	Summary            string              `json:"summary"`
+	Immutable          bool                `json:"immutable"`
+	DataKeys           jsonx.Slice[string] `json:"dataKeys"`
+	DataCount          int                 `json:"dataCount"`
+	ReferencedPodCount int                 `json:"referencedPodCount"`
+	ReferencedPods     jsonx.Slice[string] `json:"referencedPods"`
+	Labels             jsonx.Slice[string] `json:"labels"`
+	Age                string              `json:"age"`
+	CreatedAt          string              `json:"createdAt"`
+}
+
 type NetworkPolicyRuleItem struct {
 	Peers jsonx.Slice[string] `json:"peers"`
 	Ports jsonx.Slice[string] `json:"ports"`
@@ -2114,6 +2147,105 @@ func (s *ClusterService) ListIngressClasses(ctx context.Context) ([]IngressClass
 	return classes, nil
 }
 
+func (s *ClusterService) ListConfigMaps(ctx context.Context, namespace string) ([]ConfigMapItem, error) {
+	namespace = normalizeNamespace(namespace)
+
+	items, err := s.client.Kubernetes.CoreV1().ConfigMaps(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list configmaps: %w", err)
+	}
+
+	pods, err := s.client.Kubernetes.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list pods for configmaps: %w", err)
+	}
+
+	podsByReference := podsByConfigMapReference(pods.Items)
+	configMaps := make([]ConfigMapItem, 0, len(items.Items))
+	for _, item := range items.Items {
+		referencedPods := podsByReference[namespacedName(item.Namespace, item.Name)]
+		configMaps = append(configMaps, ConfigMapItem{
+			Name:               item.Name,
+			Namespace:          item.Namespace,
+			Status:             configMapStatus(item),
+			Summary:            configMapSummary(item, len(referencedPods)),
+			Immutable:          item.Immutable != nil && *item.Immutable,
+			DataKeys:           jsonx.Slice[string](configMapDataKeys(item)),
+			BinaryDataKeys:     jsonx.Slice[string](configMapBinaryDataKeys(item)),
+			DataCount:          len(item.Data),
+			BinaryDataCount:    len(item.BinaryData),
+			ReferencedPodCount: len(referencedPods),
+			ReferencedPods:     jsonx.Slice[string](referencedPods),
+			Labels:             jsonx.Slice[string](labelPairs(item.Labels)),
+			Age:                ageString(item.CreationTimestamp.Time),
+			CreatedAt:          item.CreationTimestamp.Time.Format("2006-01-02 15:04:05"),
+		})
+	}
+
+	sort.Slice(configMaps, func(i, j int) bool {
+		leftOrder := topologyStatusOrder(configMaps[i].Status)
+		rightOrder := topologyStatusOrder(configMaps[j].Status)
+		if leftOrder != rightOrder {
+			return leftOrder < rightOrder
+		}
+		if configMaps[i].Namespace != configMaps[j].Namespace {
+			return configMaps[i].Namespace < configMaps[j].Namespace
+		}
+		return configMaps[i].Name < configMaps[j].Name
+	})
+
+	return configMaps, nil
+}
+
+func (s *ClusterService) ListSecrets(ctx context.Context, namespace string) ([]SecretItem, error) {
+	namespace = normalizeNamespace(namespace)
+
+	items, err := s.client.Kubernetes.CoreV1().Secrets(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list secrets: %w", err)
+	}
+
+	pods, err := s.client.Kubernetes.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list pods for secrets: %w", err)
+	}
+
+	podsByReference := podsBySecretReference(pods.Items)
+	secrets := make([]SecretItem, 0, len(items.Items))
+	for _, item := range items.Items {
+		referencedPods := podsByReference[namespacedName(item.Namespace, item.Name)]
+		secrets = append(secrets, SecretItem{
+			Name:               item.Name,
+			Namespace:          item.Namespace,
+			Status:             secretStatus(item),
+			Type:               secretType(item),
+			Summary:            secretSummary(item, len(referencedPods)),
+			Immutable:          item.Immutable != nil && *item.Immutable,
+			DataKeys:           jsonx.Slice[string](secretDataKeys(item)),
+			DataCount:          len(item.Data),
+			ReferencedPodCount: len(referencedPods),
+			ReferencedPods:     jsonx.Slice[string](referencedPods),
+			Labels:             jsonx.Slice[string](labelPairs(item.Labels)),
+			Age:                ageString(item.CreationTimestamp.Time),
+			CreatedAt:          item.CreationTimestamp.Time.Format("2006-01-02 15:04:05"),
+		})
+	}
+
+	sort.Slice(secrets, func(i, j int) bool {
+		leftOrder := topologyStatusOrder(secrets[i].Status)
+		rightOrder := topologyStatusOrder(secrets[j].Status)
+		if leftOrder != rightOrder {
+			return leftOrder < rightOrder
+		}
+		if secrets[i].Namespace != secrets[j].Namespace {
+			return secrets[i].Namespace < secrets[j].Namespace
+		}
+		return secrets[i].Name < secrets[j].Name
+	})
+
+	return secrets, nil
+}
+
 func (s *ClusterService) ListNetworkPolicies(
 	ctx context.Context,
 	namespace string,
@@ -2214,6 +2346,40 @@ func (s *ClusterService) UpdateIngressClassYAML(
 	content string,
 ) (WorkloadActionResult, error) {
 	return s.ApplyClusterResourceYAML(ctx, "ingressclass", "IngressClass", name, content)
+}
+
+func (s *ClusterService) GetConfigMapYAML(
+	ctx context.Context,
+	namespace string,
+	name string,
+) (ResourceTextResult, error) {
+	return s.GetResourceYAML(ctx, "configmap", "ConfigMap", namespace, name)
+}
+
+func (s *ClusterService) UpdateConfigMapYAML(
+	ctx context.Context,
+	namespace string,
+	name string,
+	content string,
+) (WorkloadActionResult, error) {
+	return s.ApplyResourceYAML(ctx, "configmap", "ConfigMap", namespace, name, content)
+}
+
+func (s *ClusterService) GetSecretYAML(
+	ctx context.Context,
+	namespace string,
+	name string,
+) (ResourceTextResult, error) {
+	return s.GetResourceYAML(ctx, "secret", "Secret", namespace, name)
+}
+
+func (s *ClusterService) UpdateSecretYAML(
+	ctx context.Context,
+	namespace string,
+	name string,
+	content string,
+) (WorkloadActionResult, error) {
+	return s.ApplyResourceYAML(ctx, "secret", "Secret", namespace, name, content)
 }
 
 func (s *ClusterService) GetNetworkPolicyYAML(
@@ -3210,6 +3376,179 @@ func podsByPersistentVolumeClaim(items []corev1.Pod) map[string][]string {
 	}
 
 	return index
+}
+
+func podsByConfigMapReference(items []corev1.Pod) map[string][]string {
+	index := make(map[string][]string)
+	for _, item := range items {
+		seen := make(map[string]struct{})
+
+		for _, volume := range item.Spec.Volumes {
+			switch {
+			case volume.ConfigMap != nil:
+				addReferencedPod(index, seen, item.Namespace, volume.ConfigMap.Name, item.Name)
+			case volume.Projected != nil:
+				for _, source := range volume.Projected.Sources {
+					if source.ConfigMap == nil {
+						continue
+					}
+					addReferencedPod(index, seen, item.Namespace, source.ConfigMap.Name, item.Name)
+				}
+			}
+		}
+
+		for _, container := range podSpecContainers(item.Spec) {
+			for _, envFrom := range container.EnvFrom {
+				if envFrom.ConfigMapRef == nil {
+					continue
+				}
+				addReferencedPod(index, seen, item.Namespace, envFrom.ConfigMapRef.Name, item.Name)
+			}
+
+			for _, env := range container.Env {
+				if env.ValueFrom == nil || env.ValueFrom.ConfigMapKeyRef == nil {
+					continue
+				}
+				addReferencedPod(index, seen, item.Namespace, env.ValueFrom.ConfigMapKeyRef.Name, item.Name)
+			}
+		}
+	}
+
+	sortPodReferenceIndex(index)
+
+	return index
+}
+
+func podsBySecretReference(items []corev1.Pod) map[string][]string {
+	index := make(map[string][]string)
+	for _, item := range items {
+		seen := make(map[string]struct{})
+
+		for _, imagePullSecret := range item.Spec.ImagePullSecrets {
+			addReferencedPod(index, seen, item.Namespace, imagePullSecret.Name, item.Name)
+		}
+
+		for _, volume := range item.Spec.Volumes {
+			switch {
+			case volume.Secret != nil:
+				addReferencedPod(index, seen, item.Namespace, volume.Secret.SecretName, item.Name)
+			case volume.Projected != nil:
+				for _, source := range volume.Projected.Sources {
+					if source.Secret == nil {
+						continue
+					}
+					addReferencedPod(index, seen, item.Namespace, source.Secret.Name, item.Name)
+				}
+			}
+		}
+
+		for _, container := range podSpecContainers(item.Spec) {
+			for _, envFrom := range container.EnvFrom {
+				if envFrom.SecretRef == nil {
+					continue
+				}
+				addReferencedPod(index, seen, item.Namespace, envFrom.SecretRef.Name, item.Name)
+			}
+
+			for _, env := range container.Env {
+				if env.ValueFrom == nil || env.ValueFrom.SecretKeyRef == nil {
+					continue
+				}
+				addReferencedPod(index, seen, item.Namespace, env.ValueFrom.SecretKeyRef.Name, item.Name)
+			}
+		}
+	}
+
+	sortPodReferenceIndex(index)
+
+	return index
+}
+
+func addReferencedPod(
+	index map[string][]string,
+	seen map[string]struct{},
+	namespace string,
+	referenceName string,
+	podName string,
+) {
+	referenceName = strings.TrimSpace(referenceName)
+	if referenceName == "" {
+		return
+	}
+
+	key := namespacedName(namespace, referenceName)
+	if _, exists := seen[key]; exists {
+		return
+	}
+
+	seen[key] = struct{}{}
+	index[key] = append(index[key], podName)
+}
+
+func sortPodReferenceIndex(index map[string][]string) {
+	for key := range index {
+		sort.Strings(index[key])
+	}
+}
+
+func podSpecContainers(spec corev1.PodSpec) []corev1.Container {
+	containers := make([]corev1.Container, 0, len(spec.InitContainers)+len(spec.Containers))
+	containers = append(containers, spec.InitContainers...)
+	containers = append(containers, spec.Containers...)
+	return containers
+}
+
+func sortedMapKeys[T any](items map[string]T) []string {
+	if len(items) == 0 {
+		return nil
+	}
+
+	keys := make([]string, 0, len(items))
+	for key := range items {
+		keys = append(keys, key)
+	}
+
+	sort.Strings(keys)
+
+	return keys
+}
+
+func configMapDataKeys(item corev1.ConfigMap) []string {
+	return sortedMapKeys(item.Data)
+}
+
+func configMapBinaryDataKeys(item corev1.ConfigMap) []string {
+	return sortedMapKeys(item.BinaryData)
+}
+
+func secretDataKeys(item corev1.Secret) []string {
+	return sortedMapKeys(item.Data)
+}
+
+func configMapStatus(item corev1.ConfigMap) string {
+	if len(item.Data) == 0 && len(item.BinaryData) == 0 {
+		return TopologyStatusWarning
+	}
+	return TopologyStatusHealthy
+}
+
+func secretStatus(item corev1.Secret) string {
+	if len(item.Data) == 0 {
+		return TopologyStatusWarning
+	}
+	return TopologyStatusHealthy
+}
+
+func configMapSummary(item corev1.ConfigMap, referencedPodCount int) string {
+	return fmt.Sprintf("Keys %d · Binary %d · Pods %d", len(item.Data), len(item.BinaryData), referencedPodCount)
+}
+
+func secretType(item corev1.Secret) string {
+	return defaultString(strings.TrimSpace(string(item.Type)), string(corev1.SecretTypeOpaque))
+}
+
+func secretSummary(item corev1.Secret, referencedPodCount int) string {
+	return fmt.Sprintf("Type %s · Keys %d · Pods %d", secretType(item), len(item.Data), referencedPodCount)
 }
 
 func topologyStatusOrder(status string) int {
