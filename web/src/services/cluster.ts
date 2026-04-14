@@ -1,5 +1,114 @@
 import { http } from './http';
 
+type UnknownRecord = Record<string, unknown>;
+
+function asRecord(value: unknown): UnknownRecord | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+
+  return value as UnknownRecord;
+}
+
+function readString(record: UnknownRecord | undefined, keys: string[], fallback = '') {
+  if (!record) {
+    return fallback;
+  }
+
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'string' && value.trim() !== '') {
+      return value;
+    }
+  }
+
+  return fallback;
+}
+
+function readNumber(record: UnknownRecord | undefined, keys: string[], fallback = 0) {
+  if (!record) {
+    return fallback;
+  }
+
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+    if (typeof value === 'string' && value.trim() !== '') {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+  }
+
+  return fallback;
+}
+
+function readNullableNumber(record: UnknownRecord | undefined, keys: string[]) {
+  if (!record) {
+    return null;
+  }
+
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+    if (typeof value === 'string' && value.trim() !== '') {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+  }
+
+  return null;
+}
+
+function readStringArray(record: UnknownRecord | undefined, keys: string[]) {
+  if (!record) {
+    return [];
+  }
+
+  for (const key of keys) {
+    const value = record[key];
+    if (Array.isArray(value)) {
+      return value
+        .map((item) => (typeof item === 'string' ? item.trim() : ''))
+        .filter((item) => item !== '');
+    }
+    const nested = asRecord(value);
+    if (nested) {
+      return Object.entries(nested)
+        .map(([nestedKey, nestedValue]) =>
+          typeof nestedValue === 'string' && nestedValue.trim() !== ''
+            ? `${nestedKey}=${nestedValue.trim()}`
+            : '',
+        )
+        .filter((item) => item !== '');
+    }
+  }
+
+  return [];
+}
+
+function readArray(record: UnknownRecord | undefined, keys: string[]) {
+  if (!record) {
+    return [];
+  }
+
+  for (const key of keys) {
+    const value = record[key];
+    if (Array.isArray(value)) {
+      return value;
+    }
+  }
+
+  return [];
+}
+
 export type AuthMe = {
   name: string;
   authMode: string;
@@ -518,6 +627,203 @@ export type NetworkPolicyItem = {
   age: string;
   createdAt: string;
 };
+
+export type HPAMetricItem = {
+  type: string;
+  name: string;
+  target?: string;
+  current?: string;
+  summary?: string;
+  container?: string;
+  selector?: string;
+};
+
+export type HPAConditionItem = {
+  type: string;
+  status: string;
+  reason?: string;
+  message?: string;
+  lastTransitionTime?: string;
+};
+
+export type HPAItem = {
+  name: string;
+  namespace: string;
+  status: string;
+  summary: string;
+  scaleTargetKind: string;
+  scaleTargetName: string;
+  scaleTargetApiVersion: string;
+  minReplicas: number;
+  maxReplicas: number;
+  currentReplicas: number;
+  desiredReplicas: number;
+  metricCount: number;
+  metrics: HPAMetricItem[];
+  conditionCount: number;
+  conditions: HPAConditionItem[];
+  behaviorSummary?: string;
+  labels: string[];
+  age: string;
+  createdAt: string;
+  lastScaleTime?: string;
+};
+
+export type ResourceValueItem = {
+  name: string;
+  value: string;
+};
+
+export type ResourceQuotaUsageItem = {
+  resource: string;
+  used: string;
+  hard: string;
+  usagePercent?: number | null;
+  status?: string;
+};
+
+export type ResourceQuotaItem = {
+  name: string;
+  namespace: string;
+  status: string;
+  summary: string;
+  trackedResourceCount: number;
+  exceededResourceCount: number;
+  usage: ResourceQuotaUsageItem[];
+  scopes: string[];
+  scopeSelectorExpressions: string[];
+  labels: string[];
+  age: string;
+  createdAt: string;
+};
+
+export type LimitRangeEntryItem = {
+  type: string;
+  summary: string;
+  default: string[];
+  defaultRequest: string[];
+  min: string[];
+  max: string[];
+  maxLimitRequestRatio: string[];
+};
+
+export type LimitRangeItem = {
+  name: string;
+  namespace: string;
+  status: string;
+  summary: string;
+  limitCount: number;
+  types: string[];
+  limits: LimitRangeEntryItem[];
+  labels: string[];
+  age: string;
+  createdAt: string;
+};
+
+function normalizeResourceQuotaUsageItem(value: unknown): ResourceQuotaUsageItem | undefined {
+  const record = asRecord(value);
+  if (!record) {
+    return undefined;
+  }
+
+  return {
+    resource: readString(record, ['resource', 'name'], 'resource'),
+    used: readString(record, ['used'], '-'),
+    hard: readString(record, ['hard'], '-'),
+    usagePercent: readNullableNumber(record, ['usagePercent', 'percent']),
+    status: readString(record, ['status'], 'default'),
+  };
+}
+
+function normalizeResourceQuotaItem(value: unknown): ResourceQuotaItem {
+  const record = asRecord(value);
+  const usage = readArray(record, ['usage'])
+    .map(normalizeResourceQuotaUsageItem)
+    .filter((item): item is ResourceQuotaUsageItem => Boolean(item));
+  const trackedResourceCount = readNumber(record, ['trackedResourceCount'], usage.length);
+  const exceededResourceCount = readNumber(
+    record,
+    ['exceededResourceCount'],
+    usage.filter((item) => item.status?.toLowerCase() === 'exceeded').length,
+  );
+
+  return {
+    name: readString(record, ['name'], 'unknown-resourcequota'),
+    namespace: readString(record, ['namespace'], 'default'),
+    status: readString(record, ['status'], exceededResourceCount > 0 ? 'warning' : 'healthy'),
+    summary: readString(
+      record,
+      ['summary'],
+      `Tracked ${trackedResourceCount} · Exceeded ${exceededResourceCount}`,
+    ),
+    trackedResourceCount,
+    exceededResourceCount,
+    usage,
+    scopes: readStringArray(record, ['scopes']),
+    scopeSelectorExpressions: readStringArray(record, ['scopeSelectorExpressions']),
+    labels: readStringArray(record, ['labels']),
+    age: readString(record, ['age'], '-'),
+    createdAt: readString(record, ['createdAt']),
+  };
+}
+
+function normalizeResourceQuotaItems(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.map(normalizeResourceQuotaItem);
+}
+
+function normalizeLimitRangeEntryItem(value: unknown): LimitRangeEntryItem | undefined {
+  const record = asRecord(value);
+  if (!record) {
+    return undefined;
+  }
+
+  return {
+    type: readString(record, ['type'], 'Container'),
+    summary: readString(record, ['summary'], 'Limit policy'),
+    default: readStringArray(record, ['default']),
+    defaultRequest: readStringArray(record, ['defaultRequest']),
+    min: readStringArray(record, ['min']),
+    max: readStringArray(record, ['max']),
+    maxLimitRequestRatio: readStringArray(record, ['maxLimitRequestRatio']),
+  };
+}
+
+function normalizeLimitRangeItem(value: unknown): LimitRangeItem {
+  const record = asRecord(value);
+  const limits = readArray(record, ['limits'])
+    .map(normalizeLimitRangeEntryItem)
+    .filter((item): item is LimitRangeEntryItem => Boolean(item));
+  const types = readStringArray(record, ['types']);
+
+  return {
+    name: readString(record, ['name'], 'unknown-limitrange'),
+    namespace: readString(record, ['namespace'], 'default'),
+    status: readString(record, ['status'], 'healthy'),
+    summary: readString(
+      record,
+      ['summary'],
+      `Entries ${limits.length} · Types ${types.length || new Set(limits.map((item) => item.type)).size}`,
+    ),
+    limitCount: readNumber(record, ['limitCount'], limits.length),
+    types: types.length > 0 ? types : [...new Set(limits.map((item) => item.type).filter(Boolean))],
+    limits,
+    labels: readStringArray(record, ['labels']),
+    age: readString(record, ['age'], '-'),
+    createdAt: readString(record, ['createdAt']),
+  };
+}
+
+function normalizeLimitRangeItems(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.map(normalizeLimitRangeItem);
+}
 
 export type PersistentVolumeClaimItem = {
   name: string;
@@ -1199,6 +1505,80 @@ export async function getNetworkPolicyYaml(namespace: string, name: string) {
 export async function updateNetworkPolicyYaml(namespace: string, name: string, content: string) {
   const { data } = await http.put<Envelope<WorkloadActionResult>>(
     `/networkpolicies/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/yaml`,
+    { content },
+  );
+  return data.data;
+}
+
+export async function getHPAs(namespace?: string) {
+  const { data } = await http.get<Envelope<HPAItem[]>>('/hpas', {
+    params: namespace ? { namespace } : undefined,
+  });
+  return data.data;
+}
+
+export async function getHPAYaml(namespace: string, name: string) {
+  const { data } = await http.get<Envelope<ResourceTextResult>>(
+    `/hpas/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/yaml`,
+  );
+  return data.data;
+}
+
+export async function updateHPAYaml(namespace: string, name: string, content: string) {
+  const { data } = await http.put<Envelope<WorkloadActionResult>>(
+    `/hpas/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/yaml`,
+    { content },
+  );
+  return data.data;
+}
+
+export async function getResourceQuotas(namespace?: string) {
+  const { data } = await http.get<Envelope<ResourceQuotaItem[]>>('/resourcequotas', {
+    params: namespace ? { namespace } : undefined,
+  });
+  return normalizeResourceQuotaItems(data.data);
+}
+
+export async function getResourceQuotaYaml(namespace: string, name: string) {
+  const { data } = await http.get<Envelope<ResourceTextResult>>(
+    `/resourcequotas/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/yaml`,
+  );
+  return data.data;
+}
+
+export async function updateResourceQuotaYaml(
+  namespace: string,
+  name: string,
+  content: string,
+) {
+  const { data } = await http.put<Envelope<WorkloadActionResult>>(
+    `/resourcequotas/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/yaml`,
+    { content },
+  );
+  return data.data;
+}
+
+export async function getLimitRanges(namespace?: string) {
+  const { data } = await http.get<Envelope<LimitRangeItem[]>>('/limitranges', {
+    params: namespace ? { namespace } : undefined,
+  });
+  return normalizeLimitRangeItems(data.data);
+}
+
+export async function getLimitRangeYaml(namespace: string, name: string) {
+  const { data } = await http.get<Envelope<ResourceTextResult>>(
+    `/limitranges/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/yaml`,
+  );
+  return data.data;
+}
+
+export async function updateLimitRangeYaml(
+  namespace: string,
+  name: string,
+  content: string,
+) {
+  const { data } = await http.put<Envelope<WorkloadActionResult>>(
+    `/limitranges/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/yaml`,
     { content },
   );
   return data.data;

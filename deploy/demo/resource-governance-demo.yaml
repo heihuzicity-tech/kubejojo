@@ -1,0 +1,129 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: demo-governance
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: demo-default-compute
+  namespace: demo-governance
+  labels:
+    app.kubernetes.io/part-of: resource-governance-demo
+spec:
+  limits:
+    - type: Container
+      min:
+        cpu: 50m
+        memory: 64Mi
+      max:
+        cpu: "1"
+        memory: 1Gi
+      default:
+        cpu: 200m
+        memory: 256Mi
+      defaultRequest:
+        cpu: 100m
+        memory: 128Mi
+      maxLimitRequestRatio:
+        cpu: "10"
+    - type: Pod
+      max:
+        cpu: "2"
+        memory: 2Gi
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: demo-compute-quota
+  namespace: demo-governance
+  labels:
+    app.kubernetes.io/part-of: resource-governance-demo
+spec:
+  hard:
+    pods: "10"
+    requests.cpu: "2"
+    requests.memory: 4Gi
+    limits.cpu: "4"
+    limits.memory: 8Gi
+    count/deployments.apps: "4"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-hpa-web
+  namespace: demo-governance
+  labels:
+    app.kubernetes.io/name: demo-hpa-web
+    app.kubernetes.io/part-of: resource-governance-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: demo-hpa-web
+  template:
+    metadata:
+      labels:
+        app: demo-hpa-web
+        app.kubernetes.io/name: demo-hpa-web
+        app.kubernetes.io/part-of: resource-governance-demo
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.27
+          ports:
+            - containerPort: 80
+              name: http
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: demo-hpa-web
+  namespace: demo-governance
+  labels:
+    app.kubernetes.io/part-of: resource-governance-demo
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: demo-hpa-web
+  minReplicas: 1
+  maxReplicas: 4
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 60
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      selectPolicy: Max
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 30
+        - type: Pods
+          value: 2
+          periodSeconds: 30
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      selectPolicy: Max
+      policies:
+        - type: Percent
+          value: 50
+          periodSeconds: 60

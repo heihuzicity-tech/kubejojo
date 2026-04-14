@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os/exec"
 	"sort"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	yamlv3 "gopkg.in/yaml.v3"
 	appsv1 "k8s.io/api/apps/v1"
 	authv1 "k8s.io/api/authentication/v1"
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -173,6 +175,20 @@ type resourceManifestIdentity struct {
 	APIVersion string                   `yaml:"apiVersion"`
 	Kind       string                   `yaml:"kind"`
 	Metadata   resourceManifestMetadata `yaml:"metadata"`
+}
+
+type ValidationError struct {
+	message string
+}
+
+func (e ValidationError) Error() string {
+	return e.message
+}
+
+func newValidationError(format string, args ...any) error {
+	return ValidationError{
+		message: fmt.Sprintf(format, args...),
+	}
 }
 
 type PodContainerItem struct {
@@ -593,6 +609,98 @@ type NetworkPolicyItem struct {
 	Labels           jsonx.Slice[string]                `json:"labels"`
 	Age              string                             `json:"age"`
 	CreatedAt        string                             `json:"createdAt"`
+}
+
+type HPAMetricItem struct {
+	Type      string `json:"type"`
+	Name      string `json:"name"`
+	Target    string `json:"target,omitempty"`
+	Current   string `json:"current,omitempty"`
+	Summary   string `json:"summary,omitempty"`
+	Container string `json:"container,omitempty"`
+	Selector  string `json:"selector,omitempty"`
+}
+
+type HPAConditionItem struct {
+	Type               string `json:"type"`
+	Status             string `json:"status"`
+	Reason             string `json:"reason,omitempty"`
+	Message            string `json:"message,omitempty"`
+	LastTransitionTime string `json:"lastTransitionTime,omitempty"`
+}
+
+type HPAItem struct {
+	Name                  string                        `json:"name"`
+	Namespace             string                        `json:"namespace"`
+	Status                string                        `json:"status"`
+	Summary               string                        `json:"summary"`
+	ScaleTargetKind       string                        `json:"scaleTargetKind"`
+	ScaleTargetName       string                        `json:"scaleTargetName"`
+	ScaleTargetAPIVersion string                        `json:"scaleTargetApiVersion"`
+	MinReplicas           int32                         `json:"minReplicas"`
+	MaxReplicas           int32                         `json:"maxReplicas"`
+	CurrentReplicas       int32                         `json:"currentReplicas"`
+	DesiredReplicas       int32                         `json:"desiredReplicas"`
+	MetricCount           int                           `json:"metricCount"`
+	Metrics               jsonx.Slice[HPAMetricItem]    `json:"metrics"`
+	ConditionCount        int                           `json:"conditionCount"`
+	Conditions            jsonx.Slice[HPAConditionItem] `json:"conditions"`
+	BehaviorSummary       string                        `json:"behaviorSummary,omitempty"`
+	Labels                jsonx.Slice[string]           `json:"labels"`
+	Age                   string                        `json:"age"`
+	CreatedAt             string                        `json:"createdAt"`
+	LastScaleTime         string                        `json:"lastScaleTime,omitempty"`
+}
+
+type ResourceValueItem struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+}
+
+type ResourceQuotaUsageItem struct {
+	Resource     string  `json:"resource"`
+	Used         string  `json:"used"`
+	Hard         string  `json:"hard"`
+	UsagePercent float64 `json:"usagePercent"`
+	Status       string  `json:"status"`
+}
+
+type ResourceQuotaItem struct {
+	Name                     string                              `json:"name"`
+	Namespace                string                              `json:"namespace"`
+	Status                   string                              `json:"status"`
+	Summary                  string                              `json:"summary"`
+	TrackedResourceCount     int                                 `json:"trackedResourceCount"`
+	ExceededResourceCount    int                                 `json:"exceededResourceCount"`
+	Usage                    jsonx.Slice[ResourceQuotaUsageItem] `json:"usage"`
+	Scopes                   jsonx.Slice[string]                 `json:"scopes"`
+	ScopeSelectorExpressions jsonx.Slice[string]                 `json:"scopeSelectorExpressions"`
+	Labels                   jsonx.Slice[string]                 `json:"labels"`
+	Age                      string                              `json:"age"`
+	CreatedAt                string                              `json:"createdAt"`
+}
+
+type LimitRangeEntryItem struct {
+	Type                 string              `json:"type"`
+	Summary              string              `json:"summary"`
+	Default              jsonx.Slice[string] `json:"default"`
+	DefaultRequest       jsonx.Slice[string] `json:"defaultRequest"`
+	Min                  jsonx.Slice[string] `json:"min"`
+	Max                  jsonx.Slice[string] `json:"max"`
+	MaxLimitRequestRatio jsonx.Slice[string] `json:"maxLimitRequestRatio"`
+}
+
+type LimitRangeItem struct {
+	Name       string                           `json:"name"`
+	Namespace  string                           `json:"namespace"`
+	Status     string                           `json:"status"`
+	Summary    string                           `json:"summary"`
+	LimitCount int                              `json:"limitCount"`
+	Types      jsonx.Slice[string]              `json:"types"`
+	Limits     jsonx.Slice[LimitRangeEntryItem] `json:"limits"`
+	Labels     jsonx.Slice[string]              `json:"labels"`
+	Age        string                           `json:"age"`
+	CreatedAt  string                           `json:"createdAt"`
 }
 
 type PersistentVolumeClaimItem struct {
@@ -1355,28 +1463,28 @@ func (s *ClusterService) ApplyResourceYAML(
 	content = strings.TrimSpace(content)
 
 	if namespace == "" {
-		return WorkloadActionResult{}, fmt.Errorf("%s namespace is required", strings.ToLower(kind))
+		return WorkloadActionResult{}, newValidationError("%s namespace is required", strings.ToLower(kind))
 	}
 	if name == "" {
-		return WorkloadActionResult{}, fmt.Errorf("%s name is required", strings.ToLower(kind))
+		return WorkloadActionResult{}, newValidationError("%s name is required", strings.ToLower(kind))
 	}
 	if content == "" {
-		return WorkloadActionResult{}, fmt.Errorf("yaml content is required")
+		return WorkloadActionResult{}, newValidationError("yaml content is required")
 	}
 
 	var manifest resourceManifestIdentity
 	if err := yaml.Unmarshal([]byte(content), &manifest); err != nil {
-		return WorkloadActionResult{}, fmt.Errorf("parse %s yaml: %w", strings.ToLower(kind), err)
+		return WorkloadActionResult{}, newValidationError("parse %s yaml: %v", strings.ToLower(kind), err)
 	}
 
 	if !strings.EqualFold(strings.TrimSpace(manifest.Kind), kind) {
-		return WorkloadActionResult{}, fmt.Errorf("yaml kind must be %s", kind)
+		return WorkloadActionResult{}, newValidationError("yaml kind must be %s", kind)
 	}
 	if strings.TrimSpace(manifest.Metadata.Namespace) != namespace {
-		return WorkloadActionResult{}, fmt.Errorf("yaml namespace must be %s", namespace)
+		return WorkloadActionResult{}, newValidationError("yaml namespace must be %s", namespace)
 	}
 	if strings.TrimSpace(manifest.Metadata.Name) != name {
-		return WorkloadActionResult{}, fmt.Errorf("yaml name must be %s", name)
+		return WorkloadActionResult{}, newValidationError("yaml name must be %s", name)
 	}
 
 	if _, err := s.runKubectlCommand(ctx, bytes.NewBufferString(content), "apply", "-f", "-"); err != nil {
@@ -1404,25 +1512,28 @@ func (s *ClusterService) ApplyClusterResourceYAML(
 	content = strings.TrimSpace(content)
 
 	if name == "" {
-		return WorkloadActionResult{}, fmt.Errorf("%s name is required", strings.ToLower(kind))
+		return WorkloadActionResult{}, newValidationError("%s name is required", strings.ToLower(kind))
 	}
 	if content == "" {
-		return WorkloadActionResult{}, fmt.Errorf("yaml content is required")
+		return WorkloadActionResult{}, newValidationError("yaml content is required")
 	}
 
 	var manifest resourceManifestIdentity
 	if err := yaml.Unmarshal([]byte(content), &manifest); err != nil {
-		return WorkloadActionResult{}, fmt.Errorf("parse %s yaml: %w", strings.ToLower(kind), err)
+		return WorkloadActionResult{}, newValidationError("parse %s yaml: %v", strings.ToLower(kind), err)
 	}
 
 	if !strings.EqualFold(strings.TrimSpace(manifest.Kind), kind) {
-		return WorkloadActionResult{}, fmt.Errorf("yaml kind must be %s", kind)
+		return WorkloadActionResult{}, newValidationError("yaml kind must be %s", kind)
 	}
 	if strings.TrimSpace(manifest.Metadata.Name) != name {
-		return WorkloadActionResult{}, fmt.Errorf("yaml name must be %s", name)
+		return WorkloadActionResult{}, newValidationError("yaml name must be %s", name)
 	}
 	if strings.TrimSpace(manifest.Metadata.Namespace) != "" {
-		return WorkloadActionResult{}, fmt.Errorf("%s yaml must not set metadata.namespace", strings.ToLower(kind))
+		return WorkloadActionResult{}, newValidationError(
+			"%s yaml must not set metadata.namespace",
+			strings.ToLower(kind),
+		)
 	}
 
 	if _, err := s.runKubectlCommand(ctx, bytes.NewBufferString(content), "apply", "-f", "-"); err != nil {
@@ -2510,6 +2621,145 @@ func (s *ClusterService) ListNetworkPolicies(
 	return policies, nil
 }
 
+func (s *ClusterService) ListHPAs(ctx context.Context, namespace string) ([]HPAItem, error) {
+	namespace = normalizeNamespace(namespace)
+
+	items, err := s.client.Kubernetes.AutoscalingV2().HorizontalPodAutoscalers(namespace).List(
+		ctx,
+		metav1.ListOptions{},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list hpas: %w", err)
+	}
+
+	hpas := make([]HPAItem, 0, len(items.Items))
+	for _, item := range items.Items {
+		hpas = append(hpas, HPAItem{
+			Name:                  item.Name,
+			Namespace:             item.Namespace,
+			Status:                hpaStatus(item),
+			Summary:               hpaSummary(item),
+			ScaleTargetKind:       item.Spec.ScaleTargetRef.Kind,
+			ScaleTargetName:       item.Spec.ScaleTargetRef.Name,
+			ScaleTargetAPIVersion: item.Spec.ScaleTargetRef.APIVersion,
+			MinReplicas:           hpaMinReplicas(item),
+			MaxReplicas:           item.Spec.MaxReplicas,
+			CurrentReplicas:       item.Status.CurrentReplicas,
+			DesiredReplicas:       item.Status.DesiredReplicas,
+			MetricCount:           len(item.Spec.Metrics),
+			Metrics:               jsonx.Slice[HPAMetricItem](hpaMetricItems(item)),
+			ConditionCount:        len(item.Status.Conditions),
+			Conditions:            jsonx.Slice[HPAConditionItem](hpaConditionItems(item)),
+			BehaviorSummary:       hpaBehaviorSummary(item),
+			Labels:                jsonx.Slice[string](labelPairs(item.Labels)),
+			Age:                   ageString(item.CreationTimestamp.Time),
+			CreatedAt:             item.CreationTimestamp.Time.Format("2006-01-02 15:04:05"),
+			LastScaleTime:         hpaLastScaleTime(item),
+		})
+	}
+
+	sort.Slice(hpas, func(i, j int) bool {
+		leftOrder := topologyStatusOrder(hpas[i].Status)
+		rightOrder := topologyStatusOrder(hpas[j].Status)
+		if leftOrder != rightOrder {
+			return leftOrder < rightOrder
+		}
+		if hpas[i].Namespace != hpas[j].Namespace {
+			return hpas[i].Namespace < hpas[j].Namespace
+		}
+		return hpas[i].Name < hpas[j].Name
+	})
+
+	return hpas, nil
+}
+
+func (s *ClusterService) ListResourceQuotas(
+	ctx context.Context,
+	namespace string,
+) ([]ResourceQuotaItem, error) {
+	namespace = normalizeNamespace(namespace)
+
+	items, err := s.client.Kubernetes.CoreV1().ResourceQuotas(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list resourcequotas: %w", err)
+	}
+
+	quotas := make([]ResourceQuotaItem, 0, len(items.Items))
+	for _, item := range items.Items {
+		usage := resourceQuotaUsageItems(item.Spec.Hard, item.Status.Used)
+		quotas = append(quotas, ResourceQuotaItem{
+			Name:                     item.Name,
+			Namespace:                item.Namespace,
+			Status:                   resourceQuotaStatus(item, usage),
+			Summary:                  resourceQuotaSummary(item, usage),
+			TrackedResourceCount:     len(usage),
+			ExceededResourceCount:    resourceQuotaExceededCount(usage),
+			Usage:                    jsonx.Slice[ResourceQuotaUsageItem](usage),
+			Scopes:                   jsonx.Slice[string](resourceQuotaScopes(item)),
+			ScopeSelectorExpressions: jsonx.Slice[string](resourceQuotaScopeSelector(item)),
+			Labels:                   jsonx.Slice[string](labelPairs(item.Labels)),
+			Age:                      ageString(item.CreationTimestamp.Time),
+			CreatedAt:                item.CreationTimestamp.Time.Format("2006-01-02 15:04:05"),
+		})
+	}
+
+	sort.Slice(quotas, func(i, j int) bool {
+		leftOrder := topologyStatusOrder(quotas[i].Status)
+		rightOrder := topologyStatusOrder(quotas[j].Status)
+		if leftOrder != rightOrder {
+			return leftOrder < rightOrder
+		}
+		if quotas[i].Namespace != quotas[j].Namespace {
+			return quotas[i].Namespace < quotas[j].Namespace
+		}
+		return quotas[i].Name < quotas[j].Name
+	})
+
+	return quotas, nil
+}
+
+func (s *ClusterService) ListLimitRanges(
+	ctx context.Context,
+	namespace string,
+) ([]LimitRangeItem, error) {
+	namespace = normalizeNamespace(namespace)
+
+	items, err := s.client.Kubernetes.CoreV1().LimitRanges(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list limitranges: %w", err)
+	}
+
+	limitRanges := make([]LimitRangeItem, 0, len(items.Items))
+	for _, item := range items.Items {
+		limitRanges = append(limitRanges, LimitRangeItem{
+			Name:       item.Name,
+			Namespace:  item.Namespace,
+			Status:     limitRangeStatus(item),
+			Summary:    limitRangeSummary(item),
+			LimitCount: len(item.Spec.Limits),
+			Types:      jsonx.Slice[string](limitRangeTypes(item)),
+			Limits:     jsonx.Slice[LimitRangeEntryItem](limitRangeEntries(item)),
+			Labels:     jsonx.Slice[string](labelPairs(item.Labels)),
+			Age:        ageString(item.CreationTimestamp.Time),
+			CreatedAt:  item.CreationTimestamp.Time.Format("2006-01-02 15:04:05"),
+		})
+	}
+
+	sort.Slice(limitRanges, func(i, j int) bool {
+		leftOrder := topologyStatusOrder(limitRanges[i].Status)
+		rightOrder := topologyStatusOrder(limitRanges[j].Status)
+		if leftOrder != rightOrder {
+			return leftOrder < rightOrder
+		}
+		if limitRanges[i].Namespace != limitRanges[j].Namespace {
+			return limitRanges[i].Namespace < limitRanges[j].Namespace
+		}
+		return limitRanges[i].Name < limitRanges[j].Name
+	})
+
+	return limitRanges, nil
+}
+
 func (s *ClusterService) GetServiceYAML(
 	ctx context.Context,
 	namespace string,
@@ -2659,6 +2909,57 @@ func (s *ClusterService) UpdateNetworkPolicyYAML(
 	content string,
 ) (WorkloadActionResult, error) {
 	return s.ApplyResourceYAML(ctx, "networkpolicy", "NetworkPolicy", namespace, name, content)
+}
+
+func (s *ClusterService) GetHPAYAML(
+	ctx context.Context,
+	namespace string,
+	name string,
+) (ResourceTextResult, error) {
+	return s.GetResourceYAML(ctx, "hpa", "HorizontalPodAutoscaler", namespace, name)
+}
+
+func (s *ClusterService) UpdateHPAYAML(
+	ctx context.Context,
+	namespace string,
+	name string,
+	content string,
+) (WorkloadActionResult, error) {
+	return s.ApplyResourceYAML(ctx, "hpa", "HorizontalPodAutoscaler", namespace, name, content)
+}
+
+func (s *ClusterService) GetResourceQuotaYAML(
+	ctx context.Context,
+	namespace string,
+	name string,
+) (ResourceTextResult, error) {
+	return s.GetResourceYAML(ctx, "resourcequota", "ResourceQuota", namespace, name)
+}
+
+func (s *ClusterService) UpdateResourceQuotaYAML(
+	ctx context.Context,
+	namespace string,
+	name string,
+	content string,
+) (WorkloadActionResult, error) {
+	return s.ApplyResourceYAML(ctx, "resourcequota", "ResourceQuota", namespace, name, content)
+}
+
+func (s *ClusterService) GetLimitRangeYAML(
+	ctx context.Context,
+	namespace string,
+	name string,
+) (ResourceTextResult, error) {
+	return s.GetResourceYAML(ctx, "limitrange", "LimitRange", namespace, name)
+}
+
+func (s *ClusterService) UpdateLimitRangeYAML(
+	ctx context.Context,
+	namespace string,
+	name string,
+	content string,
+) (WorkloadActionResult, error) {
+	return s.ApplyResourceYAML(ctx, "limitrange", "LimitRange", namespace, name, content)
 }
 
 func (s *ClusterService) GetPersistentVolumeClaimYAML(
@@ -4430,6 +4731,537 @@ func networkPolicySummary(item networkingv1.NetworkPolicy, selectedPodCount int)
 		len(item.Spec.Ingress),
 		len(item.Spec.Egress),
 	)
+}
+
+func hpaStatus(item autoscalingv2.HorizontalPodAutoscaler) string {
+	if len(item.Spec.Metrics) == 0 {
+		return TopologyStatusWarning
+	}
+
+	for _, condition := range item.Status.Conditions {
+		if condition.Status != corev1.ConditionFalse {
+			continue
+		}
+
+		switch condition.Type {
+		case autoscalingv2.AbleToScale, autoscalingv2.ScalingActive:
+			return TopologyStatusWarning
+		}
+	}
+
+	if item.Status.DesiredReplicas != item.Status.CurrentReplicas {
+		return TopologyStatusWarning
+	}
+
+	return TopologyStatusHealthy
+}
+
+func hpaSummary(item autoscalingv2.HorizontalPodAutoscaler) string {
+	return fmt.Sprintf(
+		"Replicas %d/%d · Max %d · Metrics %d",
+		item.Status.CurrentReplicas,
+		item.Status.DesiredReplicas,
+		item.Spec.MaxReplicas,
+		len(item.Spec.Metrics),
+	)
+}
+
+func hpaMinReplicas(item autoscalingv2.HorizontalPodAutoscaler) int32 {
+	if item.Spec.MinReplicas != nil {
+		return *item.Spec.MinReplicas
+	}
+
+	return 1
+}
+
+func hpaLastScaleTime(item autoscalingv2.HorizontalPodAutoscaler) string {
+	if item.Status.LastScaleTime == nil {
+		return ""
+	}
+
+	return item.Status.LastScaleTime.Time.Format("2006-01-02 15:04:05")
+}
+
+func hpaConditionItems(item autoscalingv2.HorizontalPodAutoscaler) []HPAConditionItem {
+	if len(item.Status.Conditions) == 0 {
+		return nil
+	}
+
+	conditions := append([]autoscalingv2.HorizontalPodAutoscalerCondition(nil), item.Status.Conditions...)
+	sort.SliceStable(conditions, func(i, j int) bool {
+		return string(conditions[i].Type) < string(conditions[j].Type)
+	})
+
+	result := make([]HPAConditionItem, 0, len(conditions))
+	for _, condition := range conditions {
+		result = append(result, HPAConditionItem{
+			Type:               string(condition.Type),
+			Status:             string(condition.Status),
+			Reason:             condition.Reason,
+			Message:            condition.Message,
+			LastTransitionTime: condition.LastTransitionTime.Time.Format("2006-01-02 15:04:05"),
+		})
+	}
+
+	return result
+}
+
+func hpaMetricItems(item autoscalingv2.HorizontalPodAutoscaler) []HPAMetricItem {
+	if len(item.Spec.Metrics) == 0 {
+		return nil
+	}
+
+	result := make([]HPAMetricItem, 0, len(item.Spec.Metrics))
+	for index, metric := range item.Spec.Metrics {
+		metricItem := HPAMetricItem{
+			Type: string(metric.Type),
+		}
+
+		var current *autoscalingv2.MetricStatus
+		if index < len(item.Status.CurrentMetrics) {
+			current = &item.Status.CurrentMetrics[index]
+		}
+
+		switch metric.Type {
+		case autoscalingv2.ResourceMetricSourceType:
+			if metric.Resource != nil {
+				metricItem.Name = string(metric.Resource.Name)
+				metricItem.Target = hpaMetricTargetSummary(metric.Resource.Target)
+			}
+			if current != nil && current.Resource != nil {
+				metricItem.Current = hpaMetricValueStatusSummary(current.Resource.Current)
+			}
+		case autoscalingv2.ContainerResourceMetricSourceType:
+			if metric.ContainerResource != nil {
+				metricItem.Name = string(metric.ContainerResource.Name)
+				metricItem.Container = metric.ContainerResource.Container
+				metricItem.Target = hpaMetricTargetSummary(metric.ContainerResource.Target)
+			}
+			if current != nil && current.ContainerResource != nil {
+				metricItem.Current = hpaMetricValueStatusSummary(current.ContainerResource.Current)
+			}
+		case autoscalingv2.PodsMetricSourceType:
+			if metric.Pods != nil {
+				metricItem.Name = metric.Pods.Metric.Name
+				metricItem.Target = hpaMetricTargetSummary(metric.Pods.Target)
+				metricItem.Selector = hpaMetricSelector(metric.Pods.Metric)
+			}
+			if current != nil && current.Pods != nil {
+				metricItem.Current = hpaMetricValueStatusSummary(current.Pods.Current)
+			}
+		case autoscalingv2.ObjectMetricSourceType:
+			if metric.Object != nil {
+				metricItem.Name = metric.Object.Metric.Name
+				metricItem.Target = hpaMetricTargetSummary(metric.Object.Target)
+				metricItem.Selector = fmt.Sprintf(
+					"%s %s",
+					metric.Object.DescribedObject.Kind,
+					metric.Object.DescribedObject.Name,
+				)
+			}
+			if current != nil && current.Object != nil {
+				metricItem.Current = hpaMetricValueStatusSummary(current.Object.Current)
+			}
+		case autoscalingv2.ExternalMetricSourceType:
+			if metric.External != nil {
+				metricItem.Name = metric.External.Metric.Name
+				metricItem.Target = hpaMetricTargetSummary(metric.External.Target)
+				metricItem.Selector = hpaMetricSelector(metric.External.Metric)
+			}
+			if current != nil && current.External != nil {
+				metricItem.Current = hpaMetricValueStatusSummary(current.External.Current)
+			}
+		}
+
+		if strings.TrimSpace(metricItem.Name) == "" {
+			metricItem.Name = "metric"
+		}
+		metricItem.Summary = hpaMetricSummary(metricItem)
+
+		result = append(result, metricItem)
+	}
+
+	return result
+}
+
+func hpaMetricTargetSummary(target autoscalingv2.MetricTarget) string {
+	switch target.Type {
+	case autoscalingv2.UtilizationMetricType:
+		if target.AverageUtilization != nil {
+			return fmt.Sprintf("%d%%", *target.AverageUtilization)
+		}
+	case autoscalingv2.AverageValueMetricType:
+		if target.AverageValue != nil {
+			return target.AverageValue.String()
+		}
+	case autoscalingv2.ValueMetricType:
+		if target.Value != nil {
+			return target.Value.String()
+		}
+	}
+
+	if target.AverageUtilization != nil {
+		return fmt.Sprintf("%d%%", *target.AverageUtilization)
+	}
+	if target.AverageValue != nil {
+		return target.AverageValue.String()
+	}
+	if target.Value != nil {
+		return target.Value.String()
+	}
+
+	return "-"
+}
+
+func hpaMetricValueStatusSummary(status autoscalingv2.MetricValueStatus) string {
+	if status.AverageUtilization != nil {
+		return fmt.Sprintf("%d%%", *status.AverageUtilization)
+	}
+	if status.AverageValue != nil {
+		return status.AverageValue.String()
+	}
+	if status.Value != nil {
+		return status.Value.String()
+	}
+
+	return "-"
+}
+
+func hpaMetricSelector(metric autoscalingv2.MetricIdentifier) string {
+	pairs := selectorPairs(metric.Selector)
+	if len(pairs) == 0 {
+		return ""
+	}
+
+	return strings.Join(pairs, ", ")
+}
+
+func hpaMetricSummary(item HPAMetricItem) string {
+	parts := make([]string, 0, 3)
+	if strings.TrimSpace(item.Current) != "" && item.Current != "-" {
+		parts = append(parts, "Current "+item.Current)
+	}
+	if strings.TrimSpace(item.Target) != "" && item.Target != "-" {
+		parts = append(parts, "Target "+item.Target)
+	}
+	if strings.TrimSpace(item.Container) != "" {
+		parts = append(parts, "Container "+item.Container)
+	}
+	if strings.TrimSpace(item.Selector) != "" {
+		parts = append(parts, item.Selector)
+	}
+	if len(parts) == 0 {
+		return item.Type
+	}
+
+	return strings.Join(parts, " · ")
+}
+
+func hpaBehaviorSummary(item autoscalingv2.HorizontalPodAutoscaler) string {
+	if item.Spec.Behavior == nil {
+		return "Default behavior"
+	}
+
+	parts := make([]string, 0, 2)
+	if item.Spec.Behavior.ScaleUp != nil {
+		parts = append(parts, fmt.Sprintf("ScaleUp %d policies", len(item.Spec.Behavior.ScaleUp.Policies)))
+	}
+	if item.Spec.Behavior.ScaleDown != nil {
+		parts = append(parts, fmt.Sprintf("ScaleDown %d policies", len(item.Spec.Behavior.ScaleDown.Policies)))
+	}
+	if len(parts) == 0 {
+		return "Custom behavior"
+	}
+
+	return strings.Join(parts, " · ")
+}
+
+func resourceListItems(items corev1.ResourceList) []ResourceValueItem {
+	names := resourceListNames(items)
+	if len(names) == 0 {
+		return nil
+	}
+
+	result := make([]ResourceValueItem, 0, len(names))
+	for _, name := range names {
+		quantity := items[corev1.ResourceName(name)]
+		result = append(result, ResourceValueItem{
+			Name:  name,
+			Value: quantity.String(),
+		})
+	}
+
+	return result
+}
+
+func resourceListNames(items corev1.ResourceList) []string {
+	if len(items) == 0 {
+		return nil
+	}
+
+	names := make([]string, 0, len(items))
+	for name := range items {
+		names = append(names, string(name))
+	}
+
+	sort.Strings(names)
+
+	return names
+}
+
+func resourceQuotaUsageItems(
+	hard corev1.ResourceList,
+	used corev1.ResourceList,
+) []ResourceQuotaUsageItem {
+	names := uniqueSortedStrings(append(resourceListNames(hard), resourceListNames(used)...))
+	if len(names) == 0 {
+		return nil
+	}
+
+	result := make([]ResourceQuotaUsageItem, 0, len(names))
+	for _, name := range names {
+		hardQuantity, hasHard := hard[corev1.ResourceName(name)]
+		usedQuantity, hasUsed := used[corev1.ResourceName(name)]
+
+		hardValue := "-"
+		if hasHard {
+			hardValue = hardQuantity.String()
+		}
+
+		usedValue := "-"
+		if hasUsed {
+			usedValue = usedQuantity.String()
+		}
+
+		result = append(result, ResourceQuotaUsageItem{
+			Resource:     name,
+			Used:         usedValue,
+			Hard:         hardValue,
+			UsagePercent: resourceQuotaUsagePercent(usedQuantity, hardQuantity, hasUsed, hasHard),
+			Status:       resourceQuotaUsageStatus(usedQuantity, hardQuantity, hasUsed, hasHard),
+		})
+	}
+
+	return result
+}
+
+func resourceQuotaUsagePercent(
+	used resource.Quantity,
+	hard resource.Quantity,
+	hasUsed bool,
+	hasHard bool,
+) float64 {
+	if !hasUsed || !hasHard {
+		return 0
+	}
+
+	hardValue := hard.AsApproximateFloat64()
+	if hardValue <= 0 {
+		return 0
+	}
+
+	usedValue := used.AsApproximateFloat64()
+	return math.Round((usedValue/hardValue)*1000) / 10
+}
+
+func resourceQuotaWarningCount(items []ResourceQuotaUsageItem) int {
+	count := 0
+	for _, item := range items {
+		if item.Status == "warning" || item.Status == "exceeded" {
+			count++
+		}
+	}
+
+	return count
+}
+
+func resourceQuotaExceededCount(items []ResourceQuotaUsageItem) int {
+	count := 0
+	for _, item := range items {
+		if item.Status == "exceeded" {
+			count++
+		}
+	}
+
+	return count
+}
+
+func resourceQuotaUsageStatus(
+	used resource.Quantity,
+	hard resource.Quantity,
+	hasUsed bool,
+	hasHard bool,
+) string {
+	usagePercent := resourceQuotaUsagePercent(used, hard, hasUsed, hasHard)
+	switch {
+	case usagePercent > 100:
+		return "exceeded"
+	case usagePercent >= 90:
+		return "warning"
+	case hasHard:
+		return "within"
+	default:
+		return "default"
+	}
+}
+
+func resourceQuotaStatus(item corev1.ResourceQuota, usage []ResourceQuotaUsageItem) string {
+	if len(item.Spec.Hard) == 0 {
+		return TopologyStatusWarning
+	}
+
+	for _, entry := range usage {
+		if entry.Status == "exceeded" {
+			return TopologyStatusError
+		}
+	}
+
+	if resourceQuotaWarningCount(usage) > 0 {
+		return TopologyStatusWarning
+	}
+
+	return TopologyStatusHealthy
+}
+
+func resourceQuotaSummary(item corev1.ResourceQuota, usage []ResourceQuotaUsageItem) string {
+	return fmt.Sprintf(
+		"Tracked %d · Exceeded %d",
+		len(usage),
+		resourceQuotaExceededCount(usage),
+	)
+}
+
+func resourceQuotaScopes(item corev1.ResourceQuota) []string {
+	if len(item.Spec.Scopes) == 0 {
+		return nil
+	}
+
+	scopes := make([]string, 0, len(item.Spec.Scopes))
+	for _, scope := range item.Spec.Scopes {
+		scopes = append(scopes, string(scope))
+	}
+
+	sort.Strings(scopes)
+
+	return scopes
+}
+
+func resourceQuotaScopeSelector(item corev1.ResourceQuota) []string {
+	if item.Spec.ScopeSelector == nil || len(item.Spec.ScopeSelector.MatchExpressions) == 0 {
+		return nil
+	}
+
+	items := make([]string, 0, len(item.Spec.ScopeSelector.MatchExpressions))
+	for _, expression := range item.Spec.ScopeSelector.MatchExpressions {
+		items = append(items, resourceQuotaScopeSelectorExpression(expression))
+	}
+
+	sort.Strings(items)
+
+	return items
+}
+
+func resourceQuotaScopeSelectorExpression(
+	expression corev1.ScopedResourceSelectorRequirement,
+) string {
+	values := append([]string(nil), expression.Values...)
+	sort.Strings(values)
+
+	switch expression.Operator {
+	case corev1.ScopeSelectorOpIn, corev1.ScopeSelectorOpNotIn:
+		return fmt.Sprintf(
+			"%s %s [%s]",
+			expression.ScopeName,
+			expression.Operator,
+			strings.Join(values, ", "),
+		)
+	default:
+		return fmt.Sprintf("%s %s", expression.ScopeName, expression.Operator)
+	}
+}
+
+func limitRangeStatus(item corev1.LimitRange) string {
+	if len(item.Spec.Limits) == 0 {
+		return TopologyStatusWarning
+	}
+
+	return TopologyStatusHealthy
+}
+
+func limitRangeSummary(item corev1.LimitRange) string {
+	return fmt.Sprintf("Entries %d · Types %d", len(item.Spec.Limits), len(limitRangeTypes(item)))
+}
+
+func limitRangeTypes(item corev1.LimitRange) []string {
+	types := make([]string, 0, len(item.Spec.Limits))
+	for _, limit := range item.Spec.Limits {
+		types = append(types, string(limit.Type))
+	}
+
+	return uniqueSortedStrings(types)
+}
+
+func limitRangeEntries(item corev1.LimitRange) []LimitRangeEntryItem {
+	if len(item.Spec.Limits) == 0 {
+		return nil
+	}
+
+	result := make([]LimitRangeEntryItem, 0, len(item.Spec.Limits))
+	for _, limit := range item.Spec.Limits {
+		result = append(result, LimitRangeEntryItem{
+			Type:                 string(limit.Type),
+			Summary:              limitRangeEntrySummary(limit),
+			Default:              jsonx.Slice[string](resourceListStrings(limit.Default)),
+			DefaultRequest:       jsonx.Slice[string](resourceListStrings(limit.DefaultRequest)),
+			Min:                  jsonx.Slice[string](resourceListStrings(limit.Min)),
+			Max:                  jsonx.Slice[string](resourceListStrings(limit.Max)),
+			MaxLimitRequestRatio: jsonx.Slice[string](resourceListStrings(limit.MaxLimitRequestRatio)),
+		})
+	}
+
+	sort.SliceStable(result, func(i, j int) bool {
+		return result[i].Type < result[j].Type
+	})
+
+	return result
+}
+
+func resourceListStrings(items corev1.ResourceList) []string {
+	pairs := resourceListItems(items)
+	if len(pairs) == 0 {
+		return nil
+	}
+
+	result := make([]string, 0, len(pairs))
+	for _, pair := range pairs {
+		result = append(result, fmt.Sprintf("%s=%s", pair.Name, pair.Value))
+	}
+
+	return result
+}
+
+func limitRangeEntrySummary(item corev1.LimitRangeItem) string {
+	parts := make([]string, 0, 5)
+	if len(item.Min) > 0 {
+		parts = append(parts, fmt.Sprintf("Min %d", len(item.Min)))
+	}
+	if len(item.Max) > 0 {
+		parts = append(parts, fmt.Sprintf("Max %d", len(item.Max)))
+	}
+	if len(item.Default) > 0 {
+		parts = append(parts, fmt.Sprintf("Default %d", len(item.Default)))
+	}
+	if len(item.DefaultRequest) > 0 {
+		parts = append(parts, fmt.Sprintf("DefaultRequest %d", len(item.DefaultRequest)))
+	}
+	if len(item.MaxLimitRequestRatio) > 0 {
+		parts = append(parts, fmt.Sprintf("Ratio %d", len(item.MaxLimitRequestRatio)))
+	}
+	if len(parts) == 0 {
+		return "No constraints"
+	}
+
+	return strings.Join(parts, " · ")
 }
 
 func networkPolicyTypes(item networkingv1.NetworkPolicy) []string {

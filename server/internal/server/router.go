@@ -1364,6 +1364,150 @@ func newRouter(clusterFactory *kube.Factory) *gin.Engine {
 				c.JSON(http.StatusOK, response.Success(result))
 			})
 
+			authorized.GET("/hpas", func(c *gin.Context) {
+				items, err := mustClusterService(c).ListHPAs(
+					c.Request.Context(),
+					c.Query("namespace"),
+				)
+				if err != nil {
+					respondWithClusterError(c, "LIST_HPAS_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(items))
+			})
+
+			authorized.GET("/hpas/:namespace/:name/yaml", func(c *gin.Context) {
+				result, err := mustClusterService(c).GetHPAYAML(
+					c.Request.Context(),
+					c.Param("namespace"),
+					c.Param("name"),
+				)
+				if err != nil {
+					respondWithClusterError(c, "GET_HPA_YAML_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(result))
+			})
+
+			authorized.PUT("/hpas/:namespace/:name/yaml", func(c *gin.Context) {
+				var req yamlUpdateRequest
+				if err := c.ShouldBindJSON(&req); err != nil {
+					c.JSON(http.StatusBadRequest, response.Failure("INVALID_YAML_UPDATE_REQUEST", "请求体格式不正确"))
+					return
+				}
+
+				result, err := mustClusterService(c).UpdateHPAYAML(
+					c.Request.Context(),
+					c.Param("namespace"),
+					c.Param("name"),
+					req.Content,
+				)
+				if err != nil {
+					respondWithClusterError(c, "UPDATE_HPA_YAML_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(result))
+			})
+
+			authorized.GET("/resourcequotas", func(c *gin.Context) {
+				items, err := mustClusterService(c).ListResourceQuotas(
+					c.Request.Context(),
+					c.Query("namespace"),
+				)
+				if err != nil {
+					respondWithClusterError(c, "LIST_RESOURCEQUOTAS_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(items))
+			})
+
+			authorized.GET("/resourcequotas/:namespace/:name/yaml", func(c *gin.Context) {
+				result, err := mustClusterService(c).GetResourceQuotaYAML(
+					c.Request.Context(),
+					c.Param("namespace"),
+					c.Param("name"),
+				)
+				if err != nil {
+					respondWithClusterError(c, "GET_RESOURCEQUOTA_YAML_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(result))
+			})
+
+			authorized.PUT("/resourcequotas/:namespace/:name/yaml", func(c *gin.Context) {
+				var req yamlUpdateRequest
+				if err := c.ShouldBindJSON(&req); err != nil {
+					c.JSON(http.StatusBadRequest, response.Failure("INVALID_YAML_UPDATE_REQUEST", "请求体格式不正确"))
+					return
+				}
+
+				result, err := mustClusterService(c).UpdateResourceQuotaYAML(
+					c.Request.Context(),
+					c.Param("namespace"),
+					c.Param("name"),
+					req.Content,
+				)
+				if err != nil {
+					respondWithClusterError(c, "UPDATE_RESOURCEQUOTA_YAML_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(result))
+			})
+
+			authorized.GET("/limitranges", func(c *gin.Context) {
+				items, err := mustClusterService(c).ListLimitRanges(
+					c.Request.Context(),
+					c.Query("namespace"),
+				)
+				if err != nil {
+					respondWithClusterError(c, "LIST_LIMITRANGES_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(items))
+			})
+
+			authorized.GET("/limitranges/:namespace/:name/yaml", func(c *gin.Context) {
+				result, err := mustClusterService(c).GetLimitRangeYAML(
+					c.Request.Context(),
+					c.Param("namespace"),
+					c.Param("name"),
+				)
+				if err != nil {
+					respondWithClusterError(c, "GET_LIMITRANGE_YAML_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(result))
+			})
+
+			authorized.PUT("/limitranges/:namespace/:name/yaml", func(c *gin.Context) {
+				var req yamlUpdateRequest
+				if err := c.ShouldBindJSON(&req); err != nil {
+					c.JSON(http.StatusBadRequest, response.Failure("INVALID_YAML_UPDATE_REQUEST", "请求体格式不正确"))
+					return
+				}
+
+				result, err := mustClusterService(c).UpdateLimitRangeYAML(
+					c.Request.Context(),
+					c.Param("namespace"),
+					c.Param("name"),
+					req.Content,
+				)
+				if err != nil {
+					respondWithClusterError(c, "UPDATE_LIMITRANGE_YAML_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(result))
+			})
+
 			authorized.GET("/persistentvolumeclaims", func(c *gin.Context) {
 				items, err := mustClusterService(c).ListPersistentVolumeClaims(
 					c.Request.Context(),
@@ -1591,11 +1735,15 @@ func defaultNamespace(items []string) string {
 }
 
 func respondWithClusterError(c *gin.Context, code string, err error) {
+	var validationErr service.ValidationError
+
 	switch {
 	case apierrors.IsUnauthorized(err):
 		c.JSON(http.StatusUnauthorized, response.Failure(code, "Bearer Token 无效或已过期"))
 	case apierrors.IsForbidden(err):
 		c.JSON(http.StatusForbidden, response.Failure(code, "当前 Token 权限不足，无法访问所需资源"))
+	case errors.As(err, &validationErr):
+		c.JSON(http.StatusBadRequest, response.Failure(code, validationErr.Error()))
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 		c.JSON(http.StatusRequestTimeout, response.Failure(code, "请求已取消"))
 	default:

@@ -36,10 +36,16 @@ import { PodDetailsPage } from '../pages/PodDetailsPage';
 import { PodsPage } from '../pages/PodsPage';
 import { ReplicaSetDetailsPage } from '../pages/ReplicaSetDetailsPage';
 import { ReplicaSetsPage } from '../pages/ReplicaSetsPage';
+import { HPADetailsPage } from '../pages/HPADetailsPage';
+import { HPAsPage } from '../pages/HPAsPage';
+import { LimitRangeDetailsPage } from '../pages/LimitRangeDetailsPage';
+import { LimitRangesPage } from '../pages/LimitRangesPage';
 import { RoleBindingDetailsPage } from '../pages/RoleBindingDetailsPage';
 import { RoleBindingsPage } from '../pages/RoleBindingsPage';
 import { RoleDetailsPage } from '../pages/RoleDetailsPage';
 import { RolesPage } from '../pages/RolesPage';
+import { ResourceQuotaDetailsPage } from '../pages/ResourceQuotaDetailsPage';
+import { ResourceQuotasPage } from '../pages/ResourceQuotasPage';
 import { SecretDetailsPage } from '../pages/SecretDetailsPage';
 import { SecretsPage } from '../pages/SecretsPage';
 import { ServiceDetailsPage } from '../pages/ServiceDetailsPage';
@@ -116,6 +122,18 @@ function ProtectedRoutes() {
         <Route
           path="/security/rolebindings/:namespace/:name"
           element={<RoleBindingDetailsPage />}
+        />
+        <Route path="/resources/hpas" element={<HPAsPage />} />
+        <Route path="/resources/hpas/:namespace/:name" element={<HPADetailsPage />} />
+        <Route path="/resources/resourcequotas" element={<ResourceQuotasPage />} />
+        <Route
+          path="/resources/resourcequotas/:namespace/:name"
+          element={<ResourceQuotaDetailsPage />}
+        />
+        <Route path="/resources/limitranges" element={<LimitRangesPage />} />
+        <Route
+          path="/resources/limitranges/:namespace/:name"
+          element={<LimitRangeDetailsPage />}
         />
         <Route
           path="/storage/persistentvolumeclaims"

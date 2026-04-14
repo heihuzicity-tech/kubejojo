@@ -27,3 +27,8 @@
   - 用独立的 `demo-security` 命名空间演示 ServiceAccounts / Roles / RoleBindings
   - 包含 `Opaque Secret / dockerconfigjson Secret / ServiceAccount / Role / RoleBinding / Deployment`
   - 同时覆盖 `secrets`、`imagePullSecrets`、`automountServiceAccountToken`、`ServiceAccount subjects`、`User/Group subjects`
+
+- `demo/resource-governance-demo.yaml`
+  - 用独立的 `demo-governance` 命名空间演示 HPA / ResourceQuota / LimitRange
+  - 包含 `LimitRange / ResourceQuota / Deployment / HorizontalPodAutoscaler`
+  - 同时覆盖 `min/max/default/defaultRequest`、`count/*` 配额、CPU/Memory utilization HPA 与 behavior 策略
