@@ -109,6 +109,7 @@ const allGroupOptions: Array<{ label: string; value: GroupByMode }> = [
 ];
 
 const defaultSources: SourceType[] = ['workloads', 'network', 'storage'];
+const hiddenTopologyKinds = new Set(['StorageClass']);
 
 const nodeTypes = {
   topologyObject: TopologyObjectNode,
@@ -288,6 +289,21 @@ function issueFilteredGraph(graph: TopologyGraph, onlyIssues: boolean): Topology
     resources: graph.resources.filter((resource) => relatedIDs.has(resource.id)),
     relations: graph.relations.filter(
       (relation) => relatedIDs.has(relation.source) && relatedIDs.has(relation.target),
+    ),
+  };
+}
+
+function presentationGraph(graph: TopologyGraph): TopologyGraph {
+  const visibleIDs = new Set(
+    graph.resources
+      .filter((resource) => !hiddenTopologyKinds.has(resource.kind))
+      .map((resource) => resource.id),
+  );
+
+  return {
+    resources: graph.resources.filter((resource) => visibleIDs.has(resource.id)),
+    relations: graph.relations.filter(
+      (relation) => visibleIDs.has(relation.source) && visibleIDs.has(relation.target),
     ),
   };
 }
@@ -582,10 +598,10 @@ function TopologyWorkspace() {
 
     return connectedGraph(
       issueFilteredGraph(
-        {
+        presentationGraph({
           resources: topologyQuery.data.resources ?? [],
           relations: topologyQuery.data.relations ?? [],
-        },
+        }),
         onlyIssues,
       ),
     );

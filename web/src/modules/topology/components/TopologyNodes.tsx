@@ -13,6 +13,7 @@ import {
   sourceMeta,
   statusMeta,
 } from '../presentation';
+import type { TopologyResource } from '../../../services/cluster';
 
 function hiddenHandle(position: Position) {
   return (
@@ -39,6 +40,34 @@ function nodeToneClass(viewState: string, selected: boolean) {
   }
 }
 
+function readDetailValue(resource: TopologyResource | undefined, prefix: string) {
+  if (!resource) {
+    return '';
+  }
+
+  const line = resource.detailLines.find((item) => item.startsWith(prefix));
+  if (!line) {
+    return '';
+  }
+
+  return line.slice(prefix.length).trim();
+}
+
+function resourceSummary(resource: TopologyResource | undefined, fallback: string) {
+  if (!resource) {
+    return fallback;
+  }
+
+  if (resource.kind === 'PersistentVolumeClaim' || resource.kind === 'PersistentVolume') {
+    const storageClass = readDetailValue(resource, 'StorageClass:');
+    if (storageClass && storageClass !== '-') {
+      return `${resource.summary} · ${storageClass}`;
+    }
+  }
+
+  return resource.summary || fallback;
+}
+
 export const TopologyObjectNode = memo(
   ({ data, selected }: NodeProps<Node<TopologyFlowNodeData>>) => {
     const graphNode = data.graphNode;
@@ -53,7 +82,7 @@ export const TopologyObjectNode = memo(
     const source = primarySource ? sourceMeta(primarySource) : null;
     const summary = previewMode
       ? getGroupPreviewText(graphNode)
-      : displayResource?.summary ?? graphNode.subtitle ?? '暂无摘要';
+      : resourceSummary(displayResource, graphNode.subtitle ?? '暂无摘要');
     const title = graphNode.label ?? displayResource?.name ?? '未知资源';
     const secondaryText = previewMode ? `${resourceCount} 个资源` : undefined;
     const viewState = data.viewState ?? 'default';
