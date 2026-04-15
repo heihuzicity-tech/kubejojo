@@ -587,6 +587,18 @@ func newRouter(clusterFactory *kube.Factory) *gin.Engine {
 				"DELETE_STORAGECLASS_FAILED",
 				(*service.ClusterService).DeleteStorageClass,
 			)
+			registerClusterDeleteRoute(
+				authorized,
+				"/clusterroles/:name",
+				"DELETE_CLUSTERROLE_FAILED",
+				(*service.ClusterService).DeleteClusterRole,
+			)
+			registerClusterDeleteRoute(
+				authorized,
+				"/clusterrolebindings/:name",
+				"DELETE_CLUSTERROLEBINDING_FAILED",
+				(*service.ClusterService).DeleteClusterRoleBinding,
+			)
 
 			authorized.GET("/deployments", func(c *gin.Context) {
 				items, err := mustClusterService(c).ListDeployments(
@@ -1318,6 +1330,49 @@ func newRouter(clusterFactory *kube.Factory) *gin.Engine {
 				c.JSON(http.StatusOK, response.Success(result))
 			})
 
+			authorized.GET("/clusterroles", func(c *gin.Context) {
+				items, err := mustClusterService(c).ListClusterRoles(c.Request.Context())
+				if err != nil {
+					respondWithClusterError(c, "LIST_CLUSTERROLES_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(items))
+			})
+
+			authorized.GET("/clusterroles/:name/yaml", func(c *gin.Context) {
+				result, err := mustClusterService(c).GetClusterRoleYAML(
+					c.Request.Context(),
+					c.Param("name"),
+				)
+				if err != nil {
+					respondWithClusterError(c, "GET_CLUSTERROLE_YAML_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(result))
+			})
+
+			authorized.PUT("/clusterroles/:name/yaml", func(c *gin.Context) {
+				var req yamlUpdateRequest
+				if err := c.ShouldBindJSON(&req); err != nil {
+					c.JSON(http.StatusBadRequest, response.Failure("INVALID_YAML_UPDATE_REQUEST", "请求体格式不正确"))
+					return
+				}
+
+				result, err := mustClusterService(c).UpdateClusterRoleYAML(
+					c.Request.Context(),
+					c.Param("name"),
+					req.Content,
+				)
+				if err != nil {
+					respondWithClusterError(c, "UPDATE_CLUSTERROLE_YAML_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(result))
+			})
+
 			authorized.GET("/rolebindings", func(c *gin.Context) {
 				items, err := mustClusterService(c).ListRoleBindings(
 					c.Request.Context(),
@@ -1360,6 +1415,49 @@ func newRouter(clusterFactory *kube.Factory) *gin.Engine {
 				)
 				if err != nil {
 					respondWithClusterError(c, "UPDATE_ROLEBINDING_YAML_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(result))
+			})
+
+			authorized.GET("/clusterrolebindings", func(c *gin.Context) {
+				items, err := mustClusterService(c).ListClusterRoleBindings(c.Request.Context())
+				if err != nil {
+					respondWithClusterError(c, "LIST_CLUSTERROLEBINDINGS_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(items))
+			})
+
+			authorized.GET("/clusterrolebindings/:name/yaml", func(c *gin.Context) {
+				result, err := mustClusterService(c).GetClusterRoleBindingYAML(
+					c.Request.Context(),
+					c.Param("name"),
+				)
+				if err != nil {
+					respondWithClusterError(c, "GET_CLUSTERROLEBINDING_YAML_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(result))
+			})
+
+			authorized.PUT("/clusterrolebindings/:name/yaml", func(c *gin.Context) {
+				var req yamlUpdateRequest
+				if err := c.ShouldBindJSON(&req); err != nil {
+					c.JSON(http.StatusBadRequest, response.Failure("INVALID_YAML_UPDATE_REQUEST", "请求体格式不正确"))
+					return
+				}
+
+				result, err := mustClusterService(c).UpdateClusterRoleBindingYAML(
+					c.Request.Context(),
+					c.Param("name"),
+					req.Content,
+				)
+				if err != nil {
+					respondWithClusterError(c, "UPDATE_CLUSTERROLEBINDING_YAML_FAILED", err)
 					return
 				}
 

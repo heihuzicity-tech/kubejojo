@@ -549,6 +549,19 @@ export type RoleItem = {
   createdAt: string;
 };
 
+export type ClusterRoleItem = {
+  name: string;
+  status: string;
+  summary: string;
+  ruleCount: number;
+  boundSubjectCount: number;
+  boundSubjects: string[];
+  rules: RoleRuleItem[];
+  labels: string[];
+  age: string;
+  createdAt: string;
+};
+
 export type RoleBindingSubjectItem = {
   kind: string;
   name: string;
@@ -559,6 +572,21 @@ export type RoleBindingSubjectItem = {
 export type RoleBindingItem = {
   name: string;
   namespace: string;
+  status: string;
+  summary: string;
+  roleRefKind: string;
+  roleRefName: string;
+  roleRefApiGroup?: string;
+  subjectCount: number;
+  subjectSummaries: string[];
+  subjects: RoleBindingSubjectItem[];
+  labels: string[];
+  age: string;
+  createdAt: string;
+};
+
+export type ClusterRoleBindingItem = {
+  name: string;
   status: string;
   summary: string;
   roleRefKind: string;
@@ -1558,6 +1586,30 @@ export async function deleteRole(namespace: string, name: string) {
   return deleteNamespacedResource('roles', namespace, name);
 }
 
+export async function getClusterRoles() {
+  const { data } = await http.get<Envelope<ClusterRoleItem[]>>('/clusterroles');
+  return data.data;
+}
+
+export async function getClusterRoleYaml(name: string) {
+  const { data } = await http.get<Envelope<ResourceTextResult>>(
+    `/clusterroles/${encodeURIComponent(name)}/yaml`,
+  );
+  return data.data;
+}
+
+export async function updateClusterRoleYaml(name: string, content: string) {
+  const { data } = await http.put<Envelope<WorkloadActionResult>>(
+    `/clusterroles/${encodeURIComponent(name)}/yaml`,
+    { content },
+  );
+  return data.data;
+}
+
+export async function deleteClusterRole(name: string) {
+  return deleteClusterResource('clusterroles', name);
+}
+
 export async function getRoleBindings(namespace?: string) {
   const { data } = await http.get<Envelope<RoleBindingItem[]>>('/rolebindings', {
     params: namespace ? { namespace } : undefined,
@@ -1582,6 +1634,30 @@ export async function updateRoleBindingYaml(namespace: string, name: string, con
 
 export async function deleteRoleBinding(namespace: string, name: string) {
   return deleteNamespacedResource('rolebindings', namespace, name);
+}
+
+export async function getClusterRoleBindings() {
+  const { data } = await http.get<Envelope<ClusterRoleBindingItem[]>>('/clusterrolebindings');
+  return data.data;
+}
+
+export async function getClusterRoleBindingYaml(name: string) {
+  const { data } = await http.get<Envelope<ResourceTextResult>>(
+    `/clusterrolebindings/${encodeURIComponent(name)}/yaml`,
+  );
+  return data.data;
+}
+
+export async function updateClusterRoleBindingYaml(name: string, content: string) {
+  const { data } = await http.put<Envelope<WorkloadActionResult>>(
+    `/clusterrolebindings/${encodeURIComponent(name)}/yaml`,
+    { content },
+  );
+  return data.data;
+}
+
+export async function deleteClusterRoleBinding(name: string) {
+  return deleteClusterResource('clusterrolebindings', name);
 }
 
 export async function getConfigMaps(namespace?: string) {

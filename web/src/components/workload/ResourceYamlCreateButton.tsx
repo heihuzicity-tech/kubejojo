@@ -6,6 +6,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { createManifest } from '../../services/cluster';
 
 type SupportedResourceKind =
+  | 'ClusterRole'
+  | 'ClusterRoleBinding'
   | 'ConfigMap'
   | 'CronJob'
   | 'DaemonSet'
@@ -40,6 +42,38 @@ type ResourceTemplateDefinition = {
 };
 
 const resourceTemplateDefinitions: Record<SupportedResourceKind, ResourceTemplateDefinition> = {
+  ClusterRole: {
+    namespaced: false,
+    template: () => `apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: pod-reader
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+      - pods/log
+    verbs:
+      - get
+      - list
+      - watch`,
+  },
+  ClusterRoleBinding: {
+    namespaced: false,
+    template: () => `apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: pod-reader-binding
+subjects:
+  - kind: ServiceAccount
+    name: default
+    namespace: default
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: pod-reader`,
+  },
   ConfigMap: {
     namespaced: true,
     template: (namespace) => `apiVersion: v1

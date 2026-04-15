@@ -570,6 +570,19 @@ type RoleItem struct {
 	CreatedAt         string                    `json:"createdAt"`
 }
 
+type ClusterRoleItem struct {
+	Name              string                    `json:"name"`
+	Status            string                    `json:"status"`
+	Summary           string                    `json:"summary"`
+	RuleCount         int                       `json:"ruleCount"`
+	BoundSubjectCount int                       `json:"boundSubjectCount"`
+	BoundSubjects     jsonx.Slice[string]       `json:"boundSubjects"`
+	Rules             jsonx.Slice[RoleRuleItem] `json:"rules"`
+	Labels            jsonx.Slice[string]       `json:"labels"`
+	Age               string                    `json:"age"`
+	CreatedAt         string                    `json:"createdAt"`
+}
+
 type RoleBindingSubjectItem struct {
 	Kind      string `json:"kind"`
 	Name      string `json:"name"`
@@ -580,6 +593,21 @@ type RoleBindingSubjectItem struct {
 type RoleBindingItem struct {
 	Name             string                              `json:"name"`
 	Namespace        string                              `json:"namespace"`
+	Status           string                              `json:"status"`
+	Summary          string                              `json:"summary"`
+	RoleRefKind      string                              `json:"roleRefKind"`
+	RoleRefName      string                              `json:"roleRefName"`
+	RoleRefAPIGroup  string                              `json:"roleRefApiGroup,omitempty"`
+	SubjectCount     int                                 `json:"subjectCount"`
+	SubjectSummaries jsonx.Slice[string]                 `json:"subjectSummaries"`
+	Subjects         jsonx.Slice[RoleBindingSubjectItem] `json:"subjects"`
+	Labels           jsonx.Slice[string]                 `json:"labels"`
+	Age              string                              `json:"age"`
+	CreatedAt        string                              `json:"createdAt"`
+}
+
+type ClusterRoleBindingItem struct {
+	Name             string                              `json:"name"`
 	Status           string                              `json:"status"`
 	Summary          string                              `json:"summary"`
 	RoleRefKind      string                              `json:"roleRefKind"`
@@ -2817,6 +2845,96 @@ func (s *ClusterService) ListRoleBindings(
 	return bindings, nil
 }
 
+func (s *ClusterService) ListClusterRoles(ctx context.Context) ([]ClusterRoleItem, error) {
+	items, err := s.client.Kubernetes.RbacV1().ClusterRoles().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list clusterroles: %w", err)
+	}
+
+	clusterRoleBindings, err := s.client.Kubernetes.RbacV1().ClusterRoleBindings().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list clusterrolebindings for clusterroles: %w", err)
+	}
+
+	roleBindings, err := s.client.Kubernetes.RbacV1().RoleBindings("").List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list rolebindings for clusterroles: %w", err)
+	}
+
+	clusterBindingsByRole := clusterRoleBindingsByRole(clusterRoleBindings.Items)
+	roleBindingsByRole := roleBindingsByClusterRole(roleBindings.Items)
+	roles := make([]ClusterRoleItem, 0, len(items.Items))
+	for _, item := range items.Items {
+		clusterBindings := clusterBindingsByRole[item.Name]
+		namespacedBindings := roleBindingsByRole[item.Name]
+		boundSubjects := clusterRoleBoundSubjects(clusterBindings, namespacedBindings)
+
+		roles = append(roles, ClusterRoleItem{
+			Name:              item.Name,
+			Status:            clusterRoleStatus(item),
+			Summary:           clusterRoleSummary(item, len(boundSubjects)),
+			RuleCount:         len(item.Rules),
+			BoundSubjectCount: len(boundSubjects),
+			BoundSubjects:     jsonx.Slice[string](boundSubjects),
+			Rules:             jsonx.Slice[RoleRuleItem](clusterRoleRuleItems(item)),
+			Labels:            jsonx.Slice[string](labelPairs(item.Labels)),
+			Age:               ageString(item.CreationTimestamp.Time),
+			CreatedAt:         item.CreationTimestamp.Time.Format("2006-01-02 15:04:05"),
+		})
+	}
+
+	sort.Slice(roles, func(i, j int) bool {
+		leftOrder := topologyStatusOrder(roles[i].Status)
+		rightOrder := topologyStatusOrder(roles[j].Status)
+		if leftOrder != rightOrder {
+			return leftOrder < rightOrder
+		}
+		return roles[i].Name < roles[j].Name
+	})
+
+	return roles, nil
+}
+
+func (s *ClusterService) ListClusterRoleBindings(
+	ctx context.Context,
+) ([]ClusterRoleBindingItem, error) {
+	items, err := s.client.Kubernetes.RbacV1().ClusterRoleBindings().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list clusterrolebindings: %w", err)
+	}
+
+	bindings := make([]ClusterRoleBindingItem, 0, len(items.Items))
+	for _, item := range items.Items {
+		subjects := clusterRoleBindingSubjectItems(item)
+		subjectSummaries := clusterRoleBindingSubjectSummaries(item)
+		bindings = append(bindings, ClusterRoleBindingItem{
+			Name:             item.Name,
+			Status:           clusterRoleBindingStatus(item),
+			Summary:          clusterRoleBindingSummary(item),
+			RoleRefKind:      item.RoleRef.Kind,
+			RoleRefName:      item.RoleRef.Name,
+			RoleRefAPIGroup:  item.RoleRef.APIGroup,
+			SubjectCount:     len(subjects),
+			SubjectSummaries: jsonx.Slice[string](subjectSummaries),
+			Subjects:         jsonx.Slice[RoleBindingSubjectItem](subjects),
+			Labels:           jsonx.Slice[string](labelPairs(item.Labels)),
+			Age:              ageString(item.CreationTimestamp.Time),
+			CreatedAt:        item.CreationTimestamp.Time.Format("2006-01-02 15:04:05"),
+		})
+	}
+
+	sort.Slice(bindings, func(i, j int) bool {
+		leftOrder := topologyStatusOrder(bindings[i].Status)
+		rightOrder := topologyStatusOrder(bindings[j].Status)
+		if leftOrder != rightOrder {
+			return leftOrder < rightOrder
+		}
+		return bindings[i].Name < bindings[j].Name
+	})
+
+	return bindings, nil
+}
+
 func (s *ClusterService) ListConfigMaps(ctx context.Context, namespace string) ([]ConfigMapItem, error) {
 	namespace = normalizeNamespace(namespace)
 
@@ -4041,6 +4159,28 @@ func (s *ClusterService) DeleteRole(
 	return s.DeleteResource(ctx, "role", "Role", namespace, name)
 }
 
+func (s *ClusterService) GetClusterRoleYAML(
+	ctx context.Context,
+	name string,
+) (ResourceTextResult, error) {
+	return s.GetClusterResourceYAML(ctx, "clusterrole", "ClusterRole", name)
+}
+
+func (s *ClusterService) UpdateClusterRoleYAML(
+	ctx context.Context,
+	name string,
+	content string,
+) (WorkloadActionResult, error) {
+	return s.ApplyClusterResourceYAML(ctx, "clusterrole", "ClusterRole", name, content)
+}
+
+func (s *ClusterService) DeleteClusterRole(
+	ctx context.Context,
+	name string,
+) (WorkloadActionResult, error) {
+	return s.DeleteClusterResource(ctx, "clusterrole", "ClusterRole", name)
+}
+
 func (s *ClusterService) GetRoleBindingYAML(
 	ctx context.Context,
 	namespace string,
@@ -4064,6 +4204,34 @@ func (s *ClusterService) DeleteRoleBinding(
 	name string,
 ) (WorkloadActionResult, error) {
 	return s.DeleteResource(ctx, "rolebinding", "RoleBinding", namespace, name)
+}
+
+func (s *ClusterService) GetClusterRoleBindingYAML(
+	ctx context.Context,
+	name string,
+) (ResourceTextResult, error) {
+	return s.GetClusterResourceYAML(ctx, "clusterrolebinding", "ClusterRoleBinding", name)
+}
+
+func (s *ClusterService) UpdateClusterRoleBindingYAML(
+	ctx context.Context,
+	name string,
+	content string,
+) (WorkloadActionResult, error) {
+	return s.ApplyClusterResourceYAML(
+		ctx,
+		"clusterrolebinding",
+		"ClusterRoleBinding",
+		name,
+		content,
+	)
+}
+
+func (s *ClusterService) DeleteClusterRoleBinding(
+	ctx context.Context,
+	name string,
+) (WorkloadActionResult, error) {
+	return s.DeleteClusterResource(ctx, "clusterrolebinding", "ClusterRoleBinding", name)
 }
 
 func (s *ClusterService) GetConfigMapYAML(
@@ -5298,6 +5466,32 @@ func roleBindingsByRole(items []rbacv1.RoleBinding) map[string][]rbacv1.RoleBind
 	return index
 }
 
+func clusterRoleBindingsByRole(items []rbacv1.ClusterRoleBinding) map[string][]rbacv1.ClusterRoleBinding {
+	index := make(map[string][]rbacv1.ClusterRoleBinding)
+	for _, item := range items {
+		if item.RoleRef.Kind != "ClusterRole" || strings.TrimSpace(item.RoleRef.Name) == "" {
+			continue
+		}
+
+		index[item.RoleRef.Name] = append(index[item.RoleRef.Name], item)
+	}
+
+	return index
+}
+
+func roleBindingsByClusterRole(items []rbacv1.RoleBinding) map[string][]rbacv1.RoleBinding {
+	index := make(map[string][]rbacv1.RoleBinding)
+	for _, item := range items {
+		if item.RoleRef.Kind != "ClusterRole" || strings.TrimSpace(item.RoleRef.Name) == "" {
+			continue
+		}
+
+		index[item.RoleRef.Name] = append(index[item.RoleRef.Name], item)
+	}
+
+	return index
+}
+
 func podsByConfigMapReference(items []corev1.Pod) map[string][]string {
 	index := make(map[string][]string)
 	for _, item := range items {
@@ -5504,13 +5698,13 @@ func serviceAccountImagePullSecrets(item corev1.ServiceAccount) []string {
 	return uniqueSortedStrings(names)
 }
 
-func roleRuleItems(item rbacv1.Role) []RoleRuleItem {
-	if len(item.Rules) == 0 {
+func policyRuleItems(items []rbacv1.PolicyRule) []RoleRuleItem {
+	if len(items) == 0 {
 		return nil
 	}
 
-	rules := make([]RoleRuleItem, 0, len(item.Rules))
-	for _, rule := range item.Rules {
+	rules := make([]RoleRuleItem, 0, len(items))
+	for _, rule := range items {
 		rules = append(rules, RoleRuleItem{
 			APIGroups:       jsonx.Slice[string](append([]string(nil), rule.APIGroups...)),
 			Resources:       jsonx.Slice[string](append([]string(nil), rule.Resources...)),
@@ -5523,14 +5717,34 @@ func roleRuleItems(item rbacv1.Role) []RoleRuleItem {
 	return rules
 }
 
-func roleStatus(item rbacv1.Role) string {
-	if len(item.Rules) == 0 {
+func roleRuleItems(item rbacv1.Role) []RoleRuleItem {
+	return policyRuleItems(item.Rules)
+}
+
+func clusterRoleRuleItems(item rbacv1.ClusterRole) []RoleRuleItem {
+	return policyRuleItems(item.Rules)
+}
+
+func policyRuleStatus(ruleCount int) string {
+	if ruleCount == 0 {
 		return TopologyStatusWarning
 	}
 	return TopologyStatusHealthy
 }
 
+func roleStatus(item rbacv1.Role) string {
+	return policyRuleStatus(len(item.Rules))
+}
+
+func clusterRoleStatus(item rbacv1.ClusterRole) string {
+	return policyRuleStatus(len(item.Rules))
+}
+
 func roleSummary(item rbacv1.Role, boundSubjectCount int) string {
+	return fmt.Sprintf("Rules %d · Subjects %d", len(item.Rules), boundSubjectCount)
+}
+
+func clusterRoleSummary(item rbacv1.ClusterRole, boundSubjectCount int) string {
 	return fmt.Sprintf("Rules %d · Subjects %d", len(item.Rules), boundSubjectCount)
 }
 
@@ -5543,19 +5757,37 @@ func roleBoundSubjects(items []rbacv1.RoleBinding) []string {
 	return uniqueSortedStrings(subjects)
 }
 
-func roleBindingSubjectItems(item rbacv1.RoleBinding) []RoleBindingSubjectItem {
-	if len(item.Subjects) == 0 {
+func clusterRoleBoundSubjects(
+	clusterBindings []rbacv1.ClusterRoleBinding,
+	roleBindings []rbacv1.RoleBinding,
+) []string {
+	subjects := make([]string, 0)
+	for _, item := range clusterBindings {
+		subjects = append(subjects, clusterRoleBindingSubjectSummaries(item)...)
+	}
+	for _, item := range roleBindings {
+		subjects = append(subjects, roleBindingSubjectSummaries(item)...)
+	}
+
+	return uniqueSortedStrings(subjects)
+}
+
+func rbacSubjectItems(
+	subjects []rbacv1.Subject,
+	defaultNamespace string,
+) []RoleBindingSubjectItem {
+	if len(subjects) == 0 {
 		return nil
 	}
 
-	subjects := make([]RoleBindingSubjectItem, 0, len(item.Subjects))
-	for _, subject := range item.Subjects {
+	items := make([]RoleBindingSubjectItem, 0, len(subjects))
+	for _, subject := range subjects {
 		namespace := strings.TrimSpace(subject.Namespace)
 		if subject.Kind == "ServiceAccount" && namespace == "" {
-			namespace = item.Namespace
+			namespace = defaultNamespace
 		}
 
-		subjects = append(subjects, RoleBindingSubjectItem{
+		items = append(items, RoleBindingSubjectItem{
 			Kind:      subject.Kind,
 			Name:      subject.Name,
 			Namespace: namespace,
@@ -5563,20 +5795,28 @@ func roleBindingSubjectItems(item rbacv1.RoleBinding) []RoleBindingSubjectItem {
 		})
 	}
 
-	sort.Slice(subjects, func(i, j int) bool {
-		if subjects[i].Kind != subjects[j].Kind {
-			return subjects[i].Kind < subjects[j].Kind
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].Kind != items[j].Kind {
+			return items[i].Kind < items[j].Kind
 		}
-		if subjects[i].Namespace != subjects[j].Namespace {
-			return subjects[i].Namespace < subjects[j].Namespace
+		if items[i].Namespace != items[j].Namespace {
+			return items[i].Namespace < items[j].Namespace
 		}
-		return subjects[i].Name < subjects[j].Name
+		return items[i].Name < items[j].Name
 	})
 
-	return subjects
+	return items
 }
 
-func roleBindingSubjectSummary(subject rbacv1.Subject, defaultNamespace string) string {
+func roleBindingSubjectItems(item rbacv1.RoleBinding) []RoleBindingSubjectItem {
+	return rbacSubjectItems(item.Subjects, item.Namespace)
+}
+
+func clusterRoleBindingSubjectItems(item rbacv1.ClusterRoleBinding) []RoleBindingSubjectItem {
+	return rbacSubjectItems(item.Subjects, "")
+}
+
+func rbacSubjectSummary(subject rbacv1.Subject, defaultNamespace string) string {
 	namespace := strings.TrimSpace(subject.Namespace)
 	if subject.Kind == "ServiceAccount" {
 		if namespace == "" {
@@ -5592,23 +5832,43 @@ func roleBindingSubjectSummary(subject rbacv1.Subject, defaultNamespace string) 
 	return fmt.Sprintf("%s %s", subject.Kind, subject.Name)
 }
 
-func roleBindingSubjectSummaries(item rbacv1.RoleBinding) []string {
-	summaries := make([]string, 0, len(item.Subjects))
-	for _, subject := range item.Subjects {
-		summaries = append(summaries, roleBindingSubjectSummary(subject, item.Namespace))
+func rbacSubjectSummaries(subjects []rbacv1.Subject, defaultNamespace string) []string {
+	summaries := make([]string, 0, len(subjects))
+	for _, subject := range subjects {
+		summaries = append(summaries, rbacSubjectSummary(subject, defaultNamespace))
 	}
 
 	return uniqueSortedStrings(summaries)
 }
 
-func roleBindingStatus(item rbacv1.RoleBinding) string {
-	if len(item.Subjects) == 0 {
+func roleBindingSubjectSummaries(item rbacv1.RoleBinding) []string {
+	return rbacSubjectSummaries(item.Subjects, item.Namespace)
+}
+
+func clusterRoleBindingSubjectSummaries(item rbacv1.ClusterRoleBinding) []string {
+	return rbacSubjectSummaries(item.Subjects, "")
+}
+
+func subjectBindingStatus(subjectCount int) string {
+	if subjectCount == 0 {
 		return TopologyStatusWarning
 	}
 	return TopologyStatusHealthy
 }
 
+func roleBindingStatus(item rbacv1.RoleBinding) string {
+	return subjectBindingStatus(len(item.Subjects))
+}
+
 func roleBindingSummary(item rbacv1.RoleBinding) string {
+	return fmt.Sprintf("%s %s · Subjects %d", item.RoleRef.Kind, item.RoleRef.Name, len(item.Subjects))
+}
+
+func clusterRoleBindingStatus(item rbacv1.ClusterRoleBinding) string {
+	return subjectBindingStatus(len(item.Subjects))
+}
+
+func clusterRoleBindingSummary(item rbacv1.ClusterRoleBinding) string {
 	return fmt.Sprintf("%s %s · Subjects %d", item.RoleRef.Kind, item.RoleRef.Name, len(item.Subjects))
 }
 

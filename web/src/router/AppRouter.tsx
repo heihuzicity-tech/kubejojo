@@ -5,6 +5,10 @@ import { navigationItems } from '../layouts/navigation';
 import { useAppStore } from '../stores/appStore';
 import { ConfigMapDetailsPage } from '../pages/ConfigMapDetailsPage';
 import { ConfigMapsPage } from '../pages/ConfigMapsPage';
+import { ClusterRoleBindingDetailsPage } from '../pages/ClusterRoleBindingDetailsPage';
+import { ClusterRoleBindingsPage } from '../pages/ClusterRoleBindingsPage';
+import { ClusterRoleDetailsPage } from '../pages/ClusterRoleDetailsPage';
+import { ClusterRolesPage } from '../pages/ClusterRolesPage';
 import { EndpointDetailsPage } from '../pages/EndpointDetailsPage';
 import { EndpointsPage } from '../pages/EndpointsPage';
 import { IngressClassDetailsPage } from '../pages/IngressClassDetailsPage';
@@ -120,10 +124,20 @@ function ProtectedRoutes() {
         />
         <Route path="/security/roles" element={<RolesPage />} />
         <Route path="/security/roles/:namespace/:name" element={<RoleDetailsPage />} />
+        <Route path="/security/clusterroles" element={<ClusterRolesPage />} />
+        <Route path="/security/clusterroles/:name" element={<ClusterRoleDetailsPage />} />
         <Route path="/security/rolebindings" element={<RoleBindingsPage />} />
         <Route
           path="/security/rolebindings/:namespace/:name"
           element={<RoleBindingDetailsPage />}
+        />
+        <Route
+          path="/security/clusterrolebindings"
+          element={<ClusterRoleBindingsPage />}
+        />
+        <Route
+          path="/security/clusterrolebindings/:name"
+          element={<ClusterRoleBindingDetailsPage />}
         />
         <Route path="/resources/hpas" element={<HPAsPage />} />
         <Route path="/resources/hpas/:namespace/:name" element={<HPADetailsPage />} />
