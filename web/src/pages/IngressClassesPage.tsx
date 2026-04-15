@@ -12,7 +12,9 @@ import {
 import { ResourceListPage, type ResourceMetric } from '../components/resource-list/ResourceListPage';
 import { ActionMenuButton } from '../components/workload/ActionMenuButton';
 import { ResourceYamlEditorModal } from '../components/workload/ResourceYamlEditorModal';
+import { confirmResourceDelete } from '../components/workload/deleteConfirmation';
 import {
+  deleteIngressClass,
   type IngressClassItem,
   type IngressItem,
   getIngressClassYaml,
@@ -63,6 +65,15 @@ export function IngressClassesPage() {
       void message.success(result.message);
       await classesQuery.refetch();
       await classYamlQuery.refetch();
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (name: string) => deleteIngressClass(name),
+    onSuccess: async (result) => {
+      void message.success(result.message);
+      setYamlEditTarget(undefined);
+      await classesQuery.refetch();
     },
   });
 
@@ -173,11 +184,12 @@ export function IngressClassesPage() {
       render: (_, item) =>
         sessionMode === 'token' ? (
           <ActionMenuButton
-            loading={updateClassYamlMutation.isPending}
+            loading={updateClassYamlMutation.isPending || deleteMutation.isPending}
             menu={{
               items: [
                 { key: 'open', label: 'Open' },
                 { key: 'edit-yaml', label: 'Edit YAML' },
+                { key: 'delete', label: <span className="text-red-600">Delete</span> },
               ],
               onClick: ({ key, domEvent }) => {
                 domEvent.stopPropagation();
@@ -187,6 +199,16 @@ export function IngressClassesPage() {
                 }
                 if (key === 'edit-yaml') {
                   setYamlEditTarget(item);
+                  return;
+                }
+                if (key === 'delete') {
+                  confirmResourceDelete({
+                    resourceKind: 'IngressClass',
+                    name: item.name,
+                    impact:
+                      'Ingresses that still reference this class may fail admission or route traffic unpredictably after it is removed.',
+                    onConfirm: () => deleteMutation.mutateAsync(item.name),
+                  });
                 }
               },
             }}

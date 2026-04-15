@@ -76,6 +76,13 @@ export async function saveVPAYaml(namespace: string, name: string, content: stri
   return fn(namespace, name, content);
 }
 
+export async function removeVPA(namespace: string, name: string) {
+  const fn = resolveClusterFn<
+    (namespace: string, name: string) => Promise<{ message?: string }>
+  >('deleteVPA');
+  return fn(namespace, name);
+}
+
 export function extractMutationMessage(result: unknown, fallback: string) {
   return readString(asRecord(result), ['message'], fallback);
 }

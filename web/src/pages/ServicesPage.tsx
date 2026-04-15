@@ -6,16 +6,19 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { ActionMenuButton } from '../components/workload/ActionMenuButton';
+import { ResourceYamlCreateButton } from '../components/workload/ResourceYamlCreateButton';
 import { ResourceListPage, type ResourceMetric } from '../components/resource-list/ResourceListPage';
 import { ResourceYamlEditorModal } from '../components/workload/ResourceYamlEditorModal';
 import { buildServiceRoute, serviceStatusColor } from '../components/service/serviceShared';
 import {
   type ServiceItem,
+  deleteService,
   getServiceYaml,
   getServices,
   updateServiceYaml,
 } from '../services/cluster';
 import { useAppStore } from '../stores/appStore';
+import { confirmResourceDelete } from '../components/workload/deleteConfirmation';
 
 function displayNamespace(namespace: string) {
   return namespace.trim() === '' ? 'All Namespaces' : namespace;
@@ -47,6 +50,16 @@ export function ServicesPage() {
       void message.success(result.message);
       await servicesQuery.refetch();
       await serviceYamlQuery.refetch();
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: ({ namespace, name }: { namespace: string; name: string }) =>
+      deleteService(namespace, name),
+    onSuccess: async (result) => {
+      void message.success(result.message);
+      setYamlEditTarget(undefined);
+      await servicesQuery.refetch();
     },
   });
 
@@ -176,11 +189,12 @@ export function ServicesPage() {
       render: (_, item) =>
         sessionMode === 'token' ? (
           <ActionMenuButton
-            loading={updateServiceYamlMutation.isPending}
+            loading={updateServiceYamlMutation.isPending || deleteMutation.isPending}
             menu={{
               items: [
                 { key: 'open', label: 'Open' },
                 { key: 'edit-yaml', label: 'Edit YAML' },
+                { key: 'delete', label: <span className="text-red-600">Delete</span> },
               ],
               onClick: ({ key, domEvent }) => {
                 domEvent.stopPropagation();
@@ -190,6 +204,21 @@ export function ServicesPage() {
                 }
                 if (key === 'edit-yaml') {
                   setYamlEditTarget(item);
+                  return;
+                }
+                if (key === 'delete') {
+                  confirmResourceDelete({
+                    resourceKind: 'Service',
+                    namespace: item.namespace,
+                    name: item.name,
+                    impact:
+                      'Traffic routed through this Service will stop immediately for clients that depend on it.',
+                    onConfirm: () =>
+                      deleteMutation.mutateAsync({
+                        namespace: item.namespace,
+                        name: item.name,
+                      }),
+                  });
                 }
               },
             }}
@@ -215,7 +244,17 @@ export function ServicesPage() {
         rowKey={(record) => `${record.namespace}/${record.name}`}
         loading={sessionMode === 'token' && servicesQuery.isLoading}
         onRefresh={() => servicesQuery.refetch()}
-        toolbarExtra={<Tag color="blue">当前上下文: {namespaceLabel}</Tag>}
+        toolbarExtra={
+          <Space size={8} wrap>
+            <Tag color="blue">当前上下文: {namespaceLabel}</Tag>
+            <ResourceYamlCreateButton
+              resourceKind="Service"
+              namespace={currentNamespace}
+              enabled={sessionMode === 'token'}
+              onCreated={() => servicesQuery.refetch()}
+            />
+          </Space>
+        }
         searchPlaceholder="搜索 Service、类型、端口、地址或标签"
         searchPredicate={(record, keyword) =>
           record.name.toLowerCase().includes(keyword) ||

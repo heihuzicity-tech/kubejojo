@@ -8,14 +8,17 @@ import { useNavigate } from 'react-router-dom';
 import { buildIngressRoute, ingressStatusColor } from '../components/ingress/ingressShared';
 import { ResourceListPage, type ResourceMetric } from '../components/resource-list/ResourceListPage';
 import { ActionMenuButton } from '../components/workload/ActionMenuButton';
+import { ResourceYamlCreateButton } from '../components/workload/ResourceYamlCreateButton';
 import { ResourceYamlEditorModal } from '../components/workload/ResourceYamlEditorModal';
 import {
   type IngressItem,
+  deleteIngress,
   getIngressYaml,
   getIngresses,
   updateIngressYaml,
 } from '../services/cluster';
 import { useAppStore } from '../stores/appStore';
+import { confirmResourceDelete } from '../components/workload/deleteConfirmation';
 
 function displayNamespace(namespace: string) {
   return namespace.trim() === '' ? 'All Namespaces' : namespace;
@@ -47,6 +50,16 @@ export function IngressesPage() {
       void message.success(result.message);
       await ingressesQuery.refetch();
       await ingressYamlQuery.refetch();
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: ({ namespace, name }: { namespace: string; name: string }) =>
+      deleteIngress(namespace, name),
+    onSuccess: async (result) => {
+      void message.success(result.message);
+      setYamlEditTarget(undefined);
+      await ingressesQuery.refetch();
     },
   });
 
@@ -179,11 +192,12 @@ export function IngressesPage() {
       render: (_, item) =>
         sessionMode === 'token' ? (
           <ActionMenuButton
-            loading={updateIngressYamlMutation.isPending}
+            loading={updateIngressYamlMutation.isPending || deleteMutation.isPending}
             menu={{
               items: [
                 { key: 'open', label: 'Open' },
                 { key: 'edit-yaml', label: 'Edit YAML' },
+                { key: 'delete', label: <span className="text-red-600">Delete</span> },
               ],
               onClick: ({ key, domEvent }) => {
                 domEvent.stopPropagation();
@@ -193,6 +207,21 @@ export function IngressesPage() {
                 }
                 if (key === 'edit-yaml') {
                   setYamlEditTarget(item);
+                  return;
+                }
+                if (key === 'delete') {
+                  confirmResourceDelete({
+                    resourceKind: 'Ingress',
+                    namespace: item.namespace,
+                    name: item.name,
+                    impact:
+                      'Ingress traffic that depends on this route will stop once the controller reconciles the deletion.',
+                    onConfirm: () =>
+                      deleteMutation.mutateAsync({
+                        namespace: item.namespace,
+                        name: item.name,
+                      }),
+                  });
                 }
               },
             }}
@@ -218,7 +247,17 @@ export function IngressesPage() {
         rowKey={(record) => `${record.namespace}/${record.name}`}
         loading={sessionMode === 'token' && ingressesQuery.isLoading}
         onRefresh={() => ingressesQuery.refetch()}
-        toolbarExtra={<Tag color="blue">当前上下文: {namespaceLabel}</Tag>}
+        toolbarExtra={
+          <Space size={8} wrap>
+            <Tag color="blue">当前上下文: {namespaceLabel}</Tag>
+            <ResourceYamlCreateButton
+              resourceKind="Ingress"
+              namespace={currentNamespace}
+              enabled={sessionMode === 'token'}
+              onCreated={() => ingressesQuery.refetch()}
+            />
+          </Space>
+        }
         searchPlaceholder="搜索 Ingress、Host、Service、地址或标签"
         searchPredicate={(record, keyword) =>
           record.name.toLowerCase().includes(keyword) ||

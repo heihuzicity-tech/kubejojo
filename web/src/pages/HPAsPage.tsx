@@ -12,6 +12,7 @@ import {
   listHPAs,
   metricPreview,
   readHPAYaml,
+  removeHPA,
   replicaSummary,
   saveHPAYaml,
   targetSummary,
@@ -19,8 +20,10 @@ import {
 } from '../components/hpa/hpaShared';
 import { ResourceListPage, type ResourceMetric } from '../components/resource-list/ResourceListPage';
 import { ActionMenuButton } from '../components/workload/ActionMenuButton';
+import { ResourceYamlCreateButton } from '../components/workload/ResourceYamlCreateButton';
 import { ResourceYamlEditorModal } from '../components/workload/ResourceYamlEditorModal';
 import { useAppStore } from '../stores/appStore';
+import { confirmResourceDelete } from '../components/workload/deleteConfirmation';
 
 function displayNamespace(namespace: string) {
   return namespace.trim() === '' ? 'All Namespaces' : namespace;
@@ -52,6 +55,15 @@ export function HPAsPage() {
       void message.success(extractMutationMessage(result, 'HPA YAML updated'));
       await hpasQuery.refetch();
       await hpaYamlQuery.refetch();
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: ({ namespace, name }: { namespace: string; name: string }) => removeHPA(namespace, name),
+    onSuccess: async (result) => {
+      void message.success(extractMutationMessage(result, 'HPA deleted'));
+      setYamlEditTarget(undefined);
+      await hpasQuery.refetch();
     },
   });
 
@@ -168,11 +180,12 @@ export function HPAsPage() {
       render: (_, item) =>
         sessionMode === 'token' ? (
           <ActionMenuButton
-            loading={updateHPAYamlMutation.isPending}
+            loading={updateHPAYamlMutation.isPending || deleteMutation.isPending}
             menu={{
               items: [
                 { key: 'open', label: 'Open' },
                 { key: 'edit-yaml', label: 'Edit YAML' },
+                { key: 'delete', label: <span className="text-red-600">Delete</span> },
               ],
               onClick: ({ key, domEvent }) => {
                 domEvent.stopPropagation();
@@ -182,6 +195,21 @@ export function HPAsPage() {
                 }
                 if (key === 'edit-yaml') {
                   setYamlEditTarget(item);
+                  return;
+                }
+                if (key === 'delete') {
+                  confirmResourceDelete({
+                    resourceKind: 'HorizontalPodAutoscaler',
+                    namespace: item.namespace,
+                    name: item.name,
+                    impact:
+                      'Automatic horizontal scaling for the target workload will stop after this HPA is removed.',
+                    onConfirm: () =>
+                      deleteMutation.mutateAsync({
+                        namespace: item.namespace,
+                        name: item.name,
+                      }),
+                  });
                 }
               },
             }}
@@ -207,7 +235,17 @@ export function HPAsPage() {
         rowKey={(record) => `${record.namespace}/${record.name}`}
         loading={sessionMode === 'token' && hpasQuery.isLoading}
         onRefresh={() => hpasQuery.refetch()}
-        toolbarExtra={<Tag color="blue">当前上下文: {namespaceLabel}</Tag>}
+        toolbarExtra={
+          <Space size={8} wrap>
+            <Tag color="blue">当前上下文: {namespaceLabel}</Tag>
+            <ResourceYamlCreateButton
+              resourceKind="HorizontalPodAutoscaler"
+              namespace={currentNamespace}
+              enabled={sessionMode === 'token'}
+              onCreated={() => hpasQuery.refetch()}
+            />
+          </Space>
+        }
         searchPlaceholder="搜索 HPA、命名空间、目标工作负载、状态、指标或标签"
         searchPredicate={(record, keyword) =>
           record.name.toLowerCase().includes(keyword) ||

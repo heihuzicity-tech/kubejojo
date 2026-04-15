@@ -8,14 +8,17 @@ import { useNavigate } from 'react-router-dom';
 import { ResourceListPage, type ResourceMetric } from '../components/resource-list/ResourceListPage';
 import { buildSecretRoute, secretStatusColor } from '../components/secret/secretShared';
 import { ActionMenuButton } from '../components/workload/ActionMenuButton';
+import { ResourceYamlCreateButton } from '../components/workload/ResourceYamlCreateButton';
 import { ResourceYamlEditorModal } from '../components/workload/ResourceYamlEditorModal';
 import {
   type SecretItem,
+  deleteSecret,
   getSecretYaml,
   getSecrets,
   updateSecretYaml,
 } from '../services/cluster';
 import { useAppStore } from '../stores/appStore';
+import { confirmResourceDelete } from '../components/workload/deleteConfirmation';
 
 function displayNamespace(namespace: string) {
   return namespace.trim() === '' ? 'All Namespaces' : namespace;
@@ -56,6 +59,16 @@ export function SecretsPage() {
       void message.success(result.message);
       await secretsQuery.refetch();
       await secretYamlQuery.refetch();
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: ({ namespace, name }: { namespace: string; name: string }) =>
+      deleteSecret(namespace, name),
+    onSuccess: async (result) => {
+      void message.success(result.message);
+      setYamlEditTarget(undefined);
+      await secretsQuery.refetch();
     },
   });
 
@@ -166,11 +179,12 @@ export function SecretsPage() {
       render: (_, item) =>
         sessionMode === 'token' ? (
           <ActionMenuButton
-            loading={updateSecretYamlMutation.isPending}
+            loading={updateSecretYamlMutation.isPending || deleteMutation.isPending}
             menu={{
               items: [
                 { key: 'open', label: 'Open' },
                 { key: 'edit-yaml', label: 'Edit YAML' },
+                { key: 'delete', label: <span className="text-red-600">Delete</span> },
               ],
               onClick: ({ key, domEvent }) => {
                 domEvent.stopPropagation();
@@ -180,6 +194,21 @@ export function SecretsPage() {
                 }
                 if (key === 'edit-yaml') {
                   setYamlEditTarget(item);
+                  return;
+                }
+                if (key === 'delete') {
+                  confirmResourceDelete({
+                    resourceKind: 'Secret',
+                    namespace: item.namespace,
+                    name: item.name,
+                    impact:
+                      'Workloads that depend on this Secret may fail authentication or startup after it is removed.',
+                    onConfirm: () =>
+                      deleteMutation.mutateAsync({
+                        namespace: item.namespace,
+                        name: item.name,
+                      }),
+                  });
                 }
               },
             }}
@@ -205,7 +234,17 @@ export function SecretsPage() {
         rowKey={(record) => `${record.namespace}/${record.name}`}
         loading={sessionMode === 'token' && secretsQuery.isLoading}
         onRefresh={() => secretsQuery.refetch()}
-        toolbarExtra={<Tag color="blue">当前上下文: {namespaceLabel}</Tag>}
+        toolbarExtra={
+          <Space size={8} wrap>
+            <Tag color="blue">当前上下文: {namespaceLabel}</Tag>
+            <ResourceYamlCreateButton
+              resourceKind="Secret"
+              namespace={currentNamespace}
+              enabled={sessionMode === 'token'}
+              onCreated={() => secretsQuery.refetch()}
+            />
+          </Space>
+        }
         searchPlaceholder="搜索 Secret、命名空间、类型、Key、Pod、状态或标签"
         searchPredicate={(record, keyword) =>
           record.name.toLowerCase().includes(keyword) ||

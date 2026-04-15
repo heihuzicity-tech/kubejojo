@@ -17,16 +17,19 @@ import {
   nextJobSuspendAction,
 } from '../components/job/jobShared';
 import { ActionMenuButton } from '../components/workload/ActionMenuButton';
+import { ResourceYamlCreateButton } from '../components/workload/ResourceYamlCreateButton';
 import { ResourceYamlEditorModal } from '../components/workload/ResourceYamlEditorModal';
 import { ResourceListPage, type ResourceMetric } from '../components/resource-list/ResourceListPage';
 import {
   type JobItem,
+  deleteJob,
   getJobYaml,
   getJobs,
   setJobSuspend,
   updateJobYaml,
 } from '../services/cluster';
 import { useAppStore } from '../stores/appStore';
+import { confirmResourceDelete } from '../components/workload/deleteConfirmation';
 
 export function JobsPage() {
   const { message, modal } = App.useApp();
@@ -65,6 +68,16 @@ export function JobsPage() {
     },
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: ({ namespace, name }: { namespace: string; name: string }) =>
+      deleteJob(namespace, name),
+    onSuccess: async (result) => {
+      void message.success(result.message);
+      setYamlEditTarget(undefined);
+      await refreshJobs();
+    },
+  });
+
   const jobYamlQuery = useQuery({
     queryKey: ['job-yaml', yamlEditTarget?.namespace, yamlEditTarget?.name],
     queryFn: () => getJobYaml(yamlEditTarget!.namespace, yamlEditTarget!.name),
@@ -96,6 +109,20 @@ export function JobsPage() {
           namespace: item.namespace,
           name: item.name,
           suspend: item.status !== 'Suspended',
+        }),
+    });
+  };
+
+  const openDeleteConfirm = (item: JobItem) => {
+    confirmResourceDelete({
+      resourceKind: 'Job',
+      namespace: item.namespace,
+      name: item.name,
+      impact: 'This removes the Job and any active Pods may be terminated by Kubernetes.',
+      onConfirm: () =>
+        deleteMutation.mutateAsync({
+          namespace: item.namespace,
+          name: item.name,
         }),
     });
   };
@@ -197,7 +224,7 @@ export function JobsPage() {
       render: (_, item) =>
         allowOperations ? (
           <ActionMenuButton
-            loading={suspendMutation.isPending}
+            loading={suspendMutation.isPending || deleteMutation.isPending}
             menu={{
               items: [
                 { key: 'open', label: 'Open' },
@@ -205,6 +232,7 @@ export function JobsPage() {
                 ...(canToggleJobSuspend(item)
                   ? [{ key: 'suspend', label: nextJobSuspendAction(item) }]
                   : []),
+                { key: 'delete', label: <span className="text-red-600">Delete</span> },
               ],
               onClick: ({ key, domEvent }) => {
                 domEvent.stopPropagation();
@@ -218,6 +246,10 @@ export function JobsPage() {
                 }
                 if (key === 'suspend') {
                   openSuspendConfirm(item);
+                  return;
+                }
+                if (key === 'delete') {
+                  openDeleteConfirm(item);
                 }
               },
             }}
@@ -247,7 +279,18 @@ export function JobsPage() {
         rowKey={(record) => `${record.namespace}/${record.name}`}
         loading={sessionMode === 'token' && jobsQuery.isLoading}
         onRefresh={refreshJobs}
-        toolbarExtra={<Tag color="blue">当前上下文: {namespaceLabel}</Tag>}
+        toolbarExtra={
+          <Space size={8} wrap>
+            <Tag color="blue">当前上下文: {namespaceLabel}</Tag>
+            <ResourceYamlCreateButton
+              resourceKind="Job"
+              namespace={currentNamespace}
+              enabled={allowOperations}
+              disabledReason={useDemoData ? 'Live cluster access is unavailable.' : undefined}
+              onCreated={refreshJobs}
+            />
+          </Space>
+        }
         searchPlaceholder="搜索 Job、Owner、状态、镜像或标签"
         searchPredicate={(record, keyword) =>
           record.name.toLowerCase().includes(keyword) ||

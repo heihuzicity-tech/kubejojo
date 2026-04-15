@@ -14,16 +14,19 @@ import {
   nextCronJobSuspendAction,
 } from '../components/cronjob/cronJobShared';
 import { ActionMenuButton } from '../components/workload/ActionMenuButton';
+import { ResourceYamlCreateButton } from '../components/workload/ResourceYamlCreateButton';
 import { ResourceYamlEditorModal } from '../components/workload/ResourceYamlEditorModal';
 import { ResourceListPage, type ResourceMetric } from '../components/resource-list/ResourceListPage';
 import {
   type CronJobItem,
+  deleteCronJob,
   getCronJobYaml,
   getCronJobs,
   setCronJobSuspend,
   updateCronJobYaml,
 } from '../services/cluster';
 import { useAppStore } from '../stores/appStore';
+import { confirmResourceDelete } from '../components/workload/deleteConfirmation';
 
 export function CronJobsPage() {
   const { message, modal } = App.useApp();
@@ -62,6 +65,16 @@ export function CronJobsPage() {
     },
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: ({ namespace, name }: { namespace: string; name: string }) =>
+      deleteCronJob(namespace, name),
+    onSuccess: async (result) => {
+      void message.success(result.message);
+      setYamlEditTarget(undefined);
+      await refreshCronJobs();
+    },
+  });
+
   const cronJobYamlQuery = useQuery({
     queryKey: ['cronjob-yaml', yamlEditTarget?.namespace, yamlEditTarget?.name],
     queryFn: () => getCronJobYaml(yamlEditTarget!.namespace, yamlEditTarget!.name),
@@ -92,6 +105,21 @@ export function CronJobsPage() {
           namespace: item.namespace,
           name: item.name,
           suspend: !item.suspend,
+        }),
+    });
+  };
+
+  const openDeleteConfirm = (item: CronJobItem) => {
+    confirmResourceDelete({
+      resourceKind: 'CronJob',
+      namespace: item.namespace,
+      name: item.name,
+      impact:
+        'This removes the CronJob and future schedules stop immediately. Existing Jobs are not deleted automatically.',
+      onConfirm: () =>
+        deleteMutation.mutateAsync({
+          namespace: item.namespace,
+          name: item.name,
         }),
     });
   };
@@ -189,12 +217,13 @@ export function CronJobsPage() {
       render: (_, item) =>
         allowOperations ? (
           <ActionMenuButton
-            loading={suspendMutation.isPending}
+            loading={suspendMutation.isPending || deleteMutation.isPending}
             menu={{
               items: [
                 { key: 'open', label: 'Open' },
                 { key: 'edit-yaml', label: 'Edit YAML' },
                 { key: 'suspend', label: nextCronJobSuspendAction(item) },
+                { key: 'delete', label: <span className="text-red-600">Delete</span> },
               ],
               onClick: ({ key, domEvent }) => {
                 domEvent.stopPropagation();
@@ -208,6 +237,10 @@ export function CronJobsPage() {
                 }
                 if (key === 'suspend') {
                   openSuspendConfirm(item);
+                  return;
+                }
+                if (key === 'delete') {
+                  openDeleteConfirm(item);
                 }
               },
             }}
@@ -237,7 +270,18 @@ export function CronJobsPage() {
         rowKey={(record) => `${record.namespace}/${record.name}`}
         loading={sessionMode === 'token' && cronJobsQuery.isLoading}
         onRefresh={refreshCronJobs}
-        toolbarExtra={<Tag color="blue">当前上下文: {namespaceLabel}</Tag>}
+        toolbarExtra={
+          <Space size={8} wrap>
+            <Tag color="blue">当前上下文: {namespaceLabel}</Tag>
+            <ResourceYamlCreateButton
+              resourceKind="CronJob"
+              namespace={currentNamespace}
+              enabled={allowOperations}
+              disabledReason={useDemoData ? 'Live cluster access is unavailable.' : undefined}
+              onCreated={refreshCronJobs}
+            />
+          </Space>
+        }
         searchPlaceholder="搜索 CronJob、Schedule、状态、镜像或标签"
         searchPredicate={(record, keyword) =>
           record.name.toLowerCase().includes(keyword) ||

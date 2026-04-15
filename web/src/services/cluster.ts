@@ -1157,6 +1157,27 @@ export async function deletePod(namespace: string, name: string) {
   return data.data;
 }
 
+async function deleteNamespacedResource(resourcePath: string, namespace: string, name: string) {
+  const { data } = await http.delete<Envelope<WorkloadActionResult>>(
+    `/${resourcePath}/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`,
+  );
+  return data.data;
+}
+
+async function deleteClusterResource(resourcePath: string, name: string) {
+  const { data } = await http.delete<Envelope<WorkloadActionResult>>(
+    `/${resourcePath}/${encodeURIComponent(name)}`,
+  );
+  return data.data;
+}
+
+export async function createManifest(content: string) {
+  const { data } = await http.post<Envelope<WorkloadActionResult>>('/manifests', {
+    content,
+  });
+  return data.data;
+}
+
 export function buildPodExecWebSocketUrl(
   token: string,
   namespace: string,
@@ -1211,6 +1232,10 @@ export async function restartDeployment(namespace: string, name: string) {
   return data.data;
 }
 
+export async function deleteDeployment(namespace: string, name: string) {
+  return deleteNamespacedResource('deployments', namespace, name);
+}
+
 export async function scaleStatefulSet(namespace: string, name: string, replicas: number) {
   const { data } = await http.post<Envelope<WorkloadActionResult>>(
     `/statefulsets/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/scale`,
@@ -1246,6 +1271,10 @@ export async function updateStatefulSetYaml(namespace: string, name: string, con
     { content },
   );
   return data.data;
+}
+
+export async function deleteStatefulSet(namespace: string, name: string) {
+  return deleteNamespacedResource('statefulsets', namespace, name);
 }
 
 export async function getReplicaSets(namespace?: string) {
@@ -1307,6 +1336,10 @@ export async function updateDaemonSetYaml(namespace: string, name: string, conte
   return data.data;
 }
 
+export async function deleteDaemonSet(namespace: string, name: string) {
+  return deleteNamespacedResource('daemonsets', namespace, name);
+}
+
 export async function getJobs(namespace?: string) {
   const { data } = await http.get<Envelope<JobItem[]>>('/jobs', {
     params: namespace ? { namespace } : undefined,
@@ -1335,6 +1368,10 @@ export async function updateJobYaml(namespace: string, name: string, content: st
     { content },
   );
   return data.data;
+}
+
+export async function deleteJob(namespace: string, name: string) {
+  return deleteNamespacedResource('jobs', namespace, name);
 }
 
 export async function getCronJobs(namespace?: string) {
@@ -1367,6 +1404,10 @@ export async function updateCronJobYaml(namespace: string, name: string, content
   return data.data;
 }
 
+export async function deleteCronJob(namespace: string, name: string) {
+  return deleteNamespacedResource('cronjobs', namespace, name);
+}
+
 export async function getServices(namespace?: string) {
   const { data } = await http.get<Envelope<ServiceItem[]>>('/services', {
     params: namespace ? { namespace } : undefined,
@@ -1387,6 +1428,10 @@ export async function updateServiceYaml(namespace: string, name: string, content
     { content },
   );
   return data.data;
+}
+
+export async function deleteService(namespace: string, name: string) {
+  return deleteNamespacedResource('services', namespace, name);
 }
 
 export async function getEndpoints(namespace?: string) {
@@ -1433,6 +1478,10 @@ export async function updateIngressYaml(namespace: string, name: string, content
   return data.data;
 }
 
+export async function deleteIngress(namespace: string, name: string) {
+  return deleteNamespacedResource('ingresses', namespace, name);
+}
+
 export async function getIngressClasses() {
   const { data } = await http.get<Envelope<IngressClassItem[]>>('/ingressclasses');
   return data.data;
@@ -1451,6 +1500,10 @@ export async function updateIngressClassYaml(name: string, content: string) {
     { content },
   );
   return data.data;
+}
+
+export async function deleteIngressClass(name: string) {
+  return deleteClusterResource('ingressclasses', name);
 }
 
 export async function getServiceAccounts(namespace?: string) {
@@ -1475,6 +1528,10 @@ export async function updateServiceAccountYaml(namespace: string, name: string, 
   return data.data;
 }
 
+export async function deleteServiceAccount(namespace: string, name: string) {
+  return deleteNamespacedResource('serviceaccounts', namespace, name);
+}
+
 export async function getRoles(namespace?: string) {
   const { data } = await http.get<Envelope<RoleItem[]>>('/roles', {
     params: namespace ? { namespace } : undefined,
@@ -1495,6 +1552,10 @@ export async function updateRoleYaml(namespace: string, name: string, content: s
     { content },
   );
   return data.data;
+}
+
+export async function deleteRole(namespace: string, name: string) {
+  return deleteNamespacedResource('roles', namespace, name);
 }
 
 export async function getRoleBindings(namespace?: string) {
@@ -1519,6 +1580,10 @@ export async function updateRoleBindingYaml(namespace: string, name: string, con
   return data.data;
 }
 
+export async function deleteRoleBinding(namespace: string, name: string) {
+  return deleteNamespacedResource('rolebindings', namespace, name);
+}
+
 export async function getConfigMaps(namespace?: string) {
   const { data } = await http.get<Envelope<ConfigMapItem[]>>('/configmaps', {
     params: namespace ? { namespace } : undefined,
@@ -1539,6 +1604,10 @@ export async function updateConfigMapYaml(namespace: string, name: string, conte
     { content },
   );
   return data.data;
+}
+
+export async function deleteConfigMap(namespace: string, name: string) {
+  return deleteNamespacedResource('configmaps', namespace, name);
 }
 
 export async function getSecrets(namespace?: string) {
@@ -1563,6 +1632,10 @@ export async function updateSecretYaml(namespace: string, name: string, content:
   return data.data;
 }
 
+export async function deleteSecret(namespace: string, name: string) {
+  return deleteNamespacedResource('secrets', namespace, name);
+}
+
 export async function getNetworkPolicies(namespace?: string) {
   const { data } = await http.get<Envelope<NetworkPolicyItem[]>>('/networkpolicies', {
     params: namespace ? { namespace } : undefined,
@@ -1583,6 +1656,10 @@ export async function updateNetworkPolicyYaml(namespace: string, name: string, c
     { content },
   );
   return data.data;
+}
+
+export async function deleteNetworkPolicy(namespace: string, name: string) {
+  return deleteNamespacedResource('networkpolicies', namespace, name);
 }
 
 export async function getHPAs(namespace?: string) {
@@ -1626,12 +1703,20 @@ export async function updateHPAYaml(namespace: string, name: string, content: st
   return data.data;
 }
 
+export async function deleteHPA(namespace: string, name: string) {
+  return deleteNamespacedResource('hpas', namespace, name);
+}
+
 export async function updateVPAYaml(namespace: string, name: string, content: string) {
   const { data } = await http.put<Envelope<WorkloadActionResult>>(
     `/vpas/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/yaml`,
     { content },
   );
   return data.data;
+}
+
+export async function deleteVPA(namespace: string, name: string) {
+  return deleteNamespacedResource('vpas', namespace, name);
 }
 
 export async function getResourceQuotas(namespace?: string) {
@@ -1660,6 +1745,10 @@ export async function updateResourceQuotaYaml(
   return data.data;
 }
 
+export async function deleteResourceQuota(namespace: string, name: string) {
+  return deleteNamespacedResource('resourcequotas', namespace, name);
+}
+
 export async function getLimitRanges(namespace?: string) {
   const { data } = await http.get<Envelope<LimitRangeItem[]>>('/limitranges', {
     params: namespace ? { namespace } : undefined,
@@ -1684,6 +1773,10 @@ export async function updateLimitRangeYaml(
     { content },
   );
   return data.data;
+}
+
+export async function deleteLimitRange(namespace: string, name: string) {
+  return deleteNamespacedResource('limitranges', namespace, name);
 }
 
 export async function getPersistentVolumeClaims(namespace?: string) {
@@ -1715,6 +1808,10 @@ export async function updatePersistentVolumeClaimYaml(
   return data.data;
 }
 
+export async function deletePersistentVolumeClaim(namespace: string, name: string) {
+  return deleteNamespacedResource('persistentvolumeclaims', namespace, name);
+}
+
 export async function getPersistentVolumes() {
   const { data } = await http.get<Envelope<PersistentVolumeItem[]>>('/persistentvolumes');
   return data.data;
@@ -1735,6 +1832,10 @@ export async function updatePersistentVolumeYaml(name: string, content: string) 
   return data.data;
 }
 
+export async function deletePersistentVolume(name: string) {
+  return deleteClusterResource('persistentvolumes', name);
+}
+
 export async function getStorageClasses() {
   const { data } = await http.get<Envelope<StorageClassItem[]>>('/storageclasses');
   return data.data;
@@ -1753,6 +1854,10 @@ export async function updateStorageClassYaml(name: string, content: string) {
     { content },
   );
   return data.data;
+}
+
+export async function deleteStorageClass(name: string) {
+  return deleteClusterResource('storageclasses', name);
 }
 
 export async function getTopologyGraph(namespace?: string, sources?: string[]) {

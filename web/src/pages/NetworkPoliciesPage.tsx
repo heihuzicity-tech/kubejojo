@@ -11,14 +11,17 @@ import {
 } from '../components/networkpolicy/networkPolicyShared';
 import { ResourceListPage, type ResourceMetric } from '../components/resource-list/ResourceListPage';
 import { ActionMenuButton } from '../components/workload/ActionMenuButton';
+import { ResourceYamlCreateButton } from '../components/workload/ResourceYamlCreateButton';
 import { ResourceYamlEditorModal } from '../components/workload/ResourceYamlEditorModal';
 import {
   type NetworkPolicyItem,
+  deleteNetworkPolicy,
   getNetworkPolicies,
   getNetworkPolicyYaml,
   updateNetworkPolicyYaml,
 } from '../services/cluster';
 import { useAppStore } from '../stores/appStore';
+import { confirmResourceDelete } from '../components/workload/deleteConfirmation';
 
 function displayNamespace(namespace: string) {
   return namespace.trim() === '' ? 'All Namespaces' : namespace;
@@ -54,6 +57,16 @@ export function NetworkPoliciesPage() {
       void message.success(result.message);
       await networkPoliciesQuery.refetch();
       await networkPolicyYamlQuery.refetch();
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: ({ namespace, name }: { namespace: string; name: string }) =>
+      deleteNetworkPolicy(namespace, name),
+    onSuccess: async (result) => {
+      void message.success(result.message);
+      setYamlEditTarget(undefined);
+      await networkPoliciesQuery.refetch();
     },
   });
 
@@ -173,11 +186,12 @@ export function NetworkPoliciesPage() {
       render: (_, item) =>
         sessionMode === 'token' ? (
           <ActionMenuButton
-            loading={updateNetworkPolicyYamlMutation.isPending}
+            loading={updateNetworkPolicyYamlMutation.isPending || deleteMutation.isPending}
             menu={{
               items: [
                 { key: 'open', label: 'Open' },
                 { key: 'edit-yaml', label: 'Edit YAML' },
+                { key: 'delete', label: <span className="text-red-600">Delete</span> },
               ],
               onClick: ({ key, domEvent }) => {
                 domEvent.stopPropagation();
@@ -187,6 +201,21 @@ export function NetworkPoliciesPage() {
                 }
                 if (key === 'edit-yaml') {
                   setYamlEditTarget(item);
+                  return;
+                }
+                if (key === 'delete') {
+                  confirmResourceDelete({
+                    resourceKind: 'NetworkPolicy',
+                    namespace: item.namespace,
+                    name: item.name,
+                    impact:
+                      'Traffic rules for matching Pods may change immediately after this NetworkPolicy is removed.',
+                    onConfirm: () =>
+                      deleteMutation.mutateAsync({
+                        namespace: item.namespace,
+                        name: item.name,
+                      }),
+                  });
                 }
               },
             }}
@@ -212,7 +241,17 @@ export function NetworkPoliciesPage() {
         rowKey={(record) => `${record.namespace}/${record.name}`}
         loading={sessionMode === 'token' && networkPoliciesQuery.isLoading}
         onRefresh={() => networkPoliciesQuery.refetch()}
-        toolbarExtra={<Tag color="blue">当前上下文: {namespaceLabel}</Tag>}
+        toolbarExtra={
+          <Space size={8} wrap>
+            <Tag color="blue">当前上下文: {namespaceLabel}</Tag>
+            <ResourceYamlCreateButton
+              resourceKind="NetworkPolicy"
+              namespace={currentNamespace}
+              enabled={sessionMode === 'token'}
+              onCreated={() => networkPoliciesQuery.refetch()}
+            />
+          </Space>
+        }
         searchPlaceholder="搜索策略、命名空间、Pod Selector、Pod 名称或标签"
         searchPredicate={(record, keyword) =>
           record.name.toLowerCase().includes(keyword) ||

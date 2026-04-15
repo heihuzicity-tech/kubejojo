@@ -11,14 +11,17 @@ import {
 } from '../components/persistentvolumeclaim/persistentVolumeClaimShared';
 import { ResourceListPage, type ResourceMetric } from '../components/resource-list/ResourceListPage';
 import { ActionMenuButton } from '../components/workload/ActionMenuButton';
+import { ResourceYamlCreateButton } from '../components/workload/ResourceYamlCreateButton';
 import { ResourceYamlEditorModal } from '../components/workload/ResourceYamlEditorModal';
 import {
   type PersistentVolumeClaimItem,
+  deletePersistentVolumeClaim,
   getPersistentVolumeClaimYaml,
   getPersistentVolumeClaims,
   updatePersistentVolumeClaimYaml,
 } from '../services/cluster';
 import { useAppStore } from '../stores/appStore';
+import { confirmResourceDelete } from '../components/workload/deleteConfirmation';
 
 function displayNamespace(namespace: string) {
   return namespace.trim() === '' ? 'All Namespaces' : namespace;
@@ -50,6 +53,16 @@ export function PersistentVolumeClaimsPage() {
       void message.success(result.message);
       await claimsQuery.refetch();
       await claimYamlQuery.refetch();
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: ({ namespace, name }: { namespace: string; name: string }) =>
+      deletePersistentVolumeClaim(namespace, name),
+    onSuccess: async (result) => {
+      void message.success(result.message);
+      setYamlEditTarget(undefined);
+      await claimsQuery.refetch();
     },
   });
 
@@ -161,11 +174,12 @@ export function PersistentVolumeClaimsPage() {
       render: (_, item) =>
         sessionMode === 'token' ? (
           <ActionMenuButton
-            loading={updateClaimYamlMutation.isPending}
+            loading={updateClaimYamlMutation.isPending || deleteMutation.isPending}
             menu={{
               items: [
                 { key: 'open', label: 'Open' },
                 { key: 'edit-yaml', label: 'Edit YAML' },
+                { key: 'delete', label: <span className="text-red-600">Delete</span> },
               ],
               onClick: ({ key, domEvent }) => {
                 domEvent.stopPropagation();
@@ -175,6 +189,21 @@ export function PersistentVolumeClaimsPage() {
                 }
                 if (key === 'edit-yaml') {
                   setYamlEditTarget(item);
+                  return;
+                }
+                if (key === 'delete') {
+                  confirmResourceDelete({
+                    resourceKind: 'PersistentVolumeClaim',
+                    namespace: item.namespace,
+                    name: item.name,
+                    impact:
+                      'This removes the claim. Underlying volume cleanup depends on the bound volume and storage class reclaim policy.',
+                    onConfirm: () =>
+                      deleteMutation.mutateAsync({
+                        namespace: item.namespace,
+                        name: item.name,
+                      }),
+                  });
                 }
               },
             }}
@@ -200,7 +229,17 @@ export function PersistentVolumeClaimsPage() {
         rowKey={(record) => `${record.namespace}/${record.name}`}
         loading={sessionMode === 'token' && claimsQuery.isLoading}
         onRefresh={() => claimsQuery.refetch()}
-        toolbarExtra={<Tag color="blue">当前上下文: {namespaceLabel}</Tag>}
+        toolbarExtra={
+          <Space size={8} wrap>
+            <Tag color="blue">当前上下文: {namespaceLabel}</Tag>
+            <ResourceYamlCreateButton
+              resourceKind="PersistentVolumeClaim"
+              namespace={currentNamespace}
+              enabled={sessionMode === 'token'}
+              onCreated={() => claimsQuery.refetch()}
+            />
+          </Space>
+        }
         searchPlaceholder="搜索 PVC、StorageClass、Volume、访问模式或标签"
         searchPredicate={(record, keyword) =>
           record.name.toLowerCase().includes(keyword) ||

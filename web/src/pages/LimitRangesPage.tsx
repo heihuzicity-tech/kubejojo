@@ -8,14 +8,17 @@ import { useNavigate } from 'react-router-dom';
 import { buildLimitRangeRoute, limitRangeStatusColor } from '../components/limitrange/limitRangeShared';
 import { ResourceListPage, type ResourceMetric } from '../components/resource-list/ResourceListPage';
 import { ActionMenuButton } from '../components/workload/ActionMenuButton';
+import { ResourceYamlCreateButton } from '../components/workload/ResourceYamlCreateButton';
 import { ResourceYamlEditorModal } from '../components/workload/ResourceYamlEditorModal';
 import {
+  deleteLimitRange,
   getLimitRangeYaml,
   getLimitRanges,
   updateLimitRangeYaml,
   type ResourceTextResult,
 } from '../services/cluster';
 import { useAppStore } from '../stores/appStore';
+import { confirmResourceDelete } from '../components/workload/deleteConfirmation';
 
 type LimitRangeEntryItem = {
   type: string;
@@ -83,6 +86,16 @@ export function LimitRangesPage() {
       void message.success(result.message);
       await limitRangesQuery.refetch();
       await limitRangeYamlQuery.refetch();
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: ({ namespace, name }: { namespace: string; name: string }) =>
+      deleteLimitRange(namespace, name),
+    onSuccess: async (result) => {
+      void message.success(result.message);
+      setYamlEditTarget(undefined);
+      await limitRangesQuery.refetch();
     },
   });
 
@@ -188,11 +201,12 @@ export function LimitRangesPage() {
       render: (_, item) =>
         sessionMode === 'token' ? (
           <ActionMenuButton
-            loading={updateLimitRangeYamlMutation.isPending}
+            loading={updateLimitRangeYamlMutation.isPending || deleteMutation.isPending}
             menu={{
               items: [
                 { key: 'open', label: 'Open' },
                 { key: 'edit-yaml', label: 'Edit YAML' },
+                { key: 'delete', label: <span className="text-red-600">Delete</span> },
               ],
               onClick: ({ key, domEvent }) => {
                 domEvent.stopPropagation();
@@ -202,6 +216,21 @@ export function LimitRangesPage() {
                 }
                 if (key === 'edit-yaml') {
                   setYamlEditTarget(item);
+                  return;
+                }
+                if (key === 'delete') {
+                  confirmResourceDelete({
+                    resourceKind: 'LimitRange',
+                    namespace: item.namespace,
+                    name: item.name,
+                    impact:
+                      'Default resource request and limit enforcement for this namespace will be removed.',
+                    onConfirm: () =>
+                      deleteMutation.mutateAsync({
+                        namespace: item.namespace,
+                        name: item.name,
+                      }),
+                  });
                 }
               },
             }}
@@ -227,7 +256,17 @@ export function LimitRangesPage() {
         rowKey={(record) => `${record.namespace}/${record.name}`}
         loading={sessionMode === 'token' && limitRangesQuery.isLoading}
         onRefresh={() => limitRangesQuery.refetch()}
-        toolbarExtra={<Tag color="blue">当前上下文: {namespaceLabel}</Tag>}
+        toolbarExtra={
+          <Space size={8} wrap>
+            <Tag color="blue">当前上下文: {namespaceLabel}</Tag>
+            <ResourceYamlCreateButton
+              resourceKind="LimitRange"
+              namespace={currentNamespace}
+              enabled={sessionMode === 'token'}
+              onCreated={() => limitRangesQuery.refetch()}
+            />
+          </Space>
+        }
         searchPlaceholder="搜索 LimitRange、命名空间、类型、默认值、边界规则或标签"
         searchPredicate={(record, keyword) =>
           record.name.toLowerCase().includes(keyword) ||

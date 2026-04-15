@@ -11,14 +11,17 @@ import {
   roleBindingStatusColor,
 } from '../components/rolebinding/roleBindingShared';
 import { ActionMenuButton } from '../components/workload/ActionMenuButton';
+import { ResourceYamlCreateButton } from '../components/workload/ResourceYamlCreateButton';
 import { ResourceYamlEditorModal } from '../components/workload/ResourceYamlEditorModal';
 import {
   type RoleBindingItem,
+  deleteRoleBinding,
   getRoleBindingYaml,
   getRoleBindings,
   updateRoleBindingYaml,
 } from '../services/cluster';
 import { useAppStore } from '../stores/appStore';
+import { confirmResourceDelete } from '../components/workload/deleteConfirmation';
 
 function displayNamespace(namespace: string) {
   return namespace.trim() === '' ? 'All Namespaces' : namespace;
@@ -59,6 +62,16 @@ export function RoleBindingsPage() {
       void message.success(result.message);
       await bindingsQuery.refetch();
       await bindingYamlQuery.refetch();
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: ({ namespace, name }: { namespace: string; name: string }) =>
+      deleteRoleBinding(namespace, name),
+    onSuccess: async (result) => {
+      void message.success(result.message);
+      setYamlEditTarget(undefined);
+      await bindingsQuery.refetch();
     },
   });
 
@@ -139,11 +152,12 @@ export function RoleBindingsPage() {
       render: (_, item) =>
         sessionMode === 'token' ? (
           <ActionMenuButton
-            loading={updateBindingYamlMutation.isPending}
+            loading={updateBindingYamlMutation.isPending || deleteMutation.isPending}
             menu={{
               items: [
                 { key: 'open', label: 'Open' },
                 { key: 'edit-yaml', label: 'Edit YAML' },
+                { key: 'delete', label: <span className="text-red-600">Delete</span> },
               ],
               onClick: ({ key, domEvent }) => {
                 domEvent.stopPropagation();
@@ -153,6 +167,21 @@ export function RoleBindingsPage() {
                 }
                 if (key === 'edit-yaml') {
                   setYamlEditTarget(item);
+                  return;
+                }
+                if (key === 'delete') {
+                  confirmResourceDelete({
+                    resourceKind: 'RoleBinding',
+                    namespace: item.namespace,
+                    name: item.name,
+                    impact:
+                      'Subjects bound by this RoleBinding will lose the referenced permissions immediately.',
+                    onConfirm: () =>
+                      deleteMutation.mutateAsync({
+                        namespace: item.namespace,
+                        name: item.name,
+                      }),
+                  });
                 }
               },
             }}
@@ -178,7 +207,17 @@ export function RoleBindingsPage() {
         rowKey={(record) => `${record.namespace}/${record.name}`}
         loading={sessionMode === 'token' && bindingsQuery.isLoading}
         onRefresh={() => bindingsQuery.refetch()}
-        toolbarExtra={<Tag color="blue">当前上下文: {namespaceLabel}</Tag>}
+        toolbarExtra={
+          <Space size={8} wrap>
+            <Tag color="blue">当前上下文: {namespaceLabel}</Tag>
+            <ResourceYamlCreateButton
+              resourceKind="RoleBinding"
+              namespace={currentNamespace}
+              enabled={sessionMode === 'token'}
+              onCreated={() => bindingsQuery.refetch()}
+            />
+          </Space>
+        }
         searchPlaceholder="搜索绑定、命名空间、RoleRef、subjects 或标签"
         searchPredicate={(record, keyword) =>
           record.name.toLowerCase().includes(keyword) ||

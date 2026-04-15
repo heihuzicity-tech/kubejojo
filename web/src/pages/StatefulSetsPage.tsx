@@ -14,10 +14,12 @@ import {
   statefulSetStatusColor,
 } from '../components/statefulset/statefulSetShared';
 import { ActionMenuButton } from '../components/workload/ActionMenuButton';
+import { ResourceYamlCreateButton } from '../components/workload/ResourceYamlCreateButton';
 import { ResourceYamlEditorModal } from '../components/workload/ResourceYamlEditorModal';
 import { ResourceListPage, type ResourceMetric } from '../components/resource-list/ResourceListPage';
 import {
   type StatefulSetItem,
+  deleteStatefulSet,
   getStatefulSetYaml,
   getStatefulSets,
   restartStatefulSet,
@@ -25,6 +27,7 @@ import {
   updateStatefulSetYaml,
 } from '../services/cluster';
 import { useAppStore } from '../stores/appStore';
+import { confirmResourceDelete } from '../components/workload/deleteConfirmation';
 
 export function StatefulSetsPage() {
   const { message, modal } = App.useApp();
@@ -77,6 +80,17 @@ export function StatefulSetsPage() {
     },
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: ({ namespace, name }: { namespace: string; name: string }) =>
+      deleteStatefulSet(namespace, name),
+    onSuccess: async (result) => {
+      void message.success(result.message);
+      setScaleTarget(undefined);
+      setYamlEditTarget(undefined);
+      await refreshStatefulSets();
+    },
+  });
+
   const statefulSetYamlQuery = useQuery({
     queryKey: ['statefulset-yaml', yamlEditTarget?.namespace, yamlEditTarget?.name],
     queryFn: () => getStatefulSetYaml(yamlEditTarget!.namespace, yamlEditTarget!.name),
@@ -118,6 +132,21 @@ export function StatefulSetsPage() {
       cancelText: '取消',
       onOk: async () =>
         restartMutation.mutateAsync({
+          namespace: item.namespace,
+          name: item.name,
+        }),
+    });
+  };
+
+  const openDeleteConfirm = (item: StatefulSetItem) => {
+    confirmResourceDelete({
+      resourceKind: 'StatefulSet',
+      namespace: item.namespace,
+      name: item.name,
+      impact:
+        'This removes the StatefulSet and terminates its managed Pods. PersistentVolumeClaims may remain and need separate cleanup.',
+      onConfirm: () =>
+        deleteMutation.mutateAsync({
           namespace: item.namespace,
           name: item.name,
         }),
@@ -225,13 +254,14 @@ export function StatefulSetsPage() {
       render: (_, item) =>
         allowOperations ? (
           <ActionMenuButton
-            loading={restartMutation.isPending}
+            loading={restartMutation.isPending || deleteMutation.isPending}
             menu={{
               items: [
                 { key: 'open', label: 'Open' },
                 { key: 'scale', label: 'Scale' },
                 { key: 'edit-yaml', label: 'Edit YAML' },
                 { key: 'restart', label: <span className="text-amber-700">Restart</span> },
+                { key: 'delete', label: <span className="text-red-600">Delete</span> },
               ],
               onClick: ({ key, domEvent }) => {
                 domEvent.stopPropagation();
@@ -249,6 +279,10 @@ export function StatefulSetsPage() {
                 }
                 if (key === 'restart') {
                   openRestartConfirm(item);
+                  return;
+                }
+                if (key === 'delete') {
+                  openDeleteConfirm(item);
                 }
               },
             }}
@@ -278,7 +312,18 @@ export function StatefulSetsPage() {
         rowKey={(record) => `${record.namespace}/${record.name}`}
         loading={sessionMode === 'token' && statefulSetsQuery.isLoading}
         onRefresh={refreshStatefulSets}
-        toolbarExtra={<Tag color="blue">当前上下文: {namespaceLabel}</Tag>}
+        toolbarExtra={
+          <Space size={8} wrap>
+            <Tag color="blue">当前上下文: {namespaceLabel}</Tag>
+            <ResourceYamlCreateButton
+              resourceKind="StatefulSet"
+              namespace={currentNamespace}
+              enabled={allowOperations}
+              disabledReason={useDemoData ? 'Live cluster access is unavailable.' : undefined}
+              onCreated={refreshStatefulSets}
+            />
+          </Space>
+        }
         searchPlaceholder="搜索 StatefulSet、服务名、镜像、selector 或标签"
         searchPredicate={(record, keyword) =>
           record.name.toLowerCase().includes(keyword) ||

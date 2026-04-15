@@ -8,6 +8,7 @@ import { useNavigate } from 'react-router-dom';
 import { ResourceListPage, type ResourceMetric } from '../components/resource-list/ResourceListPage';
 import { ResourceYamlEditorModal } from '../components/workload/ResourceYamlEditorModal';
 import { ActionMenuButton } from '../components/workload/ActionMenuButton';
+import { ResourceYamlCreateButton } from '../components/workload/ResourceYamlCreateButton';
 import {
   buildVPARoute,
   extractMutationMessage,
@@ -16,12 +17,14 @@ import {
   readVPAReadiness,
   readVPAYaml,
   recommendationPreview,
+  removeVPA,
   saveVPAYaml,
   targetSummary,
   vpaStatusColor,
   type VPAItem,
 } from '../components/vpa/vpaShared';
 import { useAppStore } from '../stores/appStore';
+import { confirmResourceDelete } from '../components/workload/deleteConfirmation';
 
 function displayNamespace(namespace: string) {
   return namespace.trim() === '' ? 'All Namespaces' : namespace;
@@ -59,6 +62,15 @@ export function VPAsPage() {
       void message.success(extractMutationMessage(result, 'VPA YAML updated'));
       await vpasQuery.refetch();
       await vpaYamlQuery.refetch();
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: ({ namespace, name }: { namespace: string; name: string }) => removeVPA(namespace, name),
+    onSuccess: async (result) => {
+      void message.success(extractMutationMessage(result, 'VPA deleted'));
+      setYamlEditTarget(undefined);
+      await vpasQuery.refetch();
     },
   });
 
@@ -191,11 +203,12 @@ export function VPAsPage() {
       render: (_, item) =>
         sessionMode === 'token' ? (
           <ActionMenuButton
-            loading={updateVPAYamlMutation.isPending}
+            loading={updateVPAYamlMutation.isPending || deleteMutation.isPending}
             menu={{
               items: [
                 { key: 'open', label: 'Open' },
                 { key: 'edit-yaml', label: 'Edit YAML' },
+                { key: 'delete', label: <span className="text-red-600">Delete</span> },
               ],
               onClick: ({ key, domEvent }) => {
                 domEvent.stopPropagation();
@@ -205,6 +218,21 @@ export function VPAsPage() {
                 }
                 if (key === 'edit-yaml') {
                   setYamlEditTarget(item);
+                  return;
+                }
+                if (key === 'delete') {
+                  confirmResourceDelete({
+                    resourceKind: 'VerticalPodAutoscaler',
+                    namespace: item.namespace,
+                    name: item.name,
+                    impact:
+                      'Vertical recommendations and automatic update behavior for the target workload will stop after this VPA is removed.',
+                    onConfirm: () =>
+                      deleteMutation.mutateAsync({
+                        namespace: item.namespace,
+                        name: item.name,
+                      }),
+                  });
                 }
               },
             }}
@@ -251,6 +279,12 @@ export function VPAsPage() {
                 Readiness {readinessQuery.data.status}
               </Tag>
             ) : null}
+            <ResourceYamlCreateButton
+              resourceKind="VerticalPodAutoscaler"
+              namespace={currentNamespace}
+              enabled={sessionMode === 'token'}
+              onCreated={() => vpasQuery.refetch()}
+            />
           </Space>
         }
         searchPlaceholder="搜索 VPA、命名空间、目标工作负载、update mode、容器策略或建议"

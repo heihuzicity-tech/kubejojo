@@ -248,6 +248,13 @@ export async function saveHPAYaml(namespace: string, name: string, content: stri
   return fn(namespace, name, content);
 }
 
+export async function removeHPA(namespace: string, name: string) {
+  const fn = resolveClusterFn<
+    (namespace: string, name: string) => Promise<{ message?: string }>
+  >('deleteHPA');
+  return fn(namespace, name);
+}
+
 export function extractMutationMessage(result: unknown, fallback: string) {
   const record = asRecord(result);
   return readString(record, ['message'], fallback);

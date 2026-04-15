@@ -12,7 +12,9 @@ import {
 import { ResourceListPage, type ResourceMetric } from '../components/resource-list/ResourceListPage';
 import { ActionMenuButton } from '../components/workload/ActionMenuButton';
 import { ResourceYamlEditorModal } from '../components/workload/ResourceYamlEditorModal';
+import { confirmResourceDelete } from '../components/workload/deleteConfirmation';
 import {
+  deletePersistentVolume,
   type PersistentVolumeItem,
   getPersistentVolumeYaml,
   getPersistentVolumes,
@@ -45,6 +47,15 @@ export function PersistentVolumesPage() {
       void message.success(result.message);
       await volumesQuery.refetch();
       await volumeYamlQuery.refetch();
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (name: string) => deletePersistentVolume(name),
+    onSuccess: async (result) => {
+      void message.success(result.message);
+      setYamlEditTarget(undefined);
+      await volumesQuery.refetch();
     },
   });
 
@@ -150,11 +161,12 @@ export function PersistentVolumesPage() {
       render: (_, item) =>
         sessionMode === 'token' ? (
           <ActionMenuButton
-            loading={updateVolumeYamlMutation.isPending}
+            loading={updateVolumeYamlMutation.isPending || deleteMutation.isPending}
             menu={{
               items: [
                 { key: 'open', label: 'Open' },
                 { key: 'edit-yaml', label: 'Edit YAML' },
+                { key: 'delete', label: <span className="text-red-600">Delete</span> },
               ],
               onClick: ({ key, domEvent }) => {
                 domEvent.stopPropagation();
@@ -164,6 +176,16 @@ export function PersistentVolumesPage() {
                 }
                 if (key === 'edit-yaml') {
                   setYamlEditTarget(item);
+                  return;
+                }
+                if (key === 'delete') {
+                  confirmResourceDelete({
+                    resourceKind: 'PersistentVolume',
+                    name: item.name,
+                    impact:
+                      'Deleting a PersistentVolume can break bound claims or trigger reclaim policy behavior on the underlying storage.',
+                    onConfirm: () => deleteMutation.mutateAsync(item.name),
+                  });
                 }
               },
             }}

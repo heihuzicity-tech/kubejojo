@@ -1216,6 +1216,78 @@ func (s *ClusterService) DeletePod(
 	}, nil
 }
 
+func (s *ClusterService) DeleteResource(
+	ctx context.Context,
+	resourceName string,
+	kind string,
+	namespace string,
+	name string,
+) (WorkloadActionResult, error) {
+	namespace = strings.TrimSpace(namespace)
+	name = strings.TrimSpace(name)
+
+	if namespace == "" {
+		return WorkloadActionResult{}, newValidationError("%s namespace is required", strings.ToLower(kind))
+	}
+	if name == "" {
+		return WorkloadActionResult{}, newValidationError("%s name is required", strings.ToLower(kind))
+	}
+
+	if _, err := s.runKubectlCommand(
+		ctx,
+		nil,
+		"delete",
+		resourceName,
+		"-n",
+		namespace,
+		name,
+		"--wait=false",
+	); err != nil {
+		return WorkloadActionResult{}, fmt.Errorf("delete %s %s/%s: %w", strings.ToLower(kind), namespace, name, err)
+	}
+
+	return WorkloadActionResult{
+		Kind:      kind,
+		Namespace: namespace,
+		Name:      name,
+		Operation: "delete",
+		Message:   fmt.Sprintf("%s 删除请求已提交", kind),
+		Timestamp: time.Now().Format("2006-01-02 15:04:05"),
+	}, nil
+}
+
+func (s *ClusterService) DeleteClusterResource(
+	ctx context.Context,
+	resourceName string,
+	kind string,
+	name string,
+) (WorkloadActionResult, error) {
+	name = strings.TrimSpace(name)
+
+	if name == "" {
+		return WorkloadActionResult{}, newValidationError("%s name is required", strings.ToLower(kind))
+	}
+
+	if _, err := s.runKubectlCommand(
+		ctx,
+		nil,
+		"delete",
+		resourceName,
+		name,
+		"--wait=false",
+	); err != nil {
+		return WorkloadActionResult{}, fmt.Errorf("delete %s %s: %w", strings.ToLower(kind), name, err)
+	}
+
+	return WorkloadActionResult{
+		Kind:      kind,
+		Name:      name,
+		Operation: "delete",
+		Message:   fmt.Sprintf("%s 删除请求已提交", kind),
+		Timestamp: time.Now().Format("2006-01-02 15:04:05"),
+	}, nil
+}
+
 func (s *ClusterService) ListPodEvents(
 	ctx context.Context,
 	namespace string,
@@ -1393,6 +1465,14 @@ func (s *ClusterService) UpdateDeploymentYAML(
 	return s.ApplyResourceYAML(ctx, "deployment", "Deployment", namespace, name, content)
 }
 
+func (s *ClusterService) DeleteDeployment(
+	ctx context.Context,
+	namespace string,
+	name string,
+) (WorkloadActionResult, error) {
+	return s.DeleteResource(ctx, "deployment", "Deployment", namespace, name)
+}
+
 func (s *ClusterService) GetStatefulSetYAML(
 	ctx context.Context,
 	namespace string,
@@ -1408,6 +1488,14 @@ func (s *ClusterService) UpdateStatefulSetYAML(
 	content string,
 ) (WorkloadActionResult, error) {
 	return s.ApplyResourceYAML(ctx, "statefulset", "StatefulSet", namespace, name, content)
+}
+
+func (s *ClusterService) DeleteStatefulSet(
+	ctx context.Context,
+	namespace string,
+	name string,
+) (WorkloadActionResult, error) {
+	return s.DeleteResource(ctx, "statefulset", "StatefulSet", namespace, name)
 }
 
 func (s *ClusterService) GetReplicaSetYAML(
@@ -1444,6 +1532,14 @@ func (s *ClusterService) UpdateDaemonSetYAML(
 	return s.ApplyResourceYAML(ctx, "daemonset", "DaemonSet", namespace, name, content)
 }
 
+func (s *ClusterService) DeleteDaemonSet(
+	ctx context.Context,
+	namespace string,
+	name string,
+) (WorkloadActionResult, error) {
+	return s.DeleteResource(ctx, "daemonset", "DaemonSet", namespace, name)
+}
+
 func (s *ClusterService) GetJobYAML(
 	ctx context.Context,
 	namespace string,
@@ -1461,6 +1557,14 @@ func (s *ClusterService) UpdateJobYAML(
 	return s.ApplyResourceYAML(ctx, "job", "Job", namespace, name, content)
 }
 
+func (s *ClusterService) DeleteJob(
+	ctx context.Context,
+	namespace string,
+	name string,
+) (WorkloadActionResult, error) {
+	return s.DeleteResource(ctx, "job", "Job", namespace, name)
+}
+
 func (s *ClusterService) GetCronJobYAML(
 	ctx context.Context,
 	namespace string,
@@ -1476,6 +1580,14 @@ func (s *ClusterService) UpdateCronJobYAML(
 	content string,
 ) (WorkloadActionResult, error) {
 	return s.ApplyResourceYAML(ctx, "cronjob", "CronJob", namespace, name, content)
+}
+
+func (s *ClusterService) DeleteCronJob(
+	ctx context.Context,
+	namespace string,
+	name string,
+) (WorkloadActionResult, error) {
+	return s.DeleteResource(ctx, "cronjob", "CronJob", namespace, name)
 }
 
 func (s *ClusterService) BuildPodExecCommand(
@@ -1719,6 +1831,68 @@ func (s *ClusterService) ApplyClusterResourceYAML(
 		Name:      name,
 		Operation: "apply",
 		Message:   fmt.Sprintf("%s YAML 已更新", kind),
+		Timestamp: time.Now().Format("2006-01-02 15:04:05"),
+	}, nil
+}
+
+func (s *ClusterService) CreateManifestYAML(
+	ctx context.Context,
+	content string,
+) (WorkloadActionResult, error) {
+	content = strings.TrimSpace(content)
+
+	if content == "" {
+		return WorkloadActionResult{}, newValidationError("yaml content is required")
+	}
+	if strings.Contains(content, "\n---") || strings.HasPrefix(content, "---\n") {
+		return WorkloadActionResult{}, newValidationError("only a single manifest can be created at a time")
+	}
+
+	var manifest resourceManifestIdentity
+	if err := yaml.Unmarshal([]byte(content), &manifest); err != nil {
+		return WorkloadActionResult{}, newValidationError("parse manifest yaml: %v", err)
+	}
+
+	kind := strings.TrimSpace(manifest.Kind)
+	apiVersion := strings.TrimSpace(manifest.APIVersion)
+	name := strings.TrimSpace(manifest.Metadata.Name)
+	namespace := strings.TrimSpace(manifest.Metadata.Namespace)
+
+	if apiVersion == "" {
+		return WorkloadActionResult{}, newValidationError("yaml apiVersion is required")
+	}
+	if kind == "" {
+		return WorkloadActionResult{}, newValidationError("yaml kind is required")
+	}
+	if name == "" {
+		return WorkloadActionResult{}, newValidationError("yaml metadata.name is required")
+	}
+
+	if _, err := s.runKubectlCommand(ctx, bytes.NewBufferString(content), "create", "-f", "-"); err != nil {
+		if namespace != "" {
+			return WorkloadActionResult{}, fmt.Errorf(
+				"create %s %s/%s from yaml: %w",
+				strings.ToLower(kind),
+				namespace,
+				name,
+				err,
+			)
+		}
+
+		return WorkloadActionResult{}, fmt.Errorf(
+			"create %s %s from yaml: %w",
+			strings.ToLower(kind),
+			name,
+			err,
+		)
+	}
+
+	return WorkloadActionResult{
+		Kind:      kind,
+		Namespace: namespace,
+		Name:      name,
+		Operation: "create",
+		Message:   fmt.Sprintf("%s 已创建", kind),
 		Timestamp: time.Now().Format("2006-01-02 15:04:05"),
 	}, nil
 }
@@ -3762,6 +3936,14 @@ func (s *ClusterService) UpdateServiceYAML(
 	return s.ApplyResourceYAML(ctx, "service", "Service", namespace, name, content)
 }
 
+func (s *ClusterService) DeleteService(
+	ctx context.Context,
+	namespace string,
+	name string,
+) (WorkloadActionResult, error) {
+	return s.DeleteResource(ctx, "service", "Service", namespace, name)
+}
+
 func (s *ClusterService) GetIngressYAML(
 	ctx context.Context,
 	namespace string,
@@ -3779,6 +3961,14 @@ func (s *ClusterService) UpdateIngressYAML(
 	return s.ApplyResourceYAML(ctx, "ingress", "Ingress", namespace, name, content)
 }
 
+func (s *ClusterService) DeleteIngress(
+	ctx context.Context,
+	namespace string,
+	name string,
+) (WorkloadActionResult, error) {
+	return s.DeleteResource(ctx, "ingress", "Ingress", namespace, name)
+}
+
 func (s *ClusterService) GetIngressClassYAML(
 	ctx context.Context,
 	name string,
@@ -3792,6 +3982,13 @@ func (s *ClusterService) UpdateIngressClassYAML(
 	content string,
 ) (WorkloadActionResult, error) {
 	return s.ApplyClusterResourceYAML(ctx, "ingressclass", "IngressClass", name, content)
+}
+
+func (s *ClusterService) DeleteIngressClass(
+	ctx context.Context,
+	name string,
+) (WorkloadActionResult, error) {
+	return s.DeleteClusterResource(ctx, "ingressclass", "IngressClass", name)
 }
 
 func (s *ClusterService) GetServiceAccountYAML(
@@ -3811,6 +4008,14 @@ func (s *ClusterService) UpdateServiceAccountYAML(
 	return s.ApplyResourceYAML(ctx, "serviceaccount", "ServiceAccount", namespace, name, content)
 }
 
+func (s *ClusterService) DeleteServiceAccount(
+	ctx context.Context,
+	namespace string,
+	name string,
+) (WorkloadActionResult, error) {
+	return s.DeleteResource(ctx, "serviceaccount", "ServiceAccount", namespace, name)
+}
+
 func (s *ClusterService) GetRoleYAML(
 	ctx context.Context,
 	namespace string,
@@ -3826,6 +4031,14 @@ func (s *ClusterService) UpdateRoleYAML(
 	content string,
 ) (WorkloadActionResult, error) {
 	return s.ApplyResourceYAML(ctx, "role", "Role", namespace, name, content)
+}
+
+func (s *ClusterService) DeleteRole(
+	ctx context.Context,
+	namespace string,
+	name string,
+) (WorkloadActionResult, error) {
+	return s.DeleteResource(ctx, "role", "Role", namespace, name)
 }
 
 func (s *ClusterService) GetRoleBindingYAML(
@@ -3845,6 +4058,14 @@ func (s *ClusterService) UpdateRoleBindingYAML(
 	return s.ApplyResourceYAML(ctx, "rolebinding", "RoleBinding", namespace, name, content)
 }
 
+func (s *ClusterService) DeleteRoleBinding(
+	ctx context.Context,
+	namespace string,
+	name string,
+) (WorkloadActionResult, error) {
+	return s.DeleteResource(ctx, "rolebinding", "RoleBinding", namespace, name)
+}
+
 func (s *ClusterService) GetConfigMapYAML(
 	ctx context.Context,
 	namespace string,
@@ -3860,6 +4081,14 @@ func (s *ClusterService) UpdateConfigMapYAML(
 	content string,
 ) (WorkloadActionResult, error) {
 	return s.ApplyResourceYAML(ctx, "configmap", "ConfigMap", namespace, name, content)
+}
+
+func (s *ClusterService) DeleteConfigMap(
+	ctx context.Context,
+	namespace string,
+	name string,
+) (WorkloadActionResult, error) {
+	return s.DeleteResource(ctx, "configmap", "ConfigMap", namespace, name)
 }
 
 func (s *ClusterService) GetSecretYAML(
@@ -3879,6 +4108,14 @@ func (s *ClusterService) UpdateSecretYAML(
 	return s.ApplyResourceYAML(ctx, "secret", "Secret", namespace, name, content)
 }
 
+func (s *ClusterService) DeleteSecret(
+	ctx context.Context,
+	namespace string,
+	name string,
+) (WorkloadActionResult, error) {
+	return s.DeleteResource(ctx, "secret", "Secret", namespace, name)
+}
+
 func (s *ClusterService) GetNetworkPolicyYAML(
 	ctx context.Context,
 	namespace string,
@@ -3896,6 +4133,14 @@ func (s *ClusterService) UpdateNetworkPolicyYAML(
 	return s.ApplyResourceYAML(ctx, "networkpolicy", "NetworkPolicy", namespace, name, content)
 }
 
+func (s *ClusterService) DeleteNetworkPolicy(
+	ctx context.Context,
+	namespace string,
+	name string,
+) (WorkloadActionResult, error) {
+	return s.DeleteResource(ctx, "networkpolicy", "NetworkPolicy", namespace, name)
+}
+
 func (s *ClusterService) GetHPAYAML(
 	ctx context.Context,
 	namespace string,
@@ -3911,6 +4156,14 @@ func (s *ClusterService) UpdateHPAYAML(
 	content string,
 ) (WorkloadActionResult, error) {
 	return s.ApplyResourceYAML(ctx, "hpa", "HorizontalPodAutoscaler", namespace, name, content)
+}
+
+func (s *ClusterService) DeleteHPA(
+	ctx context.Context,
+	namespace string,
+	name string,
+) (WorkloadActionResult, error) {
+	return s.DeleteResource(ctx, "hpa", "HorizontalPodAutoscaler", namespace, name)
 }
 
 func (s *ClusterService) GetVPAYAML(
@@ -3943,6 +4196,20 @@ func (s *ClusterService) UpdateVPAYAML(
 	)
 }
 
+func (s *ClusterService) DeleteVPA(
+	ctx context.Context,
+	namespace string,
+	name string,
+) (WorkloadActionResult, error) {
+	return s.DeleteResource(
+		ctx,
+		"verticalpodautoscalers.autoscaling.k8s.io",
+		"VerticalPodAutoscaler",
+		namespace,
+		name,
+	)
+}
+
 func (s *ClusterService) GetResourceQuotaYAML(
 	ctx context.Context,
 	namespace string,
@@ -3960,6 +4227,14 @@ func (s *ClusterService) UpdateResourceQuotaYAML(
 	return s.ApplyResourceYAML(ctx, "resourcequota", "ResourceQuota", namespace, name, content)
 }
 
+func (s *ClusterService) DeleteResourceQuota(
+	ctx context.Context,
+	namespace string,
+	name string,
+) (WorkloadActionResult, error) {
+	return s.DeleteResource(ctx, "resourcequota", "ResourceQuota", namespace, name)
+}
+
 func (s *ClusterService) GetLimitRangeYAML(
 	ctx context.Context,
 	namespace string,
@@ -3975,6 +4250,14 @@ func (s *ClusterService) UpdateLimitRangeYAML(
 	content string,
 ) (WorkloadActionResult, error) {
 	return s.ApplyResourceYAML(ctx, "limitrange", "LimitRange", namespace, name, content)
+}
+
+func (s *ClusterService) DeleteLimitRange(
+	ctx context.Context,
+	namespace string,
+	name string,
+) (WorkloadActionResult, error) {
+	return s.DeleteResource(ctx, "limitrange", "LimitRange", namespace, name)
 }
 
 func (s *ClusterService) GetPersistentVolumeClaimYAML(
@@ -3998,6 +4281,20 @@ func (s *ClusterService) UpdatePersistentVolumeClaimYAML(
 		namespace,
 		name,
 		content,
+	)
+}
+
+func (s *ClusterService) DeletePersistentVolumeClaim(
+	ctx context.Context,
+	namespace string,
+	name string,
+) (WorkloadActionResult, error) {
+	return s.DeleteResource(
+		ctx,
+		"persistentvolumeclaim",
+		"PersistentVolumeClaim",
+		namespace,
+		name,
 	)
 }
 
@@ -4168,6 +4465,13 @@ func (s *ClusterService) UpdatePersistentVolumeYAML(
 	return s.ApplyClusterResourceYAML(ctx, "persistentvolume", "PersistentVolume", name, content)
 }
 
+func (s *ClusterService) DeletePersistentVolume(
+	ctx context.Context,
+	name string,
+) (WorkloadActionResult, error) {
+	return s.DeleteClusterResource(ctx, "persistentvolume", "PersistentVolume", name)
+}
+
 func (s *ClusterService) GetStorageClassYAML(
 	ctx context.Context,
 	name string,
@@ -4181,6 +4485,13 @@ func (s *ClusterService) UpdateStorageClassYAML(
 	content string,
 ) (WorkloadActionResult, error) {
 	return s.ApplyClusterResourceYAML(ctx, "storageclass", "StorageClass", name, content)
+}
+
+func (s *ClusterService) DeleteStorageClass(
+	ctx context.Context,
+	name string,
+) (WorkloadActionResult, error) {
+	return s.DeleteClusterResource(ctx, "storageclass", "StorageClass", name)
 }
 
 func (s *ClusterService) ScaleReplicaSet(

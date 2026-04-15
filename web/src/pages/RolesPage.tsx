@@ -8,14 +8,17 @@ import { useNavigate } from 'react-router-dom';
 import { ResourceListPage, type ResourceMetric } from '../components/resource-list/ResourceListPage';
 import { buildRoleRoute, roleStatusColor } from '../components/role/roleShared';
 import { ActionMenuButton } from '../components/workload/ActionMenuButton';
+import { ResourceYamlCreateButton } from '../components/workload/ResourceYamlCreateButton';
 import { ResourceYamlEditorModal } from '../components/workload/ResourceYamlEditorModal';
 import {
   type RoleItem,
+  deleteRole,
   getRoleYaml,
   getRoles,
   updateRoleYaml,
 } from '../services/cluster';
 import { useAppStore } from '../stores/appStore';
+import { confirmResourceDelete } from '../components/workload/deleteConfirmation';
 
 function displayNamespace(namespace: string) {
   return namespace.trim() === '' ? 'All Namespaces' : namespace;
@@ -67,6 +70,16 @@ export function RolesPage() {
       void message.success(result.message);
       await rolesQuery.refetch();
       await roleYamlQuery.refetch();
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: ({ namespace, name }: { namespace: string; name: string }) =>
+      deleteRole(namespace, name),
+    onSuccess: async (result) => {
+      void message.success(result.message);
+      setYamlEditTarget(undefined);
+      await rolesQuery.refetch();
     },
   });
 
@@ -145,11 +158,12 @@ export function RolesPage() {
       render: (_, item) =>
         sessionMode === 'token' ? (
           <ActionMenuButton
-            loading={updateRoleYamlMutation.isPending}
+            loading={updateRoleYamlMutation.isPending || deleteMutation.isPending}
             menu={{
               items: [
                 { key: 'open', label: 'Open' },
                 { key: 'edit-yaml', label: 'Edit YAML' },
+                { key: 'delete', label: <span className="text-red-600">Delete</span> },
               ],
               onClick: ({ key, domEvent }) => {
                 domEvent.stopPropagation();
@@ -159,6 +173,21 @@ export function RolesPage() {
                 }
                 if (key === 'edit-yaml') {
                   setYamlEditTarget(item);
+                  return;
+                }
+                if (key === 'delete') {
+                  confirmResourceDelete({
+                    resourceKind: 'Role',
+                    namespace: item.namespace,
+                    name: item.name,
+                    impact:
+                      'Subjects bound to this Role may lose permissions immediately after it is removed.',
+                    onConfirm: () =>
+                      deleteMutation.mutateAsync({
+                        namespace: item.namespace,
+                        name: item.name,
+                      }),
+                  });
                 }
               },
             }}
@@ -184,7 +213,17 @@ export function RolesPage() {
         rowKey={(record) => `${record.namespace}/${record.name}`}
         loading={sessionMode === 'token' && rolesQuery.isLoading}
         onRefresh={() => rolesQuery.refetch()}
-        toolbarExtra={<Tag color="blue">当前上下文: {namespaceLabel}</Tag>}
+        toolbarExtra={
+          <Space size={8} wrap>
+            <Tag color="blue">当前上下文: {namespaceLabel}</Tag>
+            <ResourceYamlCreateButton
+              resourceKind="Role"
+              namespace={currentNamespace}
+              enabled={sessionMode === 'token'}
+              onCreated={() => rolesQuery.refetch()}
+            />
+          </Space>
+        }
         searchPlaceholder="搜索角色、命名空间、资源、verbs、绑定主体或标签"
         searchPredicate={(record, keyword) =>
           record.name.toLowerCase().includes(keyword) ||

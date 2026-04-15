@@ -11,14 +11,17 @@ import {
 } from '../components/serviceaccount/serviceAccountShared';
 import { ResourceListPage, type ResourceMetric } from '../components/resource-list/ResourceListPage';
 import { ActionMenuButton } from '../components/workload/ActionMenuButton';
+import { ResourceYamlCreateButton } from '../components/workload/ResourceYamlCreateButton';
 import { ResourceYamlEditorModal } from '../components/workload/ResourceYamlEditorModal';
 import {
   type ServiceAccountItem,
+  deleteServiceAccount,
   getServiceAccounts,
   getServiceAccountYaml,
   updateServiceAccountYaml,
 } from '../services/cluster';
 import { useAppStore } from '../stores/appStore';
+import { confirmResourceDelete } from '../components/workload/deleteConfirmation';
 
 function displayNamespace(namespace: string) {
   return namespace.trim() === '' ? 'All Namespaces' : namespace;
@@ -70,6 +73,16 @@ export function ServiceAccountsPage() {
       void message.success(result.message);
       await accountsQuery.refetch();
       await accountYamlQuery.refetch();
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: ({ namespace, name }: { namespace: string; name: string }) =>
+      deleteServiceAccount(namespace, name),
+    onSuccess: async (result) => {
+      void message.success(result.message);
+      setYamlEditTarget(undefined);
+      await accountsQuery.refetch();
     },
   });
 
@@ -150,11 +163,12 @@ export function ServiceAccountsPage() {
       render: (_, item) =>
         sessionMode === 'token' ? (
           <ActionMenuButton
-            loading={updateAccountYamlMutation.isPending}
+            loading={updateAccountYamlMutation.isPending || deleteMutation.isPending}
             menu={{
               items: [
                 { key: 'open', label: 'Open' },
                 { key: 'edit-yaml', label: 'Edit YAML' },
+                { key: 'delete', label: <span className="text-red-600">Delete</span> },
               ],
               onClick: ({ key, domEvent }) => {
                 domEvent.stopPropagation();
@@ -164,6 +178,21 @@ export function ServiceAccountsPage() {
                 }
                 if (key === 'edit-yaml') {
                   setYamlEditTarget(item);
+                  return;
+                }
+                if (key === 'delete') {
+                  confirmResourceDelete({
+                    resourceKind: 'ServiceAccount',
+                    namespace: item.namespace,
+                    name: item.name,
+                    impact:
+                      'Pods or workloads using this ServiceAccount may lose API access after it is removed.',
+                    onConfirm: () =>
+                      deleteMutation.mutateAsync({
+                        namespace: item.namespace,
+                        name: item.name,
+                      }),
+                  });
                 }
               },
             }}
@@ -189,7 +218,17 @@ export function ServiceAccountsPage() {
         rowKey={(record) => `${record.namespace}/${record.name}`}
         loading={sessionMode === 'token' && accountsQuery.isLoading}
         onRefresh={() => accountsQuery.refetch()}
-        toolbarExtra={<Tag color="blue">当前上下文: {namespaceLabel}</Tag>}
+        toolbarExtra={
+          <Space size={8} wrap>
+            <Tag color="blue">当前上下文: {namespaceLabel}</Tag>
+            <ResourceYamlCreateButton
+              resourceKind="ServiceAccount"
+              namespace={currentNamespace}
+              enabled={sessionMode === 'token'}
+              onCreated={() => accountsQuery.refetch()}
+            />
+          </Space>
+        }
         searchPlaceholder="搜索账号、命名空间、Pod、secret、automount 状态或标签"
         searchPredicate={(record, keyword) =>
           record.name.toLowerCase().includes(keyword) ||

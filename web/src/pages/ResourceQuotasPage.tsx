@@ -13,14 +13,17 @@ import {
 } from '../components/resourcequota/resourceQuotaShared';
 import { ResourceListPage, type ResourceMetric } from '../components/resource-list/ResourceListPage';
 import { ActionMenuButton } from '../components/workload/ActionMenuButton';
+import { ResourceYamlCreateButton } from '../components/workload/ResourceYamlCreateButton';
 import { ResourceYamlEditorModal } from '../components/workload/ResourceYamlEditorModal';
 import {
+  deleteResourceQuota,
   getResourceQuotaYaml,
   getResourceQuotas,
   updateResourceQuotaYaml,
   type ResourceTextResult,
 } from '../services/cluster';
 import { useAppStore } from '../stores/appStore';
+import { confirmResourceDelete } from '../components/workload/deleteConfirmation';
 
 type ResourceQuotaUsageItem = {
   resource: string;
@@ -97,6 +100,16 @@ export function ResourceQuotasPage() {
       void message.success(result.message);
       await resourceQuotasQuery.refetch();
       await resourceQuotaYamlQuery.refetch();
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: ({ namespace, name }: { namespace: string; name: string }) =>
+      deleteResourceQuota(namespace, name),
+    onSuccess: async (result) => {
+      void message.success(result.message);
+      setYamlEditTarget(undefined);
+      await resourceQuotasQuery.refetch();
     },
   });
 
@@ -209,11 +222,12 @@ export function ResourceQuotasPage() {
       render: (_, item) =>
         sessionMode === 'token' ? (
           <ActionMenuButton
-            loading={updateResourceQuotaYamlMutation.isPending}
+            loading={updateResourceQuotaYamlMutation.isPending || deleteMutation.isPending}
             menu={{
               items: [
                 { key: 'open', label: 'Open' },
                 { key: 'edit-yaml', label: 'Edit YAML' },
+                { key: 'delete', label: <span className="text-red-600">Delete</span> },
               ],
               onClick: ({ key, domEvent }) => {
                 domEvent.stopPropagation();
@@ -223,6 +237,20 @@ export function ResourceQuotasPage() {
                 }
                 if (key === 'edit-yaml') {
                   setYamlEditTarget(item);
+                  return;
+                }
+                if (key === 'delete') {
+                  confirmResourceDelete({
+                    resourceKind: 'ResourceQuota',
+                    namespace: item.namespace,
+                    name: item.name,
+                    impact: 'Namespace quota enforcement for these resources will be removed immediately.',
+                    onConfirm: () =>
+                      deleteMutation.mutateAsync({
+                        namespace: item.namespace,
+                        name: item.name,
+                      }),
+                  });
                 }
               },
             }}
@@ -248,7 +276,17 @@ export function ResourceQuotasPage() {
         rowKey={(record) => `${record.namespace}/${record.name}`}
         loading={sessionMode === 'token' && resourceQuotasQuery.isLoading}
         onRefresh={() => resourceQuotasQuery.refetch()}
-        toolbarExtra={<Tag color="blue">当前上下文: {namespaceLabel}</Tag>}
+        toolbarExtra={
+          <Space size={8} wrap>
+            <Tag color="blue">当前上下文: {namespaceLabel}</Tag>
+            <ResourceYamlCreateButton
+              resourceKind="ResourceQuota"
+              namespace={currentNamespace}
+              enabled={sessionMode === 'token'}
+              onCreated={() => resourceQuotasQuery.refetch()}
+            />
+          </Space>
+        }
         searchPlaceholder="搜索 ResourceQuota、命名空间、资源项、scope、标签或状态"
         searchPredicate={(record, keyword) =>
           record.name.toLowerCase().includes(keyword) ||

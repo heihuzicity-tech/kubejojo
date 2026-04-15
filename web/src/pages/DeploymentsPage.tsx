@@ -15,10 +15,12 @@ import {
   restartTone,
 } from '../components/deployment/deploymentShared';
 import { ActionMenuButton } from '../components/workload/ActionMenuButton';
+import { ResourceYamlCreateButton } from '../components/workload/ResourceYamlCreateButton';
 import { ResourceYamlEditorModal } from '../components/workload/ResourceYamlEditorModal';
 import { ResourceListPage, type ResourceMetric } from '../components/resource-list/ResourceListPage';
 import {
   type DeploymentItem,
+  deleteDeployment,
   getDeploymentYaml,
   getDeployments,
   restartDeployment,
@@ -26,6 +28,7 @@ import {
   updateDeploymentYaml,
 } from '../services/cluster';
 import { useAppStore } from '../stores/appStore';
+import { confirmResourceDelete } from '../components/workload/deleteConfirmation';
 
 export function DeploymentsPage() {
   const { message, modal } = App.useApp();
@@ -76,6 +79,17 @@ export function DeploymentsPage() {
     },
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: ({ namespace, name }: { namespace: string; name: string }) =>
+      deleteDeployment(namespace, name),
+    onSuccess: async (result) => {
+      void message.success(result.message);
+      setScaleTarget(undefined);
+      setYamlEditTarget(undefined);
+      await refreshDeployments();
+    },
+  });
+
   const deploymentYamlQuery = useQuery({
     queryKey: ['deployment-yaml', yamlEditTarget?.namespace, yamlEditTarget?.name],
     queryFn: () => getDeploymentYaml(yamlEditTarget!.namespace, yamlEditTarget!.name),
@@ -119,6 +133,21 @@ export function DeploymentsPage() {
       cancelText: '取消',
       onOk: async () =>
         restartMutation.mutateAsync({
+          namespace: item.namespace,
+          name: item.name,
+        }),
+    });
+  };
+
+  const openDeleteConfirm = (item: DeploymentItem) => {
+    confirmResourceDelete({
+      resourceKind: 'Deployment',
+      namespace: item.namespace,
+      name: item.name,
+      impact:
+        'This removes the Deployment and its managed ReplicaSets and Pods will be reconciled away by Kubernetes.',
+      onConfirm: () =>
+        deleteMutation.mutateAsync({
           namespace: item.namespace,
           name: item.name,
         }),
@@ -230,13 +259,14 @@ export function DeploymentsPage() {
           <Tag>Demo</Tag>
         ) : (
           <ActionMenuButton
-            loading={restartMutation.isPending}
+            loading={restartMutation.isPending || deleteMutation.isPending}
             menu={{
               items: [
                 { key: 'open', label: 'Open' },
                 { key: 'edit-yaml', label: 'Edit YAML' },
                 { key: 'scale', label: 'Scale' },
                 { key: 'restart', label: <span className="text-amber-700">Restart</span> },
+                { key: 'delete', label: <span className="text-red-600">Delete</span> },
               ],
               onClick: ({ key, domEvent }) => {
                 domEvent.stopPropagation();
@@ -254,6 +284,10 @@ export function DeploymentsPage() {
                 }
                 if (key === 'restart') {
                   openRestartConfirm(item);
+                  return;
+                }
+                if (key === 'delete') {
+                  openDeleteConfirm(item);
                 }
               },
             }}
@@ -287,6 +321,12 @@ export function DeploymentsPage() {
             <Tag color="cyan">
               Metrics Ready: {items.filter((item) => item.metricsAvailable).length}/{items.length}
             </Tag>
+            <ResourceYamlCreateButton
+              resourceKind="Deployment"
+              namespace={currentNamespace}
+              enabled={sessionMode === 'token'}
+              onCreated={refreshDeployments}
+            />
           </Space>
         }
         searchPlaceholder="搜索 Deployment、状态、镜像、selector 或标签"

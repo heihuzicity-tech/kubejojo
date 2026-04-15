@@ -255,6 +255,25 @@ func newRouter(clusterFactory *kube.Factory) *gin.Engine {
 				c.JSON(http.StatusOK, response.Success(mustClusterService(c).GetAuthMe(c.Request.Context())))
 			})
 
+			authorized.POST("/manifests", func(c *gin.Context) {
+				var req yamlUpdateRequest
+				if err := c.ShouldBindJSON(&req); err != nil {
+					c.JSON(http.StatusBadRequest, response.Failure("INVALID_YAML_CREATE_REQUEST", "请求体格式不正确"))
+					return
+				}
+
+				result, err := mustClusterService(c).CreateManifestYAML(
+					c.Request.Context(),
+					req.Content,
+				)
+				if err != nil {
+					respondWithClusterError(c, "CREATE_MANIFEST_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(result))
+			})
+
 			authorized.GET("/namespaces", func(c *gin.Context) {
 				items, err := mustClusterService(c).ListNamespaces(c.Request.Context())
 				if err != nil {
@@ -441,6 +460,133 @@ func newRouter(clusterFactory *kube.Factory) *gin.Engine {
 
 				c.JSON(http.StatusOK, response.Success(result))
 			})
+
+			registerNamespacedDeleteRoute(
+				authorized,
+				"/deployments/:namespace/:name",
+				"DELETE_DEPLOYMENT_FAILED",
+				(*service.ClusterService).DeleteDeployment,
+			)
+			registerNamespacedDeleteRoute(
+				authorized,
+				"/statefulsets/:namespace/:name",
+				"DELETE_STATEFULSET_FAILED",
+				(*service.ClusterService).DeleteStatefulSet,
+			)
+			registerNamespacedDeleteRoute(
+				authorized,
+				"/daemonsets/:namespace/:name",
+				"DELETE_DAEMONSET_FAILED",
+				(*service.ClusterService).DeleteDaemonSet,
+			)
+			registerNamespacedDeleteRoute(
+				authorized,
+				"/jobs/:namespace/:name",
+				"DELETE_JOB_FAILED",
+				(*service.ClusterService).DeleteJob,
+			)
+			registerNamespacedDeleteRoute(
+				authorized,
+				"/cronjobs/:namespace/:name",
+				"DELETE_CRONJOB_FAILED",
+				(*service.ClusterService).DeleteCronJob,
+			)
+			registerNamespacedDeleteRoute(
+				authorized,
+				"/services/:namespace/:name",
+				"DELETE_SERVICE_FAILED",
+				(*service.ClusterService).DeleteService,
+			)
+			registerNamespacedDeleteRoute(
+				authorized,
+				"/ingresses/:namespace/:name",
+				"DELETE_INGRESS_FAILED",
+				(*service.ClusterService).DeleteIngress,
+			)
+			registerNamespacedDeleteRoute(
+				authorized,
+				"/serviceaccounts/:namespace/:name",
+				"DELETE_SERVICEACCOUNT_FAILED",
+				(*service.ClusterService).DeleteServiceAccount,
+			)
+			registerNamespacedDeleteRoute(
+				authorized,
+				"/roles/:namespace/:name",
+				"DELETE_ROLE_FAILED",
+				(*service.ClusterService).DeleteRole,
+			)
+			registerNamespacedDeleteRoute(
+				authorized,
+				"/rolebindings/:namespace/:name",
+				"DELETE_ROLEBINDING_FAILED",
+				(*service.ClusterService).DeleteRoleBinding,
+			)
+			registerNamespacedDeleteRoute(
+				authorized,
+				"/configmaps/:namespace/:name",
+				"DELETE_CONFIGMAP_FAILED",
+				(*service.ClusterService).DeleteConfigMap,
+			)
+			registerNamespacedDeleteRoute(
+				authorized,
+				"/secrets/:namespace/:name",
+				"DELETE_SECRET_FAILED",
+				(*service.ClusterService).DeleteSecret,
+			)
+			registerNamespacedDeleteRoute(
+				authorized,
+				"/networkpolicies/:namespace/:name",
+				"DELETE_NETWORKPOLICY_FAILED",
+				(*service.ClusterService).DeleteNetworkPolicy,
+			)
+			registerNamespacedDeleteRoute(
+				authorized,
+				"/hpas/:namespace/:name",
+				"DELETE_HPA_FAILED",
+				(*service.ClusterService).DeleteHPA,
+			)
+			registerNamespacedDeleteRoute(
+				authorized,
+				"/vpas/:namespace/:name",
+				"DELETE_VPA_FAILED",
+				(*service.ClusterService).DeleteVPA,
+			)
+			registerNamespacedDeleteRoute(
+				authorized,
+				"/resourcequotas/:namespace/:name",
+				"DELETE_RESOURCEQUOTA_FAILED",
+				(*service.ClusterService).DeleteResourceQuota,
+			)
+			registerNamespacedDeleteRoute(
+				authorized,
+				"/limitranges/:namespace/:name",
+				"DELETE_LIMITRANGE_FAILED",
+				(*service.ClusterService).DeleteLimitRange,
+			)
+			registerNamespacedDeleteRoute(
+				authorized,
+				"/persistentvolumeclaims/:namespace/:name",
+				"DELETE_PERSISTENTVOLUMECLAIM_FAILED",
+				(*service.ClusterService).DeletePersistentVolumeClaim,
+			)
+			registerClusterDeleteRoute(
+				authorized,
+				"/ingressclasses/:name",
+				"DELETE_INGRESSCLASS_FAILED",
+				(*service.ClusterService).DeleteIngressClass,
+			)
+			registerClusterDeleteRoute(
+				authorized,
+				"/persistentvolumes/:name",
+				"DELETE_PERSISTENTVOLUME_FAILED",
+				(*service.ClusterService).DeletePersistentVolume,
+			)
+			registerClusterDeleteRoute(
+				authorized,
+				"/storageclasses/:name",
+				"DELETE_STORAGECLASS_FAILED",
+				(*service.ClusterService).DeleteStorageClass,
+			)
 
 			authorized.GET("/deployments", func(c *gin.Context) {
 				items, err := mustClusterService(c).ListDeployments(
@@ -1790,6 +1936,62 @@ func defaultNamespace(items []string) string {
 	}
 
 	return "default"
+}
+
+type namespacedDeleteHandler func(
+	clusterService *service.ClusterService,
+	ctx context.Context,
+	namespace string,
+	name string,
+) (service.WorkloadActionResult, error)
+
+type clusterDeleteHandler func(
+	clusterService *service.ClusterService,
+	ctx context.Context,
+	name string,
+) (service.WorkloadActionResult, error)
+
+func registerNamespacedDeleteRoute(
+	group *gin.RouterGroup,
+	path string,
+	errorCode string,
+	handler namespacedDeleteHandler,
+) {
+	group.DELETE(path, func(c *gin.Context) {
+		result, err := handler(
+			mustClusterService(c),
+			c.Request.Context(),
+			c.Param("namespace"),
+			c.Param("name"),
+		)
+		if err != nil {
+			respondWithClusterError(c, errorCode, err)
+			return
+		}
+
+		c.JSON(http.StatusOK, response.Success(result))
+	})
+}
+
+func registerClusterDeleteRoute(
+	group *gin.RouterGroup,
+	path string,
+	errorCode string,
+	handler clusterDeleteHandler,
+) {
+	group.DELETE(path, func(c *gin.Context) {
+		result, err := handler(
+			mustClusterService(c),
+			c.Request.Context(),
+			c.Param("name"),
+		)
+		if err != nil {
+			respondWithClusterError(c, errorCode, err)
+			return
+		}
+
+		c.JSON(http.StatusOK, response.Success(result))
+	})
 }
 
 func respondWithClusterError(c *gin.Context, code string, err error) {

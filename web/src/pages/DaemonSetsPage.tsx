@@ -14,16 +14,19 @@ import {
   MetricValue,
 } from '../components/daemonset/daemonSetShared';
 import { ActionMenuButton } from '../components/workload/ActionMenuButton';
+import { ResourceYamlCreateButton } from '../components/workload/ResourceYamlCreateButton';
 import { ResourceYamlEditorModal } from '../components/workload/ResourceYamlEditorModal';
 import { ResourceListPage, type ResourceMetric } from '../components/resource-list/ResourceListPage';
 import {
   type DaemonSetItem,
+  deleteDaemonSet,
   getDaemonSetYaml,
   getDaemonSets,
   restartDaemonSet,
   updateDaemonSetYaml,
 } from '../services/cluster';
 import { useAppStore } from '../stores/appStore';
+import { confirmResourceDelete } from '../components/workload/deleteConfirmation';
 
 export function DaemonSetsPage() {
   const { message, modal } = App.useApp();
@@ -64,6 +67,16 @@ export function DaemonSetsPage() {
     },
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: ({ namespace, name }: { namespace: string; name: string }) =>
+      deleteDaemonSet(namespace, name),
+    onSuccess: async (result) => {
+      void message.success(result.message);
+      setYamlEditTarget(undefined);
+      await refreshDaemonSets();
+    },
+  });
+
   const daemonSetYamlQuery = useQuery({
     queryKey: ['daemonset-yaml', yamlEditTarget?.namespace, yamlEditTarget?.name],
     queryFn: () => getDaemonSetYaml(yamlEditTarget!.namespace, yamlEditTarget!.name),
@@ -88,6 +101,21 @@ export function DaemonSetsPage() {
       cancelText: 'Cancel',
       onOk: async () =>
         restartMutation.mutateAsync({
+          namespace: item.namespace,
+          name: item.name,
+        }),
+    });
+  };
+
+  const openDeleteConfirm = (item: DaemonSetItem) => {
+    confirmResourceDelete({
+      resourceKind: 'DaemonSet',
+      namespace: item.namespace,
+      name: item.name,
+      impact:
+        'This removes the DaemonSet and the Pods it manages will be removed from matching nodes.',
+      onConfirm: () =>
+        deleteMutation.mutateAsync({
           namespace: item.namespace,
           name: item.name,
         }),
@@ -197,12 +225,13 @@ export function DaemonSetsPage() {
       render: (_, item) =>
         allowOperations ? (
           <ActionMenuButton
-            loading={restartMutation.isPending}
+            loading={restartMutation.isPending || deleteMutation.isPending}
             menu={{
               items: [
                 { key: 'open', label: 'Open' },
                 { key: 'edit-yaml', label: 'Edit YAML' },
                 { key: 'restart', label: <span className="text-amber-700">Restart</span> },
+                { key: 'delete', label: <span className="text-red-600">Delete</span> },
               ],
               onClick: ({ key, domEvent }) => {
                 domEvent.stopPropagation();
@@ -216,6 +245,10 @@ export function DaemonSetsPage() {
                 }
                 if (key === 'restart') {
                   openRestartConfirm(item);
+                  return;
+                }
+                if (key === 'delete') {
+                  openDeleteConfirm(item);
                 }
               },
             }}
@@ -245,7 +278,18 @@ export function DaemonSetsPage() {
         rowKey={(record) => `${record.namespace}/${record.name}`}
         loading={sessionMode === 'token' && daemonSetsQuery.isLoading}
         onRefresh={refreshDaemonSets}
-        toolbarExtra={<Tag color="blue">当前上下文: {namespaceLabel}</Tag>}
+        toolbarExtra={
+          <Space size={8} wrap>
+            <Tag color="blue">当前上下文: {namespaceLabel}</Tag>
+            <ResourceYamlCreateButton
+              resourceKind="DaemonSet"
+              namespace={currentNamespace}
+              enabled={allowOperations}
+              disabledReason={useDemoData ? 'Live cluster access is unavailable.' : undefined}
+              onCreated={refreshDaemonSets}
+            />
+          </Space>
+        }
         searchPlaceholder="搜索 DaemonSet、状态、镜像、selector 或标签"
         searchPredicate={(record, keyword) =>
           record.name.toLowerCase().includes(keyword) ||

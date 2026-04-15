@@ -11,14 +11,17 @@ import {
 } from '../components/configmap/configMapShared';
 import { ResourceListPage, type ResourceMetric } from '../components/resource-list/ResourceListPage';
 import { ActionMenuButton } from '../components/workload/ActionMenuButton';
+import { ResourceYamlCreateButton } from '../components/workload/ResourceYamlCreateButton';
 import { ResourceYamlEditorModal } from '../components/workload/ResourceYamlEditorModal';
 import {
   type ConfigMapItem,
+  deleteConfigMap,
   getConfigMapYaml,
   getConfigMaps,
   updateConfigMapYaml,
 } from '../services/cluster';
 import { useAppStore } from '../stores/appStore';
+import { confirmResourceDelete } from '../components/workload/deleteConfirmation';
 
 function displayNamespace(namespace: string) {
   return namespace.trim() === '' ? 'All Namespaces' : namespace;
@@ -59,6 +62,16 @@ export function ConfigMapsPage() {
       void message.success(result.message);
       await configMapsQuery.refetch();
       await configMapYamlQuery.refetch();
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: ({ namespace, name }: { namespace: string; name: string }) =>
+      deleteConfigMap(namespace, name),
+    onSuccess: async (result) => {
+      void message.success(result.message);
+      setYamlEditTarget(undefined);
+      await configMapsQuery.refetch();
     },
   });
 
@@ -170,11 +183,12 @@ export function ConfigMapsPage() {
       render: (_, item) =>
         sessionMode === 'token' ? (
           <ActionMenuButton
-            loading={updateConfigMapYamlMutation.isPending}
+            loading={updateConfigMapYamlMutation.isPending || deleteMutation.isPending}
             menu={{
               items: [
                 { key: 'open', label: 'Open' },
                 { key: 'edit-yaml', label: 'Edit YAML' },
+                { key: 'delete', label: <span className="text-red-600">Delete</span> },
               ],
               onClick: ({ key, domEvent }) => {
                 domEvent.stopPropagation();
@@ -184,6 +198,21 @@ export function ConfigMapsPage() {
                 }
                 if (key === 'edit-yaml') {
                   setYamlEditTarget(item);
+                  return;
+                }
+                if (key === 'delete') {
+                  confirmResourceDelete({
+                    resourceKind: 'ConfigMap',
+                    namespace: item.namespace,
+                    name: item.name,
+                    impact:
+                      'Workloads that depend on this ConfigMap may fail or continue using stale data until they are restarted.',
+                    onConfirm: () =>
+                      deleteMutation.mutateAsync({
+                        namespace: item.namespace,
+                        name: item.name,
+                      }),
+                  });
                 }
               },
             }}
@@ -209,7 +238,17 @@ export function ConfigMapsPage() {
         rowKey={(record) => `${record.namespace}/${record.name}`}
         loading={sessionMode === 'token' && configMapsQuery.isLoading}
         onRefresh={() => configMapsQuery.refetch()}
-        toolbarExtra={<Tag color="blue">当前上下文: {namespaceLabel}</Tag>}
+        toolbarExtra={
+          <Space size={8} wrap>
+            <Tag color="blue">当前上下文: {namespaceLabel}</Tag>
+            <ResourceYamlCreateButton
+              resourceKind="ConfigMap"
+              namespace={currentNamespace}
+              enabled={sessionMode === 'token'}
+              onCreated={() => configMapsQuery.refetch()}
+            />
+          </Space>
+        }
         searchPlaceholder="搜索 ConfigMap、命名空间、Key、Pod、状态或标签"
         searchPredicate={(record, keyword) =>
           record.name.toLowerCase().includes(keyword) ||
