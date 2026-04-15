@@ -669,6 +669,81 @@ export type HPAItem = {
   lastScaleTime?: string;
 };
 
+export type VPAConditionItem = {
+  type: string;
+  status: string;
+  reason?: string;
+  message?: string;
+  lastTransitionTime?: string;
+};
+
+export type VPAContainerPolicyItem = {
+  containerName: string;
+  mode?: string;
+  controlledResources: string[];
+  controlledValues?: string;
+  minAllowed: string[];
+  maxAllowed: string[];
+  summary: string;
+};
+
+export type VPARecommendationItem = {
+  containerName: string;
+  target: string[];
+  lowerBound: string[];
+  upperBound: string[];
+  uncappedTarget: string[];
+  summary: string;
+};
+
+export type VPAInsightItem = {
+  level: string;
+  code: string;
+  summary: string;
+  detail?: string;
+};
+
+export type VPAClusterReadinessCheck = {
+  key: string;
+  label: string;
+  status: string;
+  summary: string;
+  detail?: string;
+};
+
+export type VPAClusterReadiness = {
+  status: string;
+  summary: string;
+  updaterMinReplicas: number;
+  checks: VPAClusterReadinessCheck[];
+};
+
+export type VPAItem = {
+  name: string;
+  namespace: string;
+  status: string;
+  summary: string;
+  scaleTargetKind: string;
+  scaleTargetName: string;
+  scaleTargetApiVersion: string;
+  updateMode: string;
+  effectivenessStatus: string;
+  effectivenessSummary: string;
+  targetReplicaCount: number;
+  matchedPodCount: number;
+  appliedPodCount: number;
+  containerPolicyCount: number;
+  recommendationCount: number;
+  conditionCount: number;
+  resourcePolicies: VPAContainerPolicyItem[];
+  recommendations: VPARecommendationItem[];
+  conditions: VPAConditionItem[];
+  insights: VPAInsightItem[];
+  labels: string[];
+  age: string;
+  createdAt: string;
+};
+
 export type ResourceValueItem = {
   name: string;
   value: string;
@@ -1517,6 +1592,18 @@ export async function getHPAs(namespace?: string) {
   return data.data;
 }
 
+export async function getVPAs(namespace?: string) {
+  const { data } = await http.get<Envelope<VPAItem[]>>('/vpas', {
+    params: namespace ? { namespace } : undefined,
+  });
+  return data.data;
+}
+
+export async function getVPAReadiness() {
+  const { data } = await http.get<Envelope<VPAClusterReadiness>>('/vpas/readiness');
+  return data.data;
+}
+
 export async function getHPAYaml(namespace: string, name: string) {
   const { data } = await http.get<Envelope<ResourceTextResult>>(
     `/hpas/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/yaml`,
@@ -1524,9 +1611,24 @@ export async function getHPAYaml(namespace: string, name: string) {
   return data.data;
 }
 
+export async function getVPAYaml(namespace: string, name: string) {
+  const { data } = await http.get<Envelope<ResourceTextResult>>(
+    `/vpas/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/yaml`,
+  );
+  return data.data;
+}
+
 export async function updateHPAYaml(namespace: string, name: string, content: string) {
   const { data } = await http.put<Envelope<WorkloadActionResult>>(
     `/hpas/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/yaml`,
+    { content },
+  );
+  return data.data;
+}
+
+export async function updateVPAYaml(namespace: string, name: string, content: string) {
+  const { data } = await http.put<Envelope<WorkloadActionResult>>(
+    `/vpas/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/yaml`,
     { content },
   );
   return data.data;

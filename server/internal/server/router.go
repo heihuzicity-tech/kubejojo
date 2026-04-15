@@ -1412,6 +1412,64 @@ func newRouter(clusterFactory *kube.Factory) *gin.Engine {
 				c.JSON(http.StatusOK, response.Success(result))
 			})
 
+			authorized.GET("/vpas", func(c *gin.Context) {
+				items, err := mustClusterService(c).ListVPAs(
+					c.Request.Context(),
+					c.Query("namespace"),
+				)
+				if err != nil {
+					respondWithClusterError(c, "LIST_VPAS_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(items))
+			})
+
+			authorized.GET("/vpas/readiness", func(c *gin.Context) {
+				result, err := mustClusterService(c).GetVPAClusterReadiness(c.Request.Context())
+				if err != nil {
+					respondWithClusterError(c, "GET_VPA_READINESS_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(result))
+			})
+
+			authorized.GET("/vpas/:namespace/:name/yaml", func(c *gin.Context) {
+				result, err := mustClusterService(c).GetVPAYAML(
+					c.Request.Context(),
+					c.Param("namespace"),
+					c.Param("name"),
+				)
+				if err != nil {
+					respondWithClusterError(c, "GET_VPA_YAML_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(result))
+			})
+
+			authorized.PUT("/vpas/:namespace/:name/yaml", func(c *gin.Context) {
+				var req yamlUpdateRequest
+				if err := c.ShouldBindJSON(&req); err != nil {
+					c.JSON(http.StatusBadRequest, response.Failure("INVALID_YAML_UPDATE_REQUEST", "请求体格式不正确"))
+					return
+				}
+
+				result, err := mustClusterService(c).UpdateVPAYAML(
+					c.Request.Context(),
+					c.Param("namespace"),
+					c.Param("name"),
+					req.Content,
+				)
+				if err != nil {
+					respondWithClusterError(c, "UPDATE_VPA_YAML_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(result))
+			})
+
 			authorized.GET("/resourcequotas", func(c *gin.Context) {
 				items, err := mustClusterService(c).ListResourceQuotas(
 					c.Request.Context(),

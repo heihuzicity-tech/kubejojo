@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-vpa-burner
+  namespace: demo-governance
+  labels:
+    app.kubernetes.io/name: demo-vpa-burner
+    app.kubernetes.io/part-of: resource-governance-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: demo-vpa-burner
+  template:
+    metadata:
+      labels:
+        app: demo-vpa-burner
+        app.kubernetes.io/name: demo-vpa-burner
+        app.kubernetes.io/part-of: resource-governance-demo
+    spec:
+      containers:
+        - name: burner
+          image: python:3.12-alpine
+          command:
+            - python
+            - -c
+            - |
+              import multiprocessing as mp
+              import time
+
+              def burn_cpu():
+                  value = 0
+                  while True:
+                      value = (value + 1) % 1000000
+
+              if __name__ == "__main__":
+                  workers = [mp.Process(target=burn_cpu) for _ in range(2)]
+                  for worker in workers:
+                      worker.daemon = True
+                      worker.start()
+
+                  memory_chunks = []
+                  chunk_size = 4 * 1024 * 1024
+                  for _ in range(40):
+                      memory_chunks.append(bytearray(chunk_size))
+                      time.sleep(0.2)
+
+                  while True:
+                      time.sleep(60)
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: demo-vpa-burner
+  namespace: demo-governance
+  labels:
+    app.kubernetes.io/part-of: resource-governance-demo
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: demo-vpa-burner
+  updatePolicy:
+    updateMode: "Off"
+  resourcePolicy:
+    containerPolicies:
+      - containerName: burner
+        minAllowed:
+          cpu: 50m
+          memory: 64Mi
+        maxAllowed:
+          cpu: "1"
+          memory: 1Gi
+        controlledResources:
+          - cpu
+          - memory

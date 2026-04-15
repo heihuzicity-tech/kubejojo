@@ -55,6 +55,8 @@ import { ServicesPage } from '../pages/ServicesPage';
 import { StatefulSetDetailsPage } from '../pages/StatefulSetDetailsPage';
 import { StatefulSetsPage } from '../pages/StatefulSetsPage';
 import { TopologyPage } from '../pages/TopologyPage';
+import { VPADetailsPage } from '../pages/VPADetailsPage';
+import { VPAsPage } from '../pages/VPAsPage';
 
 const placeholderItems = navigationItems.filter((item) => !item.implemented);
 
@@ -125,6 +127,8 @@ function ProtectedRoutes() {
         />
         <Route path="/resources/hpas" element={<HPAsPage />} />
         <Route path="/resources/hpas/:namespace/:name" element={<HPADetailsPage />} />
+        <Route path="/resources/vpas" element={<VPAsPage />} />
+        <Route path="/resources/vpas/:namespace/:name" element={<VPADetailsPage />} />
         <Route path="/resources/resourcequotas" element={<ResourceQuotasPage />} />
         <Route
           path="/resources/resourcequotas/:namespace/:name"

@@ -3,15 +3,19 @@ package service
 import (
 	"bytes"
 	"context"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"math"
 	"os/exec"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	yamlv3 "gopkg.in/yaml.v3"
+	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	authv1 "k8s.io/api/authentication/v1"
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
@@ -20,6 +24,7 @@ import (
 	networkingv1 "k8s.io/api/networking/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	storagev1 "k8s.io/api/storage/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -650,6 +655,175 @@ type HPAItem struct {
 	Age                   string                        `json:"age"`
 	CreatedAt             string                        `json:"createdAt"`
 	LastScaleTime         string                        `json:"lastScaleTime,omitempty"`
+}
+
+type VPAConditionItem struct {
+	Type               string `json:"type"`
+	Status             string `json:"status"`
+	Reason             string `json:"reason,omitempty"`
+	Message            string `json:"message,omitempty"`
+	LastTransitionTime string `json:"lastTransitionTime,omitempty"`
+}
+
+type VPAContainerPolicyItem struct {
+	ContainerName       string              `json:"containerName"`
+	Mode                string              `json:"mode,omitempty"`
+	ControlledResources jsonx.Slice[string] `json:"controlledResources"`
+	ControlledValues    string              `json:"controlledValues,omitempty"`
+	MinAllowed          jsonx.Slice[string] `json:"minAllowed"`
+	MaxAllowed          jsonx.Slice[string] `json:"maxAllowed"`
+	Summary             string              `json:"summary"`
+}
+
+type VPARecommendationItem struct {
+	ContainerName  string              `json:"containerName"`
+	Target         jsonx.Slice[string] `json:"target"`
+	LowerBound     jsonx.Slice[string] `json:"lowerBound"`
+	UpperBound     jsonx.Slice[string] `json:"upperBound"`
+	UncappedTarget jsonx.Slice[string] `json:"uncappedTarget"`
+	Summary        string              `json:"summary"`
+}
+
+type VPAInsightItem struct {
+	Level   string `json:"level"`
+	Code    string `json:"code"`
+	Summary string `json:"summary"`
+	Detail  string `json:"detail,omitempty"`
+}
+
+type VPAClusterReadinessCheck struct {
+	Key     string `json:"key"`
+	Label   string `json:"label"`
+	Status  string `json:"status"`
+	Summary string `json:"summary"`
+	Detail  string `json:"detail,omitempty"`
+}
+
+type VPAClusterReadiness struct {
+	Status             string                                `json:"status"`
+	Summary            string                                `json:"summary"`
+	UpdaterMinReplicas int                                   `json:"updaterMinReplicas"`
+	Checks             jsonx.Slice[VPAClusterReadinessCheck] `json:"checks"`
+}
+
+type VPAItem struct {
+	Name                  string                              `json:"name"`
+	Namespace             string                              `json:"namespace"`
+	Status                string                              `json:"status"`
+	Summary               string                              `json:"summary"`
+	ScaleTargetKind       string                              `json:"scaleTargetKind"`
+	ScaleTargetName       string                              `json:"scaleTargetName"`
+	ScaleTargetAPIVersion string                              `json:"scaleTargetApiVersion"`
+	UpdateMode            string                              `json:"updateMode"`
+	EffectivenessStatus   string                              `json:"effectivenessStatus"`
+	EffectivenessSummary  string                              `json:"effectivenessSummary"`
+	TargetReplicaCount    int                                 `json:"targetReplicaCount"`
+	MatchedPodCount       int                                 `json:"matchedPodCount"`
+	AppliedPodCount       int                                 `json:"appliedPodCount"`
+	ContainerPolicyCount  int                                 `json:"containerPolicyCount"`
+	RecommendationCount   int                                 `json:"recommendationCount"`
+	ConditionCount        int                                 `json:"conditionCount"`
+	ResourcePolicies      jsonx.Slice[VPAContainerPolicyItem] `json:"resourcePolicies"`
+	Recommendations       jsonx.Slice[VPARecommendationItem]  `json:"recommendations"`
+	Conditions            jsonx.Slice[VPAConditionItem]       `json:"conditions"`
+	Insights              jsonx.Slice[VPAInsightItem]         `json:"insights"`
+	Labels                jsonx.Slice[string]                 `json:"labels"`
+	Age                   string                              `json:"age"`
+	CreatedAt             string                              `json:"createdAt"`
+}
+
+type vpaTargetReference struct {
+	APIVersion string `json:"apiVersion"`
+	Kind       string `json:"kind"`
+	Name       string `json:"name"`
+}
+
+type vpaUpdatePolicy struct {
+	UpdateMode *string `json:"updateMode"`
+}
+
+type vpaContainerPolicy struct {
+	ContainerName       string              `json:"containerName"`
+	Mode                *string             `json:"mode"`
+	ControlledResources jsonx.Slice[string] `json:"controlledResources"`
+	ControlledValues    *string             `json:"controlledValues"`
+	MinAllowed          corev1.ResourceList `json:"minAllowed"`
+	MaxAllowed          corev1.ResourceList `json:"maxAllowed"`
+}
+
+type vpaResourcePolicy struct {
+	ContainerPolicies []vpaContainerPolicy `json:"containerPolicies"`
+}
+
+type vpaSpec struct {
+	TargetRef      vpaTargetReference `json:"targetRef"`
+	UpdatePolicy   *vpaUpdatePolicy   `json:"updatePolicy"`
+	ResourcePolicy *vpaResourcePolicy `json:"resourcePolicy"`
+}
+
+type vpaCondition struct {
+	Type               string      `json:"type"`
+	Status             string      `json:"status"`
+	Reason             string      `json:"reason"`
+	Message            string      `json:"message"`
+	LastTransitionTime metav1.Time `json:"lastTransitionTime"`
+}
+
+type vpaContainerRecommendation struct {
+	ContainerName  string              `json:"containerName"`
+	Target         corev1.ResourceList `json:"target"`
+	LowerBound     corev1.ResourceList `json:"lowerBound"`
+	UpperBound     corev1.ResourceList `json:"upperBound"`
+	UncappedTarget corev1.ResourceList `json:"uncappedTarget"`
+}
+
+type vpaRecommendation struct {
+	ContainerRecommendations []vpaContainerRecommendation `json:"containerRecommendations"`
+}
+
+type vpaStatus struct {
+	Conditions     []vpaCondition     `json:"conditions"`
+	Recommendation *vpaRecommendation `json:"recommendation"`
+}
+
+type vpaResource struct {
+	Metadata metav1.ObjectMeta `json:"metadata"`
+	Spec     vpaSpec           `json:"spec"`
+	Status   vpaStatus         `json:"status"`
+}
+
+type vpaListResponse struct {
+	Items []vpaResource `json:"items"`
+}
+
+type vpaClusterReadinessState struct {
+	payload                  VPAClusterReadiness
+	crdInstalled             bool
+	recommenderReady         bool
+	updaterReady             bool
+	admissionControllerReady bool
+	webhookConfigured        bool
+	webhookEndpointReady     bool
+	webhookTLSValid          bool
+	updaterMinReplicas       int
+}
+
+type vpaTargetWorkloadState struct {
+	kind                 string
+	supported            bool
+	found                bool
+	desiredReplicas      int
+	pods                 []corev1.Pod
+	replicaSafetyApplies bool
+}
+
+type vpaAnalysisResult struct {
+	status             string
+	summary            string
+	targetReplicaCount int
+	matchedPodCount    int
+	appliedPodCount    int
+	insights           []VPAInsightItem
 }
 
 type ResourceValueItem struct {
@@ -2673,6 +2847,817 @@ func (s *ClusterService) ListHPAs(ctx context.Context, namespace string) ([]HPAI
 	return hpas, nil
 }
 
+func (s *ClusterService) ListVPAs(ctx context.Context, namespace string) ([]VPAItem, error) {
+	namespace = normalizeNamespace(namespace)
+
+	args := []string{"get", "verticalpodautoscalers.autoscaling.k8s.io"}
+	if namespace == "" {
+		args = append(args, "-A")
+	} else {
+		args = append(args, "-n", namespace)
+	}
+	args = append(args, "-o", "json")
+
+	output, err := s.runKubectlCommand(ctx, nil, args...)
+	if err != nil {
+		if isKubectlMissingResourceError(err) {
+			return []VPAItem{}, nil
+		}
+		return nil, fmt.Errorf("list vpas: %w", err)
+	}
+
+	var list vpaListResponse
+	if err := json.Unmarshal(output, &list); err != nil {
+		return nil, fmt.Errorf("decode vpas: %w", err)
+	}
+
+	readiness := s.collectVPAClusterReadiness(ctx)
+	vpas := make([]VPAItem, 0, len(list.Items))
+	for _, item := range list.Items {
+		policies := vpaResourcePolicies(item)
+		recommendations := vpaRecommendations(item)
+		conditions := vpaConditions(item)
+		analysis := s.analyzeVPAItem(ctx, item, recommendations, readiness)
+		vpas = append(vpas, VPAItem{
+			Name:                  item.Metadata.Name,
+			Namespace:             item.Metadata.Namespace,
+			Status:                vpaStatusValue(item, recommendations),
+			Summary:               vpaSummary(item, recommendations),
+			ScaleTargetKind:       item.Spec.TargetRef.Kind,
+			ScaleTargetName:       item.Spec.TargetRef.Name,
+			ScaleTargetAPIVersion: item.Spec.TargetRef.APIVersion,
+			UpdateMode:            vpaUpdateMode(item),
+			EffectivenessStatus:   analysis.status,
+			EffectivenessSummary:  analysis.summary,
+			TargetReplicaCount:    analysis.targetReplicaCount,
+			MatchedPodCount:       analysis.matchedPodCount,
+			AppliedPodCount:       analysis.appliedPodCount,
+			ContainerPolicyCount:  len(policies),
+			RecommendationCount:   len(recommendations),
+			ConditionCount:        len(conditions),
+			ResourcePolicies:      jsonx.Slice[VPAContainerPolicyItem](policies),
+			Recommendations:       jsonx.Slice[VPARecommendationItem](recommendations),
+			Conditions:            jsonx.Slice[VPAConditionItem](conditions),
+			Insights:              jsonx.Slice[VPAInsightItem](analysis.insights),
+			Labels:                jsonx.Slice[string](labelPairs(item.Metadata.Labels)),
+			Age:                   ageString(item.Metadata.CreationTimestamp.Time),
+			CreatedAt:             item.Metadata.CreationTimestamp.Time.Format("2006-01-02 15:04:05"),
+		})
+	}
+
+	sort.Slice(vpas, func(i, j int) bool {
+		leftOrder := topologyStatusOrder(vpas[i].Status)
+		rightOrder := topologyStatusOrder(vpas[j].Status)
+		if leftOrder != rightOrder {
+			return leftOrder < rightOrder
+		}
+		if vpas[i].Namespace != vpas[j].Namespace {
+			return vpas[i].Namespace < vpas[j].Namespace
+		}
+		return vpas[i].Name < vpas[j].Name
+	})
+
+	return vpas, nil
+}
+
+func (s *ClusterService) GetVPAClusterReadiness(ctx context.Context) (VPAClusterReadiness, error) {
+	return s.collectVPAClusterReadiness(ctx).payload, nil
+}
+
+func (s *ClusterService) collectVPAClusterReadiness(ctx context.Context) vpaClusterReadinessState {
+	state := vpaClusterReadinessState{
+		updaterMinReplicas: 2,
+	}
+	checks := make([]VPAClusterReadinessCheck, 0, 7)
+
+	addCheck := func(key string, label string, status string, summary string, detail string) {
+		checks = append(checks, VPAClusterReadinessCheck{
+			Key:     key,
+			Label:   label,
+			Status:  status,
+			Summary: summary,
+			Detail:  detail,
+		})
+	}
+
+	if _, err := s.runKubectlCommand(ctx, nil, "get", "crd", "verticalpodautoscalers.autoscaling.k8s.io", "-o", "json"); err != nil {
+		switch {
+		case isKubectlNotFoundError(err):
+			addCheck("crd", "VPA CRD", TopologyStatusError, "VerticalPodAutoscaler CRD is missing", "Install the autoscaling.k8s.io VPA CRDs before using this feature.")
+		case isKubectlForbiddenError(err):
+			addCheck("crd", "VPA CRD", TopologyStatusWarning, "No permission to inspect the VPA CRD", "Grant cluster-scope access to read CustomResourceDefinitions.")
+		default:
+			addCheck("crd", "VPA CRD", TopologyStatusWarning, "Unable to verify the VPA CRD", err.Error())
+		}
+	} else {
+		state.crdInstalled = true
+		addCheck("crd", "VPA CRD", TopologyStatusHealthy, "CRD is installed", "")
+	}
+
+	recommender, err := s.client.Kubernetes.AppsV1().Deployments("kube-system").Get(ctx, "vpa-recommender", metav1.GetOptions{})
+	switch {
+	case apierrors.IsNotFound(err):
+		addCheck("recommender", "Recommender", TopologyStatusError, "vpa-recommender deployment is missing", "Recommendations cannot be generated until the recommender controller is installed.")
+	case apierrors.IsForbidden(err):
+		addCheck("recommender", "Recommender", TopologyStatusWarning, "No permission to inspect vpa-recommender", "Grant access to kube-system deployments for readiness diagnostics.")
+	case err != nil:
+		addCheck("recommender", "Recommender", TopologyStatusWarning, "Unable to inspect vpa-recommender", err.Error())
+	default:
+		status, summary := workloadReadinessSummary(recommender.Status.ReadyReplicas, desiredReplicas(recommender.Spec.Replicas))
+		state.recommenderReady = status == TopologyStatusHealthy
+		addCheck("recommender", "Recommender", status, summary, "")
+	}
+
+	updater, err := s.client.Kubernetes.AppsV1().Deployments("kube-system").Get(ctx, "vpa-updater", metav1.GetOptions{})
+	switch {
+	case apierrors.IsNotFound(err):
+		addCheck("updater", "Updater", TopologyStatusError, "vpa-updater deployment is missing", "Auto / Recreate update modes cannot recycle pods without the updater controller.")
+	case apierrors.IsForbidden(err):
+		addCheck("updater", "Updater", TopologyStatusWarning, "No permission to inspect vpa-updater", "Grant access to kube-system deployments for readiness diagnostics.")
+	case err != nil:
+		addCheck("updater", "Updater", TopologyStatusWarning, "Unable to inspect vpa-updater", err.Error())
+	default:
+		state.updaterMinReplicas = deploymentArgInt(updater, "--min-replicas", 2)
+		status, summary := workloadReadinessSummary(updater.Status.ReadyReplicas, desiredReplicas(updater.Spec.Replicas))
+		state.updaterReady = status == TopologyStatusHealthy
+		addCheck("updater", "Updater", status, fmt.Sprintf("%s · min replicas %d", summary, state.updaterMinReplicas), "")
+		if state.updaterMinReplicas > 1 {
+			addCheck(
+				"updater-min-replicas",
+				"Updater Policy",
+				TopologyStatusHealthy,
+				fmt.Sprintf("Auto updates protect workloads below %d replicas", state.updaterMinReplicas),
+				"Single-replica workloads will not be auto-evicted until they are recreated or scaled above the updater threshold.",
+			)
+		}
+	}
+
+	admissionController, err := s.client.Kubernetes.AppsV1().Deployments("kube-system").Get(ctx, "vpa-admission-controller", metav1.GetOptions{})
+	switch {
+	case apierrors.IsNotFound(err):
+		addCheck("admission-controller", "Admission Controller", TopologyStatusError, "vpa-admission-controller deployment is missing", "New pods will not receive VPA-mutated resource requests or limits.")
+	case apierrors.IsForbidden(err):
+		addCheck("admission-controller", "Admission Controller", TopologyStatusWarning, "No permission to inspect vpa-admission-controller", "Grant access to kube-system deployments for readiness diagnostics.")
+	case err != nil:
+		addCheck("admission-controller", "Admission Controller", TopologyStatusWarning, "Unable to inspect vpa-admission-controller", err.Error())
+	default:
+		status, summary := workloadReadinessSummary(admissionController.Status.ReadyReplicas, desiredReplicas(admissionController.Spec.Replicas))
+		state.admissionControllerReady = status == TopologyStatusHealthy
+		addCheck("admission-controller", "Admission Controller", status, summary, "")
+	}
+
+	webhook, webhookStatus, webhookSummary, webhookDetail := s.inspectVPAWebhookConfiguration(ctx)
+	state.webhookConfigured = webhook != nil && webhookStatus == TopologyStatusHealthy
+	addCheck("webhook", "Webhook Configuration", webhookStatus, webhookSummary, webhookDetail)
+
+	endpointStatus, endpointSummary, endpointDetail := s.inspectVPAWebhookEndpoints(ctx)
+	state.webhookEndpointReady = endpointStatus == TopologyStatusHealthy
+	addCheck("webhook-endpoints", "Webhook Endpoints", endpointStatus, endpointSummary, endpointDetail)
+
+	tlsStatus, tlsSummary, tlsDetail := s.inspectVPAWebhookTLS(ctx, webhook)
+	state.webhookTLSValid = tlsStatus == TopologyStatusHealthy
+	addCheck("webhook-tls", "Webhook TLS", tlsStatus, tlsSummary, tlsDetail)
+
+	state.payload = VPAClusterReadiness{
+		Status:             readinessOverallStatus(checks),
+		Summary:            readinessSummary(checks),
+		UpdaterMinReplicas: state.updaterMinReplicas,
+		Checks:             jsonx.Slice[VPAClusterReadinessCheck](checks),
+	}
+
+	return state
+}
+
+func workloadReadinessSummary(readyReplicas int32, desired int32) (string, string) {
+	if desired <= 0 {
+		if readyReplicas > 0 {
+			return TopologyStatusHealthy, fmt.Sprintf("%d ready", readyReplicas)
+		}
+		return TopologyStatusWarning, "No ready replicas"
+	}
+
+	if readyReplicas >= desired {
+		return TopologyStatusHealthy, fmt.Sprintf("%d/%d ready", readyReplicas, desired)
+	}
+
+	if readyReplicas > 0 {
+		return TopologyStatusWarning, fmt.Sprintf("%d/%d ready", readyReplicas, desired)
+	}
+
+	return TopologyStatusError, fmt.Sprintf("%d/%d ready", readyReplicas, desired)
+}
+
+func deploymentArgInt(item *appsv1.Deployment, name string, fallback int) int {
+	if item == nil || len(item.Spec.Template.Spec.Containers) == 0 {
+		return fallback
+	}
+
+	for _, container := range item.Spec.Template.Spec.Containers {
+		for index, arg := range container.Args {
+			if arg == name && index+1 < len(container.Args) {
+				if value, err := strconv.Atoi(strings.TrimSpace(container.Args[index+1])); err == nil {
+					return value
+				}
+			}
+			if strings.HasPrefix(arg, name+"=") {
+				if value, err := strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(arg, name+"="))); err == nil {
+					return value
+				}
+			}
+		}
+	}
+
+	return fallback
+}
+
+func (s *ClusterService) inspectVPAWebhookConfiguration(
+	ctx context.Context,
+) (*admissionregistrationv1.MutatingWebhook, string, string, string) {
+	config, err := s.client.Kubernetes.AdmissionregistrationV1().MutatingWebhookConfigurations().Get(
+		ctx,
+		"vpa-webhook-config",
+		metav1.GetOptions{},
+	)
+	switch {
+	case apierrors.IsNotFound(err):
+		return nil, TopologyStatusError, "vpa-webhook-config is missing", "Without the mutating webhook configuration, new pods will not receive VPA updates."
+	case apierrors.IsForbidden(err):
+		return nil, TopologyStatusWarning, "No permission to inspect vpa-webhook-config", "Grant cluster-scope access to mutating webhook configurations for readiness diagnostics."
+	case err != nil:
+		return nil, TopologyStatusWarning, "Unable to inspect vpa-webhook-config", err.Error()
+	}
+
+	webhook := vpaPodMutationWebhook(config)
+	if webhook == nil {
+		return nil, TopologyStatusError, "No pod CREATE rule found in vpa-webhook-config", "The VPA webhook must target pod CREATE requests to mutate new pods."
+	}
+
+	service := webhook.ClientConfig.Service
+	if service == nil || strings.TrimSpace(service.Name) == "" || strings.TrimSpace(service.Namespace) == "" {
+		return webhook, TopologyStatusError, "Webhook service reference is incomplete", "Expected a service target such as vpa-webhook.kube-system.svc."
+	}
+
+	return webhook, TopologyStatusHealthy, fmt.Sprintf("Webhook routes to %s/%s", service.Namespace, service.Name), ""
+}
+
+func vpaPodMutationWebhook(
+	config *admissionregistrationv1.MutatingWebhookConfiguration,
+) *admissionregistrationv1.MutatingWebhook {
+	if config == nil {
+		return nil
+	}
+
+	for index := range config.Webhooks {
+		webhook := &config.Webhooks[index]
+		for _, rule := range webhook.Rules {
+			if !containsAdmissionResource(rule.Resources, "pods") || !containsAdmissionOperation(rule.Operations, "CREATE") {
+				continue
+			}
+			return webhook
+		}
+	}
+
+	return nil
+}
+
+func containsAdmissionResource(items []string, expected string) bool {
+	for _, item := range items {
+		value := strings.ToLower(strings.TrimSpace(item))
+		if value == "*" || value == expected {
+			return true
+		}
+	}
+	return false
+}
+
+func containsAdmissionOperation(items []admissionregistrationv1.OperationType, expected string) bool {
+	for _, item := range items {
+		value := strings.ToUpper(strings.TrimSpace(string(item)))
+		if value == "*" || value == expected {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *ClusterService) inspectVPAWebhookEndpoints(ctx context.Context) (string, string, string) {
+	service, err := s.client.Kubernetes.CoreV1().Services("kube-system").Get(ctx, "vpa-webhook", metav1.GetOptions{})
+	switch {
+	case apierrors.IsNotFound(err):
+		return TopologyStatusError, "Service kube-system/vpa-webhook is missing", "The mutating webhook has no stable in-cluster endpoint."
+	case apierrors.IsForbidden(err):
+		return TopologyStatusWarning, "No permission to inspect service kube-system/vpa-webhook", "Grant access to kube-system services and endpoints for readiness diagnostics."
+	case err != nil:
+		return TopologyStatusWarning, "Unable to inspect service kube-system/vpa-webhook", err.Error()
+	}
+
+	endpoints, err := s.client.Kubernetes.CoreV1().Endpoints("kube-system").Get(ctx, "vpa-webhook", metav1.GetOptions{})
+	switch {
+	case apierrors.IsNotFound(err):
+		return TopologyStatusError, "Endpoint kube-system/vpa-webhook is missing", "The webhook service has no backing pod endpoint."
+	case apierrors.IsForbidden(err):
+		return TopologyStatusWarning, "No permission to inspect endpoint kube-system/vpa-webhook", "Grant access to kube-system services and endpoints for readiness diagnostics."
+	case err != nil:
+		return TopologyStatusWarning, "Unable to inspect endpoint kube-system/vpa-webhook", err.Error()
+	}
+
+	readyAddresses := 0
+	for _, subset := range endpoints.Subsets {
+		readyAddresses += len(subset.Addresses)
+	}
+	if readyAddresses == 0 {
+		return TopologyStatusError, fmt.Sprintf("Service %s/%s has no ready endpoints", service.Namespace, service.Name), "The admission webhook cannot serve pod CREATE requests until a ready endpoint is available."
+	}
+
+	return TopologyStatusHealthy, fmt.Sprintf("%d ready endpoint(s)", readyAddresses), ""
+}
+
+func (s *ClusterService) inspectVPAWebhookTLS(
+	ctx context.Context,
+	webhook *admissionregistrationv1.MutatingWebhook,
+) (string, string, string) {
+	if webhook == nil || webhook.ClientConfig.Service == nil {
+		return TopologyStatusWarning, "Skipping TLS validation until webhook configuration is readable", ""
+	}
+
+	secret, err := s.client.Kubernetes.CoreV1().Secrets("kube-system").Get(ctx, "vpa-tls-certs", metav1.GetOptions{})
+	switch {
+	case apierrors.IsNotFound(err):
+		return TopologyStatusError, "Secret kube-system/vpa-tls-certs is missing", "The admission webhook cannot present a server certificate without this secret."
+	case apierrors.IsForbidden(err):
+		return TopologyStatusWarning, "No permission to inspect secret kube-system/vpa-tls-certs", "Grant access to kube-system secrets for readiness diagnostics."
+	case err != nil:
+		return TopologyStatusWarning, "Unable to inspect secret kube-system/vpa-tls-certs", err.Error()
+	}
+
+	caData := secret.Data["caCert.pem"]
+	serverData := secret.Data["serverCert.pem"]
+	if len(caData) == 0 || len(serverData) == 0 {
+		return TopologyStatusError, "Webhook TLS secret is incomplete", "Expected both caCert.pem and serverCert.pem in kube-system/vpa-tls-certs."
+	}
+
+	if len(webhook.ClientConfig.CABundle) == 0 {
+		return TopologyStatusError, "Webhook configuration is missing caBundle", "kube-apiserver cannot verify the webhook server certificate without the embedded CA bundle."
+	}
+	if !bytes.Equal(webhook.ClientConfig.CABundle, caData) {
+		return TopologyStatusError, "Webhook caBundle does not match the mounted CA certificate", "Refresh the mutating webhook configuration after rotating webhook certificates."
+	}
+
+	caCert, err := parsePEMCertificate(caData)
+	if err != nil {
+		return TopologyStatusError, "Unable to parse webhook CA certificate", err.Error()
+	}
+	if !caCert.IsCA {
+		return TopologyStatusError, "Webhook CA certificate is not marked as a CA", "Regenerate the CA certificate with basicConstraints CA:TRUE and keyCertSign usage."
+	}
+
+	serverCert, err := parsePEMCertificate(serverData)
+	if err != nil {
+		return TopologyStatusError, "Unable to parse webhook server certificate", err.Error()
+	}
+
+	dnsName := fmt.Sprintf("%s.%s.svc", webhook.ClientConfig.Service.Name, webhook.ClientConfig.Service.Namespace)
+	roots := x509.NewCertPool()
+	roots.AddCert(caCert)
+	if _, err := serverCert.Verify(x509.VerifyOptions{
+		DNSName: dnsName,
+		Roots:   roots,
+		KeyUsages: []x509.ExtKeyUsage{
+			x509.ExtKeyUsageServerAuth,
+		},
+	}); err != nil {
+		return TopologyStatusError, "Webhook certificate verification failed", err.Error()
+	}
+
+	return TopologyStatusHealthy, fmt.Sprintf("Server certificate verifies for %s", dnsName), ""
+}
+
+func parsePEMCertificate(data []byte) (*x509.Certificate, error) {
+	block, _ := pem.Decode(data)
+	if block == nil {
+		return nil, fmt.Errorf("no PEM certificate block found")
+	}
+
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("parse x509 certificate: %w", err)
+	}
+
+	return cert, nil
+}
+
+func readinessOverallStatus(checks []VPAClusterReadinessCheck) string {
+	status := TopologyStatusHealthy
+	for _, check := range checks {
+		if check.Status == TopologyStatusError {
+			return TopologyStatusError
+		}
+		if check.Status == TopologyStatusWarning {
+			status = TopologyStatusWarning
+		}
+	}
+
+	return status
+}
+
+func readinessSummary(checks []VPAClusterReadinessCheck) string {
+	for _, check := range checks {
+		if check.Status == TopologyStatusError {
+			return check.Summary
+		}
+	}
+	for _, check := range checks {
+		if check.Status == TopologyStatusWarning {
+			return check.Summary
+		}
+	}
+	return "VPA controllers and webhook are ready"
+}
+
+func (s *ClusterService) analyzeVPAItem(
+	ctx context.Context,
+	item vpaResource,
+	recommendations []VPARecommendationItem,
+	readiness vpaClusterReadinessState,
+) vpaAnalysisResult {
+	mode := strings.ToLower(vpaUpdateMode(item))
+	autoApply := vpaModeAutoApplies(mode)
+	targetState, targetErr := s.inspectVPATarget(ctx, item)
+	conditions := vpaConditionIndex(item)
+	insights := make([]VPAInsightItem, 0, 8)
+	seen := make(map[string]struct{})
+
+	addInsight := func(level string, code string, summary string, detail string) {
+		if _, ok := seen[code]; ok {
+			return
+		}
+		seen[code] = struct{}{}
+		insights = append(insights, VPAInsightItem{
+			Level:   level,
+			Code:    code,
+			Summary: summary,
+			Detail:  detail,
+		})
+	}
+
+	if targetErr != nil {
+		addInsight("error", "TARGET_LOOKUP_FAILED", "Unable to inspect the target workload", targetErr.Error())
+	}
+	if !targetState.supported {
+		addInsight("warning", "TARGET_KIND_UNSUPPORTED", "This target kind does not yet expose rollout diagnostics", "VPA recommendations still work, but the UI cannot explain apply progress for this target kind yet.")
+	}
+	if targetState.supported && !targetState.found {
+		addInsight("error", "TARGET_NOT_FOUND", "The referenced target workload was not found", fmt.Sprintf("%s %s/%s no longer exists.", item.Spec.TargetRef.Kind, item.Metadata.Namespace, item.Spec.TargetRef.Name))
+	}
+
+	if !readiness.crdInstalled {
+		addInsight("error", "CRD_MISSING", "The cluster does not have the VPA CRD installed", "Install the VPA CRDs before using this feature.")
+	}
+	if !readiness.recommenderReady {
+		addInsight("error", "RECOMMENDER_UNAVAILABLE", "The recommender is not ready", "VPA cannot produce fresh container recommendations until vpa-recommender is healthy.")
+	}
+	if autoApply && !readiness.updaterReady {
+		addInsight("error", "UPDATER_UNAVAILABLE", "The updater is not ready", "Auto / Recreate modes cannot recycle pods until vpa-updater is healthy.")
+	}
+	if autoApply && (!readiness.admissionControllerReady || !readiness.webhookConfigured || !readiness.webhookEndpointReady || !readiness.webhookTLSValid) {
+		addInsight("error", "ADMISSION_UNAVAILABLE", "The admission webhook is not ready", "New pods will keep their original requests and limits until the VPA admission chain is healthy.")
+	}
+
+	if condition, ok := conditions["configunsupported"]; ok && condition.status {
+		addInsight("error", "CONFIG_UNSUPPORTED", "The VPA configuration is not supported", firstNonEmpty(condition.message, condition.reason))
+	}
+	if condition, ok := conditions["nopodsmatched"]; ok && condition.status {
+		addInsight("warning", "NO_PODS_MATCHED", "No pods currently match the target selector", firstNonEmpty(condition.message, condition.reason))
+	}
+	if condition, ok := conditions["fetchinghistory"]; ok && condition.status {
+		addInsight("warning", "FETCHING_HISTORY", "The recommender is still building history", firstNonEmpty(condition.message, condition.reason))
+	}
+	if condition, ok := conditions["lowconfidence"]; ok && condition.status {
+		addInsight("warning", "LOW_CONFIDENCE", "Recommendation confidence is still low", firstNonEmpty(condition.message, condition.reason))
+	}
+	if condition, ok := conditions["recommendationprovided"]; ok && !condition.status {
+		addInsight("warning", "RECOMMENDATION_PENDING", "Recommendations are not ready yet", firstNonEmpty(condition.message, condition.reason))
+	}
+
+	if len(recommendations) == 0 {
+		addInsight("warning", "NO_RECOMMENDATION_DATA", "No container recommendations are available yet", "Wait for traffic and metrics history, or verify that the recommender can read workload samples.")
+	}
+
+	switch mode {
+	case "off":
+		addInsight("warning", "UPDATE_MODE_OFF", "Update mode is Off", "This VPA only computes recommendations and will not change running or newly created pods automatically.")
+	case "initial":
+		addInsight("warning", "UPDATE_MODE_INITIAL", "Update mode is Initial", "Only pods created after the recommendation is ready will receive VPA mutations.")
+	case "default":
+		addInsight("info", "UPDATE_MODE_DEFAULT", "Update mode relies on the cluster default", "The actual rollout behavior depends on the VPA controller version and cluster defaults.")
+	}
+
+	activePods := activePodsOnly(targetState.pods)
+	appliedPods := 0
+	firstUpdateDetail := ""
+	for _, pod := range activePods {
+		if note, ok := podVPAUpdateDetail(pod); ok {
+			appliedPods++
+			if firstUpdateDetail == "" {
+				firstUpdateDetail = note
+			}
+		}
+	}
+
+	if firstUpdateDetail != "" {
+		addInsight("info", "POD_UPDATES_RECORDED", "At least one active pod reports VPA mutations", firstUpdateDetail)
+		if strings.Contains(strings.ToLower(firstUpdateDetail), "capped") {
+			addInsight("warning", "RECOMMENDATION_CAPPED", "The applied resource change was capped by policy or namespace limits", firstUpdateDetail)
+		}
+	} else if autoApply && len(recommendations) > 0 && len(activePods) > 0 {
+		if targetState.replicaSafetyApplies && targetState.desiredReplicas > 0 && targetState.desiredReplicas < readiness.updaterMinReplicas && readiness.updaterReady {
+			addInsight(
+				"warning",
+				"LOW_REPLICA_PROTECTION",
+				fmt.Sprintf("Auto updates wait below %d replicas", readiness.updaterMinReplicas),
+				"Scale the workload above the updater threshold or recreate the pod manually to pick up the recommendation.",
+			)
+		} else {
+			addInsight("warning", "WAITING_FOR_RECREATE", "Recommendations exist, but no active pod shows VPA updates yet", "The workload is still waiting for pod recreation or a fresh rollout.")
+		}
+	}
+
+	if vpaRecommendationCapped(recommendations) {
+		addInsight("warning", "TARGET_CAPPED", "The target recommendation differs from the uncapped recommendation", "A container policy, LimitRange, or VPA maxAllowed rule is constraining the final target.")
+	}
+
+	result := vpaAnalysisResult{
+		status:             TopologyStatusWarning,
+		summary:            "Waiting for rollout progress",
+		targetReplicaCount: targetState.desiredReplicas,
+		matchedPodCount:    len(activePods),
+		appliedPodCount:    appliedPods,
+		insights:           insights,
+	}
+
+	switch {
+	case targetState.supported && !targetState.found:
+		result.status = TopologyStatusError
+		result.summary = "Target workload not found"
+	case len(activePods) == 0:
+		result.status = TopologyStatusWarning
+		result.summary = "No active pods matched the target"
+	case appliedPods > 0 && appliedPods == len(activePods):
+		result.status = TopologyStatusHealthy
+		result.summary = fmt.Sprintf("%d/%d active pod(s) report VPA updates", appliedPods, len(activePods))
+	case appliedPods > 0:
+		result.status = TopologyStatusWarning
+		result.summary = fmt.Sprintf("%d/%d active pod(s) report VPA updates", appliedPods, len(activePods))
+	case mode == "off":
+		result.status = TopologyStatusWarning
+		result.summary = "Recommendation-only mode"
+	case mode == "initial":
+		result.status = TopologyStatusWarning
+		result.summary = "Applies to newly created pods only"
+	case len(recommendations) == 0:
+		result.status = TopologyStatusWarning
+		result.summary = "Waiting for recommendation data"
+	case autoApply && !readiness.webhookTLSValid:
+		result.status = TopologyStatusError
+		result.summary = "Admission webhook is not healthy"
+	case autoApply && targetState.replicaSafetyApplies && targetState.desiredReplicas > 0 && targetState.desiredReplicas < readiness.updaterMinReplicas && readiness.updaterReady:
+		result.status = TopologyStatusWarning
+		result.summary = fmt.Sprintf("Updater protects workloads below %d replicas", readiness.updaterMinReplicas)
+	default:
+		result.status = TopologyStatusWarning
+		result.summary = "Waiting for pod recreation to apply the recommendation"
+	}
+
+	return result
+}
+
+func vpaModeAutoApplies(mode string) bool {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "auto", "recreate", "inplaceorrecreate":
+		return true
+	default:
+		return false
+	}
+}
+
+type vpaConditionState struct {
+	status  bool
+	reason  string
+	message string
+}
+
+func vpaConditionIndex(item vpaResource) map[string]vpaConditionState {
+	result := make(map[string]vpaConditionState, len(item.Status.Conditions))
+	for _, condition := range item.Status.Conditions {
+		result[strings.ToLower(strings.TrimSpace(condition.Type))] = vpaConditionState{
+			status:  strings.EqualFold(condition.Status, "true"),
+			reason:  strings.TrimSpace(condition.Reason),
+			message: strings.TrimSpace(condition.Message),
+		}
+	}
+	return result
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+func activePodsOnly(items []corev1.Pod) []corev1.Pod {
+	if len(items) == 0 {
+		return nil
+	}
+
+	result := make([]corev1.Pod, 0, len(items))
+	for _, item := range items {
+		if item.DeletionTimestamp != nil {
+			continue
+		}
+		switch item.Status.Phase {
+		case corev1.PodFailed, corev1.PodSucceeded:
+			continue
+		}
+		result = append(result, item)
+	}
+	return result
+}
+
+func podVPAUpdateDetail(item corev1.Pod) (string, bool) {
+	if value := strings.TrimSpace(item.Annotations["vpaUpdates"]); value != "" {
+		return value, true
+	}
+	if value := strings.TrimSpace(item.Annotations["vpaObservedContainers"]); value != "" {
+		return "Observed containers: " + value, true
+	}
+	return "", false
+}
+
+func vpaRecommendationCapped(items []VPARecommendationItem) bool {
+	for _, item := range items {
+		if resourceStringSetsEqual(item.Target, item.UncappedTarget) {
+			continue
+		}
+		if len(item.Target) > 0 && len(item.UncappedTarget) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func resourceStringSetsEqual(left []string, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+
+	leftCopy := append([]string(nil), left...)
+	rightCopy := append([]string(nil), right...)
+	sort.Strings(leftCopy)
+	sort.Strings(rightCopy)
+	for index := range leftCopy {
+		if leftCopy[index] != rightCopy[index] {
+			return false
+		}
+	}
+	return true
+}
+
+func (s *ClusterService) inspectVPATarget(ctx context.Context, item vpaResource) (vpaTargetWorkloadState, error) {
+	target := vpaTargetWorkloadState{
+		kind: strings.TrimSpace(item.Spec.TargetRef.Kind),
+	}
+
+	namespace := item.Metadata.Namespace
+	name := strings.TrimSpace(item.Spec.TargetRef.Name)
+	if namespace == "" || target.kind == "" || name == "" {
+		return target, nil
+	}
+
+	pods, err := s.client.Kubernetes.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return target, fmt.Errorf("list pods for VPA target %s/%s: %w", namespace, name, err)
+	}
+
+	switch strings.ToLower(target.kind) {
+	case "deployment":
+		workload, err := s.client.Kubernetes.AppsV1().Deployments(namespace).Get(ctx, name, metav1.GetOptions{})
+		if apierrors.IsNotFound(err) {
+			target.supported = true
+			return target, nil
+		}
+		if err != nil {
+			return target, fmt.Errorf("get deployment %s/%s: %w", namespace, name, err)
+		}
+		selector, err := metav1.LabelSelectorAsSelector(workload.Spec.Selector)
+		if err != nil {
+			return target, fmt.Errorf("build deployment selector %s/%s: %w", namespace, name, err)
+		}
+		target.supported = true
+		target.found = true
+		target.desiredReplicas = int(desiredReplicas(workload.Spec.Replicas))
+		target.pods = filterPodsBySelector(pods.Items, namespace, selector)
+		target.replicaSafetyApplies = true
+	case "statefulset":
+		workload, err := s.client.Kubernetes.AppsV1().StatefulSets(namespace).Get(ctx, name, metav1.GetOptions{})
+		if apierrors.IsNotFound(err) {
+			target.supported = true
+			return target, nil
+		}
+		if err != nil {
+			return target, fmt.Errorf("get statefulset %s/%s: %w", namespace, name, err)
+		}
+		selector, err := metav1.LabelSelectorAsSelector(workload.Spec.Selector)
+		if err != nil {
+			return target, fmt.Errorf("build statefulset selector %s/%s: %w", namespace, name, err)
+		}
+		target.supported = true
+		target.found = true
+		target.desiredReplicas = int(desiredReplicas(workload.Spec.Replicas))
+		target.pods = filterPodsBySelector(pods.Items, namespace, selector)
+		target.replicaSafetyApplies = true
+	case "replicaset":
+		workload, err := s.client.Kubernetes.AppsV1().ReplicaSets(namespace).Get(ctx, name, metav1.GetOptions{})
+		if apierrors.IsNotFound(err) {
+			target.supported = true
+			return target, nil
+		}
+		if err != nil {
+			return target, fmt.Errorf("get replicaset %s/%s: %w", namespace, name, err)
+		}
+		selector, err := metav1.LabelSelectorAsSelector(workload.Spec.Selector)
+		if err != nil {
+			return target, fmt.Errorf("build replicaset selector %s/%s: %w", namespace, name, err)
+		}
+		target.supported = true
+		target.found = true
+		target.desiredReplicas = int(desiredReplicas(workload.Spec.Replicas))
+		target.pods = filterPodsBySelector(pods.Items, namespace, selector)
+		target.replicaSafetyApplies = true
+	case "daemonset":
+		workload, err := s.client.Kubernetes.AppsV1().DaemonSets(namespace).Get(ctx, name, metav1.GetOptions{})
+		if apierrors.IsNotFound(err) {
+			target.supported = true
+			return target, nil
+		}
+		if err != nil {
+			return target, fmt.Errorf("get daemonset %s/%s: %w", namespace, name, err)
+		}
+		selector, err := metav1.LabelSelectorAsSelector(workload.Spec.Selector)
+		if err != nil {
+			return target, fmt.Errorf("build daemonset selector %s/%s: %w", namespace, name, err)
+		}
+		target.supported = true
+		target.found = true
+		target.desiredReplicas = int(workload.Status.DesiredNumberScheduled)
+		target.pods = filterPodsBySelector(pods.Items, namespace, selector)
+	case "replicationcontroller":
+		workload, err := s.client.Kubernetes.CoreV1().ReplicationControllers(namespace).Get(ctx, name, metav1.GetOptions{})
+		if apierrors.IsNotFound(err) {
+			target.supported = true
+			return target, nil
+		}
+		if err != nil {
+			return target, fmt.Errorf("get replicationcontroller %s/%s: %w", namespace, name, err)
+		}
+		selector := labels.SelectorFromSet(workload.Spec.Selector)
+		target.supported = true
+		target.found = true
+		target.desiredReplicas = int(desiredReplicas(workload.Spec.Replicas))
+		target.pods = filterPodsBySelector(pods.Items, namespace, selector)
+		target.replicaSafetyApplies = true
+	case "job":
+		workload, err := s.client.Kubernetes.BatchV1().Jobs(namespace).Get(ctx, name, metav1.GetOptions{})
+		if apierrors.IsNotFound(err) {
+			target.supported = true
+			return target, nil
+		}
+		if err != nil {
+			return target, fmt.Errorf("get job %s/%s: %w", namespace, name, err)
+		}
+		if workload.Spec.Selector == nil {
+			target.supported = true
+			target.found = true
+			target.desiredReplicas = int(desiredReplicas(workload.Spec.Parallelism))
+			return target, nil
+		}
+		selector, err := metav1.LabelSelectorAsSelector(workload.Spec.Selector)
+		if err != nil {
+			return target, fmt.Errorf("build job selector %s/%s: %w", namespace, name, err)
+		}
+		target.supported = true
+		target.found = true
+		target.desiredReplicas = int(desiredReplicas(workload.Spec.Parallelism))
+		target.pods = filterPodsBySelector(pods.Items, namespace, selector)
+	default:
+		target.supported = false
+	}
+
+	return target, nil
+}
+
 func (s *ClusterService) ListResourceQuotas(
 	ctx context.Context,
 	namespace string,
@@ -2926,6 +3911,36 @@ func (s *ClusterService) UpdateHPAYAML(
 	content string,
 ) (WorkloadActionResult, error) {
 	return s.ApplyResourceYAML(ctx, "hpa", "HorizontalPodAutoscaler", namespace, name, content)
+}
+
+func (s *ClusterService) GetVPAYAML(
+	ctx context.Context,
+	namespace string,
+	name string,
+) (ResourceTextResult, error) {
+	return s.GetResourceYAML(
+		ctx,
+		"verticalpodautoscalers.autoscaling.k8s.io",
+		"VerticalPodAutoscaler",
+		namespace,
+		name,
+	)
+}
+
+func (s *ClusterService) UpdateVPAYAML(
+	ctx context.Context,
+	namespace string,
+	name string,
+	content string,
+) (WorkloadActionResult, error) {
+	return s.ApplyResourceYAML(
+		ctx,
+		"verticalpodautoscalers.autoscaling.k8s.io",
+		"VerticalPodAutoscaler",
+		namespace,
+		name,
+		content,
+	)
 }
 
 func (s *ClusterService) GetResourceQuotaYAML(
@@ -4974,6 +5989,235 @@ func hpaBehaviorSummary(item autoscalingv2.HorizontalPodAutoscaler) string {
 	}
 
 	return strings.Join(parts, " · ")
+}
+
+func isKubectlMissingResourceError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "the server doesn't have a resource type") ||
+		strings.Contains(message, "could not find the requested resource") ||
+		strings.Contains(message, "no matches for kind")
+}
+
+func isKubectlNotFoundError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, " not found") ||
+		strings.Contains(message, "(notfound)") ||
+		strings.Contains(message, "the server could not find the requested resource")
+}
+
+func isKubectlForbiddenError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "forbidden") || strings.Contains(message, "(forbidden)")
+}
+
+func vpaUpdateMode(item vpaResource) string {
+	if item.Spec.UpdatePolicy == nil || item.Spec.UpdatePolicy.UpdateMode == nil {
+		return "Default"
+	}
+
+	mode := strings.TrimSpace(*item.Spec.UpdatePolicy.UpdateMode)
+	if mode == "" {
+		return "Default"
+	}
+
+	return mode
+}
+
+func vpaStatusValue(item vpaResource, recommendations []VPARecommendationItem) string {
+	targetKind := strings.TrimSpace(item.Spec.TargetRef.Kind)
+	targetName := strings.TrimSpace(item.Spec.TargetRef.Name)
+	if targetKind == "" || targetName == "" {
+		return TopologyStatusWarning
+	}
+
+	for _, condition := range item.Status.Conditions {
+		switch strings.ToLower(condition.Type) {
+		case "recommendationprovided":
+			if strings.EqualFold(condition.Status, "false") {
+				return TopologyStatusWarning
+			}
+		case "configunsupported", "lowconfidence", "nopodsmatched", "fetchinghistory":
+			if strings.EqualFold(condition.Status, "true") {
+				return TopologyStatusWarning
+			}
+		}
+	}
+
+	if len(recommendations) == 0 {
+		return TopologyStatusWarning
+	}
+
+	return TopologyStatusHealthy
+}
+
+func vpaSummary(item vpaResource, recommendations []VPARecommendationItem) string {
+	target := fmt.Sprintf("%s/%s", item.Spec.TargetRef.Kind, item.Spec.TargetRef.Name)
+	if strings.TrimSpace(item.Spec.TargetRef.Kind) == "" || strings.TrimSpace(item.Spec.TargetRef.Name) == "" {
+		target = "No target"
+	}
+
+	return fmt.Sprintf(
+		"Target %s · Update %s · Recos %d",
+		target,
+		vpaUpdateMode(item),
+		len(recommendations),
+	)
+}
+
+func vpaResourcePolicies(item vpaResource) []VPAContainerPolicyItem {
+	if item.Spec.ResourcePolicy == nil || len(item.Spec.ResourcePolicy.ContainerPolicies) == 0 {
+		return nil
+	}
+
+	result := make([]VPAContainerPolicyItem, 0, len(item.Spec.ResourcePolicy.ContainerPolicies))
+	for _, policy := range item.Spec.ResourcePolicy.ContainerPolicies {
+		mode := "Default"
+		if policy.Mode != nil && strings.TrimSpace(*policy.Mode) != "" {
+			mode = strings.TrimSpace(*policy.Mode)
+		}
+
+		controlledValues := ""
+		if policy.ControlledValues != nil {
+			controlledValues = strings.TrimSpace(*policy.ControlledValues)
+		}
+
+		result = append(result, VPAContainerPolicyItem{
+			ContainerName:       policy.ContainerName,
+			Mode:                mode,
+			ControlledResources: jsonx.Slice[string](append([]string(nil), policy.ControlledResources...)),
+			ControlledValues:    controlledValues,
+			MinAllowed:          jsonx.Slice[string](resourceListStrings(policy.MinAllowed)),
+			MaxAllowed:          jsonx.Slice[string](resourceListStrings(policy.MaxAllowed)),
+			Summary:             vpaContainerPolicySummary(policy, mode, controlledValues),
+		})
+	}
+
+	sort.SliceStable(result, func(i, j int) bool {
+		return result[i].ContainerName < result[j].ContainerName
+	})
+
+	return result
+}
+
+func vpaContainerPolicySummary(
+	policy vpaContainerPolicy,
+	mode string,
+	controlledValues string,
+) string {
+	parts := make([]string, 0, 5)
+	if mode != "" {
+		parts = append(parts, "Mode "+mode)
+	}
+	if len(policy.ControlledResources) > 0 {
+		parts = append(parts, fmt.Sprintf("Resources %d", len(policy.ControlledResources)))
+	}
+	if len(policy.MinAllowed) > 0 {
+		parts = append(parts, fmt.Sprintf("Min %d", len(policy.MinAllowed)))
+	}
+	if len(policy.MaxAllowed) > 0 {
+		parts = append(parts, fmt.Sprintf("Max %d", len(policy.MaxAllowed)))
+	}
+	if controlledValues != "" {
+		parts = append(parts, "Values "+controlledValues)
+	}
+	if len(parts) == 0 {
+		return "Default policy"
+	}
+
+	return strings.Join(parts, " · ")
+}
+
+func vpaRecommendations(item vpaResource) []VPARecommendationItem {
+	if item.Status.Recommendation == nil || len(item.Status.Recommendation.ContainerRecommendations) == 0 {
+		return nil
+	}
+
+	result := make([]VPARecommendationItem, 0, len(item.Status.Recommendation.ContainerRecommendations))
+	for _, recommendation := range item.Status.Recommendation.ContainerRecommendations {
+		target := resourceListStrings(recommendation.Target)
+		lower := resourceListStrings(recommendation.LowerBound)
+		upper := resourceListStrings(recommendation.UpperBound)
+		uncapped := resourceListStrings(recommendation.UncappedTarget)
+
+		result = append(result, VPARecommendationItem{
+			ContainerName:  recommendation.ContainerName,
+			Target:         jsonx.Slice[string](target),
+			LowerBound:     jsonx.Slice[string](lower),
+			UpperBound:     jsonx.Slice[string](upper),
+			UncappedTarget: jsonx.Slice[string](uncapped),
+			Summary:        vpaRecommendationSummary(target, lower, upper, uncapped),
+		})
+	}
+
+	sort.SliceStable(result, func(i, j int) bool {
+		return result[i].ContainerName < result[j].ContainerName
+	})
+
+	return result
+}
+
+func vpaRecommendationSummary(
+	target []string,
+	lower []string,
+	upper []string,
+	uncapped []string,
+) string {
+	parts := make([]string, 0, 3)
+	if len(target) > 0 {
+		parts = append(parts, fmt.Sprintf("Target %d", len(target)))
+	}
+	if len(lower) > 0 || len(upper) > 0 {
+		parts = append(parts, fmt.Sprintf("Bounds %d/%d", len(lower), len(upper)))
+	}
+	if len(uncapped) > 0 {
+		parts = append(parts, fmt.Sprintf("Uncapped %d", len(uncapped)))
+	}
+	if len(parts) == 0 {
+		return "No recommendation data"
+	}
+
+	return strings.Join(parts, " · ")
+}
+
+func vpaConditions(item vpaResource) []VPAConditionItem {
+	if len(item.Status.Conditions) == 0 {
+		return nil
+	}
+
+	conditions := append([]vpaCondition(nil), item.Status.Conditions...)
+	sort.SliceStable(conditions, func(i, j int) bool {
+		return conditions[i].Type < conditions[j].Type
+	})
+
+	result := make([]VPAConditionItem, 0, len(conditions))
+	for _, condition := range conditions {
+		lastTransitionTime := ""
+		if !condition.LastTransitionTime.Time.IsZero() {
+			lastTransitionTime = condition.LastTransitionTime.Time.Format("2006-01-02 15:04:05")
+		}
+
+		result = append(result, VPAConditionItem{
+			Type:               condition.Type,
+			Status:             condition.Status,
+			Reason:             condition.Reason,
+			Message:            condition.Message,
+			LastTransitionTime: lastTransitionTime,
+		})
+	}
+
+	return result
 }
 
 func resourceListItems(items corev1.ResourceList) []ResourceValueItem {

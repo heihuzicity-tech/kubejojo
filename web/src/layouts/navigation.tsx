@@ -261,7 +261,7 @@ export const navigationSections: NavigationSection[] = [
         label: 'VPAs',
         path: '/resources/vpas',
         description: '垂直自动伸缩建议与策略查看',
-        implemented: false,
+        implemented: true,
       },
       {
         key: 'resources-resourcequotas',

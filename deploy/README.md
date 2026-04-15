@@ -32,3 +32,9 @@
   - 用独立的 `demo-governance` 命名空间演示 HPA / ResourceQuota / LimitRange
   - 包含 `LimitRange / ResourceQuota / Deployment / HorizontalPodAutoscaler`
   - 同时覆盖 `min/max/default/defaultRequest`、`count/*` 配额、CPU/Memory utilization HPA 与 behavior 策略
+
+- `demo/resource-governance-vpa-demo.yaml`
+  - 用于补充演示 `VerticalPodAutoscaler`
+  - 包含 `Deployment / VerticalPodAutoscaler`
+  - 使用持续消耗 CPU / Memory 的 `python:3.12-alpine` 测试容器，便于在几分钟内观察 recommendation
+  - 需要目标集群已安装 `VPA CRD` 与对应控制器，未安装时不要直接 apply
