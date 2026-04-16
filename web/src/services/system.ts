@@ -1,6 +1,6 @@
 import { http } from './http';
 
-const longRunningActionTimeoutMs = 10 * 60 * 1000;
+const longRunningActionTimeoutMs = 35 * 60 * 1000;
 
 type Envelope<T> = {
   code: string;
