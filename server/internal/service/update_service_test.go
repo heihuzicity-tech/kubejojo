@@ -119,3 +119,40 @@ func TestSelectNewestRelease(t *testing.T) {
 		})
 	}
 }
+
+func TestGitHubReleaseAssetDownloadURL(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name     string
+		asset    githubReleaseAsset
+		expected string
+	}{
+		{
+			name: "prefers api asset url when present",
+			asset: githubReleaseAsset{
+				APIURL:             "https://api.github.com/repos/example/releases/assets/1",
+				BrowserDownloadURL: "https://github.com/example/releases/download/v1.0.0/app.tar.gz",
+			},
+			expected: "https://api.github.com/repos/example/releases/assets/1",
+		},
+		{
+			name: "falls back to browser download url",
+			asset: githubReleaseAsset{
+				BrowserDownloadURL: "https://github.com/example/releases/download/v1.0.0/app.tar.gz",
+			},
+			expected: "https://github.com/example/releases/download/v1.0.0/app.tar.gz",
+		},
+	}
+
+	for _, testCase := range testCases {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			if actual := testCase.asset.DownloadURL(); actual != testCase.expected {
+				t.Fatalf("DownloadURL() = %q, want %q", actual, testCase.expected)
+			}
+		})
+	}
+}

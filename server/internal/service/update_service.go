@@ -101,8 +101,16 @@ type githubRelease struct {
 }
 
 type githubReleaseAsset struct {
+	APIURL             string `json:"url"`
 	Name               string `json:"name"`
 	BrowserDownloadURL string `json:"browser_download_url"`
+}
+
+func (a githubReleaseAsset) DownloadURL() string {
+	if strings.TrimSpace(a.APIURL) != "" {
+		return a.APIURL
+	}
+	return a.BrowserDownloadURL
 }
 
 func NewUpdateService(info buildinfo.Info, cfg config.UpdateConfig, embeddedFrontend bool) *UpdateService {
@@ -171,10 +179,10 @@ func (s *UpdateService) PerformUpdate(ctx context.Context, actor string) (*Updat
 	}
 	for _, asset := range release.Assets {
 		if asset.Name == expectedArchiveName {
-			archiveURL = asset.BrowserDownloadURL
+			archiveURL = asset.DownloadURL()
 		}
 		if asset.Name == "checksums.txt" {
-			checksumURL = asset.BrowserDownloadURL
+			checksumURL = asset.DownloadURL()
 		}
 	}
 
@@ -477,6 +485,9 @@ func (s *UpdateService) downloadFile(ctx context.Context, sourceURL string, dest
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, sourceURL, nil)
 	if err != nil {
 		return fmt.Errorf("build download request: %w", err)
+	}
+	if strings.EqualFold(parsedURL.Hostname(), "api.github.com") && strings.Contains(parsedURL.Path, "/releases/assets/") {
+		req.Header.Set("Accept", "application/octet-stream")
 	}
 	req.Header.Set("User-Agent", defaultUserAgent)
 	if token := strings.TrimSpace(s.cfg.GitHubToken); token != "" {
