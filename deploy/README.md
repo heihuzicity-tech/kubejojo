@@ -7,7 +7,13 @@
 - `kubejojo.service`
   - `systemd` 单元模板
   - 面向 release 模式部署
-  - 为后续在线更新预留了 `Restart=always` 和可写工作目录前提
+  - 通过 `/etc/kubejojo/kubejojo.env` 覆盖部署环境变量
+  - 为在线更新预留了 `Restart=always` 和可写工作目录前提
+
+- `install.sh`
+  - Linux 主机一键安装、升级、按版本回滚脚本
+  - 基于 GitHub Releases 获取匹配平台的 `tar.gz` 资产
+  - 安装到 `/opt/kubejojo`，并写入 `systemd` 服务与环境文件
 
 ## Demo 清单
 

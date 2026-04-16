@@ -6,6 +6,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WEB_DIR="$ROOT_DIR/web"
 SERVER_DIR="$ROOT_DIR/server"
 SERVICE_FILE="$ROOT_DIR/deploy/kubejojo.service"
+INSTALL_SCRIPT="$ROOT_DIR/deploy/install.sh"
+README_FILE="$ROOT_DIR/README.md"
 
 VERSION_FILE="$SERVER_DIR/cmd/kubejojo/VERSION"
 VERSION="${VERSION:-$(tr -d '[:space:]' < "$VERSION_FILE")}"
@@ -42,22 +44,30 @@ echo "Commit:    $COMMIT"
 echo "Date:      $DATE"
 echo "Platform:  $GOOS/$GOARCH"
 
-if [[ "${SKIP_NPM_INSTALL:-0}" != "1" ]]; then
-  echo "==> Installing frontend dependencies"
-  NPM_INSTALL_MODE="${NPM_INSTALL_MODE:-install}"
+if [[ "${SKIP_FRONTEND_BUILD:-0}" != "1" ]]; then
+  if [[ "${SKIP_NPM_INSTALL:-0}" != "1" ]]; then
+    echo "==> Installing frontend dependencies"
+    NPM_INSTALL_MODE="${NPM_INSTALL_MODE:-install}"
+    (
+      cd "$WEB_DIR"
+      npm "$NPM_INSTALL_MODE"
+    )
+  fi
+
+  echo "==> Building frontend"
+  rm -rf "$ASSET_OUT_DIR"
+  mkdir -p "$ASSET_OUT_DIR"
   (
     cd "$WEB_DIR"
-    npm "$NPM_INSTALL_MODE"
+    KUBEJOJO_WEB_OUT_DIR=../server/internal/web/dist/app npm run build
   )
+else
+  if [[ ! -f "$ASSET_OUT_DIR/index.html" ]]; then
+    echo "Prebuilt frontend assets are missing at $ASSET_OUT_DIR" >&2
+    exit 1
+  fi
+  echo "==> Reusing prebuilt frontend assets from $ASSET_OUT_DIR"
 fi
-
-echo "==> Building frontend"
-rm -rf "$ASSET_OUT_DIR"
-mkdir -p "$ASSET_OUT_DIR"
-(
-  cd "$WEB_DIR"
-  KUBEJOJO_WEB_OUT_DIR=../server/internal/web/dist/app npm run build
-)
 
 echo "==> Building backend"
 rm -rf "$PACKAGE_DIR"
@@ -72,6 +82,13 @@ mkdir -p "$PACKAGE_DIR"
 )
 
 cp "$SERVICE_FILE" "$PACKAGE_DIR/kubejojo.service"
+if [[ -f "$INSTALL_SCRIPT" ]]; then
+  cp "$INSTALL_SCRIPT" "$PACKAGE_DIR/install.sh"
+  chmod +x "$PACKAGE_DIR/install.sh"
+fi
+if [[ -f "$README_FILE" ]]; then
+  cp "$README_FILE" "$PACKAGE_DIR/README.md"
+fi
 
 echo "==> Packaging release archive"
 mkdir -p "$RELEASE_DIR"

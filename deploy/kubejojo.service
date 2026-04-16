@@ -22,14 +22,10 @@ ProtectHome=true
 PrivateTmp=true
 ReadWritePaths=/opt/kubejojo
 
-# Adjust these values for your target environment.
+# Defaults can be overridden in /etc/kubejojo/kubejojo.env.
 Environment=HTTP_ADDR=:8080
 Environment=KUBEJOJO_KUBECONFIG=/opt/kubejojo/config/kubeconfig
-# Environment=KUBEJOJO_UPDATE_ENABLED=true
-# Environment=KUBEJOJO_UPDATE_ALLOW_PRERELEASES=true
-# Environment=KUBEJOJO_UPDATE_REPOSITORY=heihuzicity-tech/kubejojo
-# Environment=KUBEJOJO_UPDATE_ALLOWED_SUBJECTS=system:serviceaccount:kube-system:kubejojo-dev
-# Environment=KUBEJOJO_UPDATE_GITHUB_TOKEN=
+EnvironmentFile=-/etc/kubejojo/kubejojo.env
 
 [Install]
 WantedBy=multi-user.target

@@ -71,12 +71,39 @@ release 产物包含：
 - `checksums.txt`
 - 内嵌前端静态资源的 `kubejojo` 二进制
 - `kubejojo.service`
+- `install.sh`
 
 查看二进制版本：
 
 ```bash
 ./server/dist/release/<package-dir>/kubejojo --version
 ```
+
+## Release 部署
+
+Linux 主机一键安装最新 Release：
+
+```bash
+curl -sSL https://raw.githubusercontent.com/heihuzicity-tech/kubejojo/main/deploy/install.sh | sudo bash
+```
+
+常用命令：
+
+```bash
+sudo /opt/kubejojo/install.sh upgrade
+sudo /opt/kubejojo/install.sh rollback v0.1.0-rc.1
+sudo systemctl status kubejojo --no-pager
+sudo journalctl -u kubejojo -f
+```
+
+安装脚本会完成：
+
+- 检测 Linux 架构并下载匹配的 GitHub Release 资产
+- 校验 `checksums.txt`
+- 安装二进制到 `/opt/kubejojo`
+- 写入 `systemd` 单元 `kubejojo.service`
+- 生成环境文件 `/etc/kubejojo/kubejojo.env`
+- 可选复制 kubeconfig 到 `/opt/kubejojo/config/kubeconfig`
 
 在线更新相关环境变量：
 
@@ -113,12 +140,22 @@ KUBEJOJO_UPDATE_GITHUB_TOKEN=<optional-github-token>
 
 - `Release`
   - 通过 `v*` tag 触发
+  - 支持 `workflow_dispatch` 对已有 tag 手动重发 Release
+  - 先单独构建前端生产产物
   - 默认产出：
     - `linux/amd64`
     - `linux/arm64`
     - `darwin/arm64`
+  - 后端矩阵任务复用同一份前端构建产物
   - 自动汇总 `checksums.txt`
   - 自动发布 GitHub Release
+
+在线更新流程：
+
+- 管理端读取 GitHub Release 元数据并缓存结果
+- `release` 模式下允许下载、校验并原子替换当前二进制
+- 更新完成后由管理员触发重启
+- 进程退出后由 `systemd` 的 `Restart=always` 自动拉起新版本
 
 推荐发布方式：
 

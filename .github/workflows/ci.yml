@@ -44,5 +44,5 @@ jobs:
         env:
           GOOS: linux
           GOARCH: amd64
-          SKIP_NPM_INSTALL: '1'
+          SKIP_FRONTEND_BUILD: '1'
         run: ./scripts/build-release.sh
