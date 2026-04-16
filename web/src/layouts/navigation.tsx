@@ -5,7 +5,6 @@ import {
   AppstoreOutlined,
   BranchesOutlined,
   ClusterOutlined,
-  CloudSyncOutlined,
   DatabaseOutlined,
   DeploymentUnitOutlined,
   SafetyCertificateOutlined,
@@ -294,19 +293,17 @@ export const navigationSections: NavigationSection[] = [
       },
     ],
   },
+];
+
+const hiddenNavigationItems = [
   {
-    key: 'system',
-    label: '系统',
-    icon: <CloudSyncOutlined />,
-    items: [
-      {
-        key: 'system-updates',
-        label: 'Updates',
-        path: '/system/updates',
-        description: '应用版本、发布构建与在线更新控制台',
-        implemented: true,
-      },
-    ],
+    key: 'system-updates',
+    label: '更新',
+    path: '/system/updates',
+    description: '应用版本、发布构建与在线更新控制台',
+    implemented: true,
+    sectionKey: 'system',
+    sectionLabel: '系统',
   },
 ];
 
@@ -316,7 +313,7 @@ export const navigationItems = navigationSections.flatMap((section) =>
     sectionKey: section.key,
     sectionLabel: section.label,
   })),
-);
+).concat(hiddenNavigationItems);
 
 export function findNavigationItem(pathname: string) {
   const sortedItems = [...navigationItems].sort((left, right) => right.path.length - left.path.length);

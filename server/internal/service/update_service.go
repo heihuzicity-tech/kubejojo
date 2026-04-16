@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -97,6 +98,7 @@ type githubRelease struct {
 	PublishedAt string               `json:"published_at"`
 	HTMLURL     string               `json:"html_url"`
 	Draft       bool                 `json:"draft"`
+	Prerelease  bool                 `json:"prerelease"`
 	Assets      []githubReleaseAsset `json:"assets"`
 }
 
@@ -111,6 +113,36 @@ func (a githubReleaseAsset) DownloadURL() string {
 		return a.APIURL
 	}
 	return a.BrowserDownloadURL
+}
+
+type githubErrorResponse struct {
+	Message          string `json:"message"`
+	DocumentationURL string `json:"documentation_url"`
+	Status           string `json:"status"`
+}
+
+type githubAPIError struct {
+	StatusCode       int
+	Message          string
+	DocumentationURL string
+	RequestURL       string
+}
+
+func (e *githubAPIError) Error() string {
+	if e == nil {
+		return ""
+	}
+
+	message := strings.TrimSpace(e.Message)
+	if message == "" {
+		message = http.StatusText(e.StatusCode)
+	}
+
+	if docURL := strings.TrimSpace(e.DocumentationURL); docURL != "" {
+		return fmt.Sprintf("GitHub API request to %s failed with status %d: %s (%s)", e.RequestURL, e.StatusCode, message, docURL)
+	}
+
+	return fmt.Sprintf("GitHub API request to %s failed with status %d: %s", e.RequestURL, e.StatusCode, message)
 }
 
 func NewUpdateService(info buildinfo.Info, cfg config.UpdateConfig, embeddedFrontend bool) *UpdateService {
@@ -380,6 +412,14 @@ func (s *UpdateService) fetchLatestStableRelease(ctx context.Context, repo strin
 	releaseURL := fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", repo)
 	resp, err := s.doGitHubJSONRequest(ctx, releaseURL)
 	if err != nil {
+		var apiErr *githubAPIError
+		if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusNotFound {
+			release, fallbackErr := s.fetchLatestStableReleaseFromList(ctx, repo)
+			if fallbackErr == nil {
+				return release, nil
+			}
+			return nil, fallbackErr
+		}
 		return nil, fmt.Errorf("fetch latest release: %w", err)
 	}
 	defer resp.Body.Close()
@@ -392,17 +432,44 @@ func (s *UpdateService) fetchLatestStableRelease(ctx context.Context, repo strin
 	return &release, nil
 }
 
-func (s *UpdateService) fetchLatestReleaseIncludingPrereleases(ctx context.Context, repo string) (*githubRelease, error) {
-	releaseURL := fmt.Sprintf("https://api.github.com/repos/%s/releases?per_page=20", repo)
-	resp, err := s.doGitHubJSONRequest(ctx, releaseURL)
+func (s *UpdateService) fetchLatestStableReleaseFromList(ctx context.Context, repo string) (*githubRelease, error) {
+	releases, err := s.fetchReleaseList(ctx, repo)
 	if err != nil {
+		var apiErr *githubAPIError
+		if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusNotFound {
+			return nil, fmt.Errorf(
+				"cannot access GitHub releases for %s; verify KUBEJOJO_UPDATE_REPOSITORY or set KUBEJOJO_UPDATE_GITHUB_TOKEN if the repository is private",
+				repo,
+			)
+		}
 		return nil, fmt.Errorf("fetch releases: %w", err)
 	}
-	defer resp.Body.Close()
 
-	var releases []githubRelease
-	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
-		return nil, fmt.Errorf("decode releases: %w", err)
+	selected, err := selectNewestStableRelease(releases)
+	if err != nil {
+		if hasUsablePrerelease(releases) {
+			return nil, fmt.Errorf(
+				"no stable release is published for %s yet; set KUBEJOJO_UPDATE_ALLOW_PRERELEASES=true to use prerelease builds",
+				repo,
+			)
+		}
+		return nil, fmt.Errorf("no stable release is published for %s yet", repo)
+	}
+
+	return selected, nil
+}
+
+func (s *UpdateService) fetchLatestReleaseIncludingPrereleases(ctx context.Context, repo string) (*githubRelease, error) {
+	releases, err := s.fetchReleaseList(ctx, repo)
+	if err != nil {
+		var apiErr *githubAPIError
+		if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusNotFound {
+			return nil, fmt.Errorf(
+				"cannot access GitHub releases for %s; verify KUBEJOJO_UPDATE_REPOSITORY or set KUBEJOJO_UPDATE_GITHUB_TOKEN if the repository is private",
+				repo,
+			)
+		}
+		return nil, fmt.Errorf("fetch releases: %w", err)
 	}
 
 	selected, err := selectNewestRelease(releases)
@@ -411,6 +478,22 @@ func (s *UpdateService) fetchLatestReleaseIncludingPrereleases(ctx context.Conte
 	}
 
 	return selected, nil
+}
+
+func (s *UpdateService) fetchReleaseList(ctx context.Context, repo string) ([]githubRelease, error) {
+	releaseURL := fmt.Sprintf("https://api.github.com/repos/%s/releases?per_page=20", repo)
+	resp, err := s.doGitHubJSONRequest(ctx, releaseURL)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var releases []githubRelease
+	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
+		return nil, fmt.Errorf("decode releases: %w", err)
+	}
+
+	return releases, nil
 }
 
 func (s *UpdateService) doGitHubJSONRequest(ctx context.Context, requestURL string) (*http.Response, error) {
@@ -439,7 +522,27 @@ func (s *UpdateService) doGitHubJSONRequest(ctx context.Context, requestURL stri
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		resp.Body.Close()
-		return nil, fmt.Errorf("request failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+
+		var githubErr githubErrorResponse
+		if err := json.Unmarshal(body, &githubErr); err == nil && strings.TrimSpace(githubErr.Message) != "" {
+			return nil, &githubAPIError{
+				StatusCode:       resp.StatusCode,
+				Message:          githubErr.Message,
+				DocumentationURL: githubErr.DocumentationURL,
+				RequestURL:       requestURL,
+			}
+		}
+
+		trimmedBody := strings.TrimSpace(string(body))
+		if trimmedBody == "" {
+			trimmedBody = http.StatusText(resp.StatusCode)
+		}
+
+		return nil, &githubAPIError{
+			StatusCode: resp.StatusCode,
+			Message:    trimmedBody,
+			RequestURL: requestURL,
+		}
 	}
 
 	return resp, nil
@@ -471,6 +574,48 @@ func selectNewestRelease(releases []githubRelease) (*githubRelease, error) {
 	}
 
 	return selected, nil
+}
+
+func selectNewestStableRelease(releases []githubRelease) (*githubRelease, error) {
+	var selected *githubRelease
+	selectedVersion := ""
+
+	for _, release := range releases {
+		if release.Draft || release.Prerelease {
+			continue
+		}
+
+		version := strings.TrimPrefix(strings.TrimSpace(release.TagName), "v")
+		if version == "" {
+			continue
+		}
+
+		if selected == nil || compareVersions(version, selectedVersion) > 0 {
+			releaseCopy := release
+			selected = &releaseCopy
+			selectedVersion = version
+		}
+	}
+
+	if selected == nil {
+		return nil, fmt.Errorf("no published stable releases were found in the repository")
+	}
+
+	return selected, nil
+}
+
+func hasUsablePrerelease(releases []githubRelease) bool {
+	for _, release := range releases {
+		if release.Draft || !release.Prerelease {
+			continue
+		}
+		if strings.TrimPrefix(strings.TrimSpace(release.TagName), "v") == "" {
+			continue
+		}
+		return true
+	}
+
+	return false
 }
 
 func (s *UpdateService) downloadFile(ctx context.Context, sourceURL string, destPath string) error {

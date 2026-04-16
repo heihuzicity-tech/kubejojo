@@ -120,6 +120,111 @@ func TestSelectNewestRelease(t *testing.T) {
 	}
 }
 
+func TestSelectNewestStableRelease(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name        string
+		releases    []githubRelease
+		expectedTag string
+		expectError bool
+	}{
+		{
+			name: "selects newest stable release",
+			releases: []githubRelease{
+				{TagName: "v0.2.0-rc.1", Prerelease: true},
+				{TagName: "v0.1.0"},
+				{TagName: "v0.2.0"},
+			},
+			expectedTag: "v0.2.0",
+		},
+		{
+			name: "ignores drafts and prereleases",
+			releases: []githubRelease{
+				{TagName: "v0.3.0", Draft: true},
+				{TagName: "v0.4.0-rc.1", Prerelease: true},
+				{TagName: "v0.2.1"},
+			},
+			expectedTag: "v0.2.1",
+		},
+		{
+			name: "errors when only prereleases exist",
+			releases: []githubRelease{
+				{TagName: "v0.3.0-rc.1", Prerelease: true},
+			},
+			expectError: true,
+		},
+	}
+
+	for _, testCase := range testCases {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			release, err := selectNewestStableRelease(testCase.releases)
+			if testCase.expectError {
+				if err == nil {
+					t.Fatal("expected an error but got nil")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("selectNewestStableRelease() returned error: %v", err)
+			}
+			if release == nil {
+				t.Fatal("selectNewestStableRelease() returned nil release")
+			}
+			if release.TagName != testCase.expectedTag {
+				t.Fatalf("selectNewestStableRelease() = %q, want %q", release.TagName, testCase.expectedTag)
+			}
+		})
+	}
+}
+
+func TestHasUsablePrerelease(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name     string
+		releases []githubRelease
+		expected bool
+	}{
+		{
+			name: "finds published prerelease",
+			releases: []githubRelease{
+				{TagName: "v0.2.0-rc.1", Prerelease: true},
+			},
+			expected: true,
+		},
+		{
+			name: "ignores draft prerelease",
+			releases: []githubRelease{
+				{TagName: "v0.2.0-rc.1", Prerelease: true, Draft: true},
+			},
+			expected: false,
+		},
+		{
+			name: "ignores stable release",
+			releases: []githubRelease{
+				{TagName: "v0.2.0"},
+			},
+			expected: false,
+		},
+	}
+
+	for _, testCase := range testCases {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			if actual := hasUsablePrerelease(testCase.releases); actual != testCase.expected {
+				t.Fatalf("hasUsablePrerelease() = %v, want %v", actual, testCase.expected)
+			}
+		})
+	}
+}
+
 func TestGitHubReleaseAssetDownloadURL(t *testing.T) {
 	t.Parallel()
 

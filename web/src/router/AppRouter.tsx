@@ -167,6 +167,7 @@ function ProtectedRoutes() {
         <Route path="/storage/storageclasses" element={<StorageClassesPage />} />
         <Route path="/storage/storageclasses/:name" element={<StorageClassDetailsPage />} />
         <Route path="/topology" element={<TopologyPage />} />
+        <Route path="/system/settings" element={<Navigate to="/system/updates" replace />} />
         <Route path="/system/updates" element={<SystemUpdatesPage />} />
 
         {placeholderItems.map((item) => (
@@ -184,6 +185,7 @@ function ProtectedRoutes() {
         <Route path="/pods" element={<Navigate to="/workloads/pods" replace />} />
         <Route path="/network" element={<Navigate to="/network/services" replace />} />
         <Route path="/config" element={<Navigate to="/config/configmaps" replace />} />
+        <Route path="/system" element={<Navigate to="/system/settings" replace />} />
         <Route
           path="/storage/pvcs"
           element={<Navigate to="/storage/persistentvolumeclaims" replace />}

@@ -7,6 +7,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 
 import { PageErrorBoundary } from '../app/PageErrorBoundary';
 import { BrandLogo } from '../components/brand/BrandLogo';
+import { VersionBadge } from '../components/system/VersionBadge';
 import { getAuthMe, getNamespaces } from '../services/cluster';
 import { useAppStore } from '../stores/appStore';
 import { findNavigationItem, navigationSections } from './navigation';
@@ -31,15 +32,19 @@ function NavigationPanel({
       <div className="border-b border-slate-200 px-5 py-5">
         <div className="flex items-center gap-3">
           <BrandLogo size={42} />
-          <Typography.Title level={4} className="!mb-0">
-            kubejojo
-          </Typography.Title>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-col">
+              <span className="text-lg font-bold text-gray-900">kubejojo</span>
+              <VersionBadge />
+            </div>
+          </div>
         </div>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
         <div className="space-y-1.5">
           {navigationSections.map((section) => {
+            const sectionPath = section.items[0]?.path ?? '/';
             const sectionActive = section.items.some(
               (item) => currentPath === item.path || currentPath.startsWith(`${item.path}/`),
             );
@@ -49,9 +54,7 @@ function NavigationPanel({
               <section key={section.key} className="rounded-xl">
                 <button
                   type="button"
-                  onClick={() =>
-                    onToggleSection(section.key, section.items[0]?.path ?? '/', sectionActive)
-                  }
+                  onClick={() => onToggleSection(section.key, sectionPath, sectionActive)}
                   className={[
                     'flex w-full items-center rounded-lg px-3 py-2 text-left transition-[background-color,color,box-shadow] duration-250 ease-out',
                     sectionActive
@@ -64,7 +67,12 @@ function NavigationPanel({
                       {section.icon}
                     </span>
                     <div className="min-w-0">
-                      <div className={['text-[14px]', sectionActive ? 'font-semibold' : 'font-medium'].join(' ')}>
+                      <div
+                        className={[
+                          'text-[14px]',
+                          sectionActive ? 'font-semibold' : 'font-medium',
+                        ].join(' ')}
+                      >
                         {section.label}
                       </div>
                     </div>
@@ -79,38 +87,43 @@ function NavigationPanel({
                 >
                   <div className="min-h-0 overflow-hidden">
                     <div className="space-y-0.5 pl-4">
-                    {section.items.map((item) => {
-                      const active =
-                        currentPath === item.path || currentPath.startsWith(`${item.path}/`);
+                      {section.items.map((item) => {
+                        const active =
+                          currentPath === item.path || currentPath.startsWith(`${item.path}/`);
 
-                      return (
-                        <button
-                          key={item.key}
-                          type="button"
-                          onClick={() => onNavigate(item.path)}
-                          className={[
-                            'flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-left transition-[background-color,color] duration-200 ease-out',
-                            active
-                              ? 'bg-teal-50 text-slate-950 shadow-[inset_0_0_0_1px_rgba(13,148,136,0.10)]'
-                              : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900',
-                          ].join(' ')}
-                        >
-                          <div className="flex min-w-0 items-center gap-3">
-                            <span
-                              className={[
-                                'shrink-0 transition-all duration-200 ease-out',
-                                active
-                                  ? 'h-4 w-1 rounded-full bg-teal-600'
-                                  : 'h-1.5 w-1.5 rounded-full bg-slate-300',
-                              ].join(' ')}
-                            />
-                            <span className={['truncate text-[13px]', active ? 'font-semibold' : 'font-medium'].join(' ')}>
-                              {item.label}
-                            </span>
-                          </div>
-                        </button>
-                      );
-                    })}
+                        return (
+                          <button
+                            key={item.key}
+                            type="button"
+                            onClick={() => onNavigate(item.path)}
+                            className={[
+                              'flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-left transition-[background-color,color] duration-200 ease-out',
+                              active
+                                ? 'bg-teal-50 text-slate-950 shadow-[inset_0_0_0_1px_rgba(13,148,136,0.10)]'
+                                : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900',
+                            ].join(' ')}
+                          >
+                            <div className="flex min-w-0 items-center gap-3">
+                              <span
+                                className={[
+                                  'shrink-0 transition-all duration-200 ease-out',
+                                  active
+                                    ? 'h-4 w-1 rounded-full bg-teal-600'
+                                    : 'h-1.5 w-1.5 rounded-full bg-slate-300',
+                                ].join(' ')}
+                              />
+                              <span
+                                className={[
+                                  'truncate text-[13px]',
+                                  active ? 'font-semibold' : 'font-medium',
+                                ].join(' ')}
+                              >
+                                {item.label}
+                              </span>
+                            </div>
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                 </div>
@@ -185,7 +198,11 @@ export function AppLayout({ children }: PropsWithChildren) {
     sessionMode === 'demo' ? demoNamespaces : namespacesQuery.data ?? [];
 
   const activeItem = useMemo(() => findNavigationItem(location.pathname), [location.pathname]);
-  const activeSectionKey = activeItem?.sectionKey ?? navigationSections[0]?.key ?? 'cluster';
+  const activeSectionKey =
+    activeItem?.sectionKey &&
+    navigationSections.some((section) => section.key === activeItem.sectionKey)
+      ? activeItem.sectionKey
+      : navigationSections[0]?.key ?? 'cluster';
   const [expandedSection, setExpandedSection] = useState<string | null>(activeSectionKey);
 
   useEffect(() => {
