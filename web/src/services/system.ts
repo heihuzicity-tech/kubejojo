@@ -1,5 +1,7 @@
 import { http } from './http';
 
+const longRunningActionTimeoutMs = 10 * 60 * 1000;
+
 type Envelope<T> = {
   code: string;
   message: string;
@@ -64,12 +66,16 @@ export async function getUpdateStatus(force = false) {
 }
 
 export async function performSystemUpdate() {
-  const { data } = await http.post<Envelope<UpdateActionResult>>('/system/update');
+  const { data } = await http.post<Envelope<UpdateActionResult>>('/system/update', undefined, {
+    timeout: longRunningActionTimeoutMs,
+  });
   return data.data;
 }
 
 export async function rollbackSystemUpdate() {
-  const { data } = await http.post<Envelope<UpdateActionResult>>('/system/rollback');
+  const { data } = await http.post<Envelope<UpdateActionResult>>('/system/rollback', undefined, {
+    timeout: longRunningActionTimeoutMs,
+  });
   return data.data;
 }
 

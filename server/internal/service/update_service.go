@@ -25,10 +25,11 @@ import (
 )
 
 const (
-	updateCacheTTL   = 20 * time.Minute
-	maxDownloadSize  = 256 * 1024 * 1024
-	restartDelay     = 500 * time.Millisecond
-	defaultUserAgent = "kubejojo-update-client"
+	updateCacheTTL       = 20 * time.Minute
+	maxDownloadSize      = 256 * 1024 * 1024
+	restartDelay         = 500 * time.Millisecond
+	updateOperationTTL   = 30 * time.Minute
+	defaultUserAgent     = "kubejojo-update-client"
 )
 
 var allowedUpdateHosts = map[string]struct{}{
@@ -190,7 +191,10 @@ func (s *UpdateService) PerformUpdate(ctx context.Context, actor string) (*Updat
 	}
 	defer s.releaseOperation()
 
-	status, err := s.checkUpdate(ctx, true)
+	updateCtx, cancel := context.WithTimeout(context.Background(), updateOperationTTL)
+	defer cancel()
+
+	status, err := s.checkUpdate(updateCtx, true)
 	if err != nil {
 		return nil, err
 	}
@@ -205,7 +209,7 @@ func (s *UpdateService) PerformUpdate(ctx context.Context, actor string) (*Updat
 	checksumURL := ""
 	expectedArchiveName := s.expectedArchiveName(status.LatestVersion)
 
-	release, err := s.fetchLatestRelease(ctx)
+	release, err := s.fetchLatestRelease(updateCtx)
 	if err != nil {
 		return nil, err
 	}
@@ -242,10 +246,10 @@ func (s *UpdateService) PerformUpdate(ctx context.Context, actor string) (*Updat
 	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	archivePath := filepath.Join(tempDir, expectedArchiveName)
-	if err := s.downloadFile(ctx, archiveURL, archivePath); err != nil {
+	if err := s.downloadFile(updateCtx, archiveURL, archivePath); err != nil {
 		return nil, err
 	}
-	if err := s.verifyChecksum(ctx, archivePath, checksumURL); err != nil {
+	if err := s.verifyChecksum(updateCtx, archivePath, checksumURL); err != nil {
 		return nil, err
 	}
 
@@ -683,6 +687,9 @@ func (s *UpdateService) verifyChecksum(ctx context.Context, archivePath string, 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, checksumURL, nil)
 	if err != nil {
 		return fmt.Errorf("build checksum request: %w", err)
+	}
+	if strings.EqualFold(parsedURL.Hostname(), "api.github.com") && strings.Contains(parsedURL.Path, "/releases/assets/") {
+		req.Header.Set("Accept", "application/octet-stream")
 	}
 	req.Header.Set("User-Agent", defaultUserAgent)
 	if token := strings.TrimSpace(s.cfg.GitHubToken); token != "" {
