@@ -9,6 +9,7 @@ import {
   DeploymentUnitOutlined,
   SafetyCertificateOutlined,
   SettingOutlined,
+  ToolOutlined,
 } from '@ant-design/icons';
 
 export type NavigationItem = {
@@ -293,17 +294,19 @@ export const navigationSections: NavigationSection[] = [
       },
     ],
   },
-];
-
-const hiddenNavigationItems = [
   {
-    key: 'system-updates',
-    label: '更新',
-    path: '/system/updates',
-    description: '应用版本、发布构建与在线更新控制台',
-    implemented: true,
-    sectionKey: 'system',
-    sectionLabel: '系统',
+    key: 'system',
+    label: '系统管理',
+    icon: <ToolOutlined />,
+    items: [
+      {
+        key: 'system-updates',
+        label: '更新管理',
+        path: '/system/updates',
+        description: '应用发布、回滚与重启操作',
+        implemented: true,
+      },
+    ],
   },
 ];
 
@@ -313,7 +316,7 @@ export const navigationItems = navigationSections.flatMap((section) =>
     sectionKey: section.key,
     sectionLabel: section.label,
   })),
-).concat(hiddenNavigationItems);
+);
 
 export function findNavigationItem(pathname: string) {
   const sortedItems = [...navigationItems].sort((left, right) => right.path.length - left.path.length);
