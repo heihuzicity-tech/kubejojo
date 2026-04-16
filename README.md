@@ -82,6 +82,7 @@ release 产物包含：
 
 ```bash
 KUBEJOJO_UPDATE_ENABLED=true
+KUBEJOJO_UPDATE_ALLOW_PRERELEASES=true
 KUBEJOJO_UPDATE_REPOSITORY=heihuzicity-tech/kubejojo
 KUBEJOJO_UPDATE_ALLOWED_SUBJECTS=system:serviceaccount:kube-system:kubejojo-dev
 KUBEJOJO_UPDATE_GITHUB_TOKEN=<optional-github-token>
@@ -91,6 +92,8 @@ KUBEJOJO_UPDATE_GITHUB_TOKEN=<optional-github-token>
 
 - `KUBEJOJO_UPDATE_ENABLED`
   - 是否启用在线更新入口
+- `KUBEJOJO_UPDATE_ALLOW_PRERELEASES`
+  - 是否允许检测和安装 `rc / beta / alpha` 预发布版本
 - `KUBEJOJO_UPDATE_REPOSITORY`
   - GitHub Releases 仓库，默认 `heihuzicity-tech/kubejojo`
 - `KUBEJOJO_UPDATE_ALLOWED_SUBJECTS`

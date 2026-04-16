@@ -61,3 +61,61 @@ func TestCompareVersions(t *testing.T) {
 		})
 	}
 }
+
+func TestSelectNewestRelease(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name        string
+		releases    []githubRelease
+		expectedTag string
+		expectError bool
+	}{
+		{
+			name: "selects newest prerelease when it is ahead of stable",
+			releases: []githubRelease{
+				{TagName: "v0.1.0"},
+				{TagName: "v0.2.0-rc.1"},
+			},
+			expectedTag: "v0.2.0-rc.1",
+		},
+		{
+			name: "ignores draft releases",
+			releases: []githubRelease{
+				{TagName: "v0.3.0-rc.1", Draft: true},
+				{TagName: "v0.2.1"},
+			},
+			expectedTag: "v0.2.1",
+		},
+		{
+			name:        "errors when no published releases are usable",
+			releases:    []githubRelease{{TagName: "", Draft: true}},
+			expectError: true,
+		},
+	}
+
+	for _, testCase := range testCases {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			release, err := selectNewestRelease(testCase.releases)
+			if testCase.expectError {
+				if err == nil {
+					t.Fatal("expected an error but got nil")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("selectNewestRelease() returned error: %v", err)
+			}
+			if release == nil {
+				t.Fatal("selectNewestRelease() returned nil release")
+			}
+			if release.TagName != testCase.expectedTag {
+				t.Fatalf("selectNewestRelease() = %q, want %q", release.TagName, testCase.expectedTag)
+			}
+		})
+	}
+}

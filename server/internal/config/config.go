@@ -14,6 +14,7 @@ type Config struct {
 
 type UpdateConfig struct {
 	Enabled         bool
+	AllowPrereleases bool
 	Repository      string
 	AllowedSubjects []string
 	GitHubToken     string
@@ -24,10 +25,11 @@ func Load() Config {
 		HTTPAddr:       getEnv("HTTP_ADDR", ":8080"),
 		KubeconfigPath: kubeconfigPath(),
 		Update: UpdateConfig{
-			Enabled:         getEnv("KUBEJOJO_UPDATE_ENABLED", "") == "true",
-			Repository:      getEnv("KUBEJOJO_UPDATE_REPOSITORY", "heihuzicity-tech/kubejojo"),
-			AllowedSubjects: splitCSVEnv("KUBEJOJO_UPDATE_ALLOWED_SUBJECTS"),
-			GitHubToken:     getEnv("KUBEJOJO_UPDATE_GITHUB_TOKEN", ""),
+			Enabled:          getEnv("KUBEJOJO_UPDATE_ENABLED", "") == "true",
+			AllowPrereleases: getEnv("KUBEJOJO_UPDATE_ALLOW_PRERELEASES", "") == "true",
+			Repository:       getEnv("KUBEJOJO_UPDATE_REPOSITORY", "heihuzicity-tech/kubejojo"),
+			AllowedSubjects:  splitCSVEnv("KUBEJOJO_UPDATE_ALLOWED_SUBJECTS"),
+			GitHubToken:      getEnv("KUBEJOJO_UPDATE_GITHUB_TOKEN", ""),
 		},
 	}
 }
