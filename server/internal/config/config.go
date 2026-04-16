@@ -9,17 +9,31 @@ import (
 type Config struct {
 	HTTPAddr       string
 	KubeconfigPath string
+	Update         UpdateConfig
+}
+
+type UpdateConfig struct {
+	Enabled         bool
+	Repository      string
+	AllowedSubjects []string
+	GitHubToken     string
 }
 
 func Load() Config {
 	return Config{
 		HTTPAddr:       getEnv("HTTP_ADDR", ":8080"),
 		KubeconfigPath: kubeconfigPath(),
+		Update: UpdateConfig{
+			Enabled:         getEnv("KUBEJOJO_UPDATE_ENABLED", "") == "true",
+			Repository:      getEnv("KUBEJOJO_UPDATE_REPOSITORY", "heihuzicity-tech/kubejojo"),
+			AllowedSubjects: splitCSVEnv("KUBEJOJO_UPDATE_ALLOWED_SUBJECTS"),
+			GitHubToken:     getEnv("KUBEJOJO_UPDATE_GITHUB_TOKEN", ""),
+		},
 	}
 }
 
 func kubeconfigPath() string {
-	if value := strings.TrimSpace(os.Getenv("K8S_ADMIN_KUBECONFIG")); value != "" {
+	if value := strings.TrimSpace(os.Getenv("KUBEJOJO_KUBECONFIG")); value != "" {
 		return value
 	}
 
@@ -44,4 +58,22 @@ func getEnv(key string, fallback string) string {
 	}
 
 	return fallback
+}
+
+func splitCSVEnv(key string) []string {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return nil
+	}
+
+	parts := strings.Split(value, ",")
+	result := make([]string, 0, len(parts))
+	for _, item := range parts {
+		trimmed := strings.TrimSpace(item)
+		if trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+
+	return result
 }

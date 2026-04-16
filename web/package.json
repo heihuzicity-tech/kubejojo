@@ -1,5 +1,5 @@
 {
-  "name": "k8s-admin-web",
+  "name": "kubejojo-web",
   "private": true,
   "version": "0.1.0",
   "type": "module",

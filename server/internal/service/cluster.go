@@ -33,8 +33,8 @@ import (
 	metricsv1beta1 "k8s.io/metrics/pkg/apis/metrics/v1beta1"
 	"sigs.k8s.io/yaml"
 
-	"github.com/zhangya/k8s-admin/server/internal/jsonx"
-	"github.com/zhangya/k8s-admin/server/internal/kube"
+	"github.com/heihuzicity-tech/kubejojo/server/internal/jsonx"
+	"github.com/heihuzicity-tech/kubejojo/server/internal/kube"
 )
 
 type ClusterService struct {

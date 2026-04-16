@@ -28,6 +28,7 @@ server/bin/
 server/dist/
 server/.cache/
 server/coverage/
+server/internal/web/dist/app/
 
 # Go
 *.test

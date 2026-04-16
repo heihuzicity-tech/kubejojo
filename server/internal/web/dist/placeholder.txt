@@ -1,0 +1,3 @@
+This directory is reserved for release-mode frontend assets.
+
+The release build writes the Vite production output to server/internal/web/dist/app.

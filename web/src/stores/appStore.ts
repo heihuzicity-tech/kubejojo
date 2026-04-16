@@ -28,7 +28,7 @@ export const useAppStore = create<AppState>()(
       setNamespace: (namespace) => set({ namespace }),
     }),
     {
-      name: 'k8s-admin-app',
+      name: 'kubejojo-app',
     },
   ),
 );

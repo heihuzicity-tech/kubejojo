@@ -2,7 +2,7 @@ apiVersion: networking.k8s.io/v1
 kind: IngressClass
 metadata:
   labels:
-    app.kubernetes.io/part-of: k8s-admin-demo
+    app.kubernetes.io/part-of: kubejojo-demo
   name: demo-shadow
 spec:
   controller: example.com/demo-shadow-controller
@@ -12,7 +12,7 @@ kind: PersistentVolume
 metadata:
   labels:
     app.kubernetes.io/name: demo-static-pv
-    app.kubernetes.io/part-of: k8s-admin-demo
+    app.kubernetes.io/part-of: kubejojo-demo
   name: demo-static-pv-node1
 spec:
   accessModes:
@@ -20,7 +20,7 @@ spec:
   capacity:
     storage: 2Gi
   local:
-    path: /var/lib/k8s-admin/demo-static-pv
+    path: /var/lib/kubejojo/demo-static-pv
   nodeAffinity:
     required:
       nodeSelectorTerms:
@@ -38,7 +38,7 @@ kind: PersistentVolumeClaim
 metadata:
   labels:
     app.kubernetes.io/name: demo-static-pvc
-    app.kubernetes.io/part-of: k8s-admin-demo
+    app.kubernetes.io/part-of: kubejojo-demo
   name: demo-static-pvc
   namespace: demo-workloads
 spec:
@@ -56,7 +56,7 @@ kind: PersistentVolumeClaim
 metadata:
   labels:
     app.kubernetes.io/name: demo-shared-cache
-    app.kubernetes.io/part-of: k8s-admin-demo
+    app.kubernetes.io/part-of: kubejojo-demo
   name: demo-shared-cache
   namespace: default
 spec:
@@ -73,7 +73,7 @@ kind: Pod
 metadata:
   labels:
     app.kubernetes.io/name: demo-static-pv-reader
-    app.kubernetes.io/part-of: k8s-admin-demo
+    app.kubernetes.io/part-of: kubejojo-demo
   name: demo-static-pv-reader
   namespace: demo-workloads
 spec:
@@ -99,7 +99,7 @@ kind: Pod
 metadata:
   labels:
     app.kubernetes.io/name: demo-shared-cache-reader
-    app.kubernetes.io/part-of: k8s-admin-demo
+    app.kubernetes.io/part-of: kubejojo-demo
   name: demo-shared-cache-reader
   namespace: default
 spec:
@@ -123,7 +123,7 @@ kind: Service
 metadata:
   labels:
     app.kubernetes.io/name: demo-statefulset
-    app.kubernetes.io/part-of: k8s-admin-demo
+    app.kubernetes.io/part-of: kubejojo-demo
   name: demo-statefulset-web
   namespace: demo-workloads
 spec:
@@ -140,7 +140,7 @@ kind: Ingress
 metadata:
   labels:
     app.kubernetes.io/name: demo-nginx-ingress
-    app.kubernetes.io/part-of: k8s-admin-demo
+    app.kubernetes.io/part-of: kubejojo-demo
   name: demo-nginx-ingress
   namespace: default
 spec:
@@ -169,7 +169,7 @@ kind: Ingress
 metadata:
   labels:
     app.kubernetes.io/name: demo-statefulset-ingress
-    app.kubernetes.io/part-of: k8s-admin-demo
+    app.kubernetes.io/part-of: kubejojo-demo
   name: demo-statefulset-ingress
   namespace: demo-workloads
 spec:

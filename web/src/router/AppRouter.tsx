@@ -61,6 +61,7 @@ import { StatefulSetsPage } from '../pages/StatefulSetsPage';
 import { TopologyPage } from '../pages/TopologyPage';
 import { VPADetailsPage } from '../pages/VPADetailsPage';
 import { VPAsPage } from '../pages/VPAsPage';
+import { SystemUpdatesPage } from '../pages/SystemUpdatesPage';
 
 const placeholderItems = navigationItems.filter((item) => !item.implemented);
 
@@ -166,6 +167,7 @@ function ProtectedRoutes() {
         <Route path="/storage/storageclasses" element={<StorageClassesPage />} />
         <Route path="/storage/storageclasses/:name" element={<StorageClassDetailsPage />} />
         <Route path="/topology" element={<TopologyPage />} />
+        <Route path="/system/updates" element={<SystemUpdatesPage />} />
 
         {placeholderItems.map((item) => (
           <Route

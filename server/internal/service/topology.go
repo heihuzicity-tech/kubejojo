@@ -13,7 +13,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
-	"github.com/zhangya/k8s-admin/server/internal/jsonx"
+	"github.com/heihuzicity-tech/kubejojo/server/internal/jsonx"
 )
 
 const (

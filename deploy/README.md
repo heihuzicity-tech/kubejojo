@@ -2,6 +2,13 @@
 
 用于存放本项目的部署清单、Kubernetes YAML、Helm Chart 或后续交付配置。
 
+## Release 托管
+
+- `kubejojo.service`
+  - `systemd` 单元模板
+  - 面向 release 模式部署
+  - 为后续在线更新预留了 `Restart=always` 和可写工作目录前提
+
 ## Demo 清单
 
 - `demo/network-storage-demo.yaml`
