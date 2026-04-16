@@ -85,6 +85,7 @@ jobs:
         with:
           tag_name: ${{ github.ref_name }}
           name: kubejojo ${{ github.ref_name }}
+          prerelease: ${{ contains(github.ref_name, '-') }}
           generate_release_notes: true
           files: |
             release-assets/*.tar.gz
