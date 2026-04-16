@@ -1,6 +1,23 @@
 package service
 
-import "testing"
+import (
+	"bytes"
+	"context"
+	"io"
+	"net/http"
+	"os"
+	"testing"
+	"time"
+
+	"github.com/heihuzicity-tech/kubejojo/server/internal/buildinfo"
+	"github.com/heihuzicity-tech/kubejojo/server/internal/config"
+)
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (fn roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return fn(req)
+}
 
 func TestCompareVersions(t *testing.T) {
 	t.Parallel()
@@ -259,5 +276,92 @@ func TestGitHubReleaseAssetDownloadURL(t *testing.T) {
 				t.Fatalf("DownloadURL() = %q, want %q", actual, testCase.expected)
 			}
 		})
+	}
+}
+
+func TestNewUpdateServiceDoesNotSetGlobalHTTPTimeout(t *testing.T) {
+	t.Parallel()
+
+	service := NewUpdateService(buildinfo.Info{}, config.UpdateConfig{}, false)
+	if service.httpClient == nil {
+		t.Fatal("expected HTTP client to be initialized")
+	}
+	if service.httpClient.Timeout != 0 {
+		t.Fatalf("expected shared HTTP client timeout to be unset, got %s", service.httpClient.Timeout)
+	}
+}
+
+func TestDoGitHubJSONRequestAppliesGitHubAPITimeout(t *testing.T) {
+	t.Parallel()
+
+	service := NewUpdateService(buildinfo.Info{}, config.UpdateConfig{}, false)
+
+	var (
+		capturedDeadline time.Time
+		capturedAt       time.Time
+		hasDeadline      bool
+	)
+
+	service.httpClient.Transport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		capturedAt = time.Now()
+		capturedDeadline, hasDeadline = req.Context().Deadline()
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(bytes.NewBufferString("[]")),
+		}, nil
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	resp, err := service.doGitHubJSONRequest(ctx, "https://api.github.com/repos/example/project/releases?per_page=20")
+	if err != nil {
+		t.Fatalf("doGitHubJSONRequest() returned error: %v", err)
+	}
+	resp.Body.Close()
+
+	if !hasDeadline {
+		t.Fatal("expected GitHub API request context to have a deadline")
+	}
+
+	ttl := capturedDeadline.Sub(capturedAt)
+	if ttl < 28*time.Second || ttl > 31*time.Second {
+		t.Fatalf("expected GitHub API request deadline near %s, got %s", gitHubAPIRequestTTL, ttl)
+	}
+}
+
+func TestDownloadFileUsesCallerContextWithoutInjectedDeadline(t *testing.T) {
+	t.Parallel()
+
+	service := NewUpdateService(buildinfo.Info{}, config.UpdateConfig{}, false)
+	tempDir := t.TempDir()
+	destPath := tempDir + "/kubejojo.tar.gz"
+
+	var hasDeadline bool
+	service.httpClient.Transport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		_, hasDeadline = req.Context().Deadline()
+		return &http.Response{
+			StatusCode:    http.StatusOK,
+			ContentLength: 7,
+			Header:        make(http.Header),
+			Body:          io.NopCloser(bytes.NewBufferString("payload")),
+		}, nil
+	})
+
+	if err := service.downloadFile(context.Background(), "https://github.com/example/project/releases/download/v1.0.0/kubejojo.tar.gz", destPath); err != nil {
+		t.Fatalf("downloadFile() returned error: %v", err)
+	}
+
+	if hasDeadline {
+		t.Fatal("expected download request to rely on caller context without an injected deadline")
+	}
+
+	content, err := os.ReadFile(destPath)
+	if err != nil {
+		t.Fatalf("read downloaded file: %v", err)
+	}
+	if string(content) != "payload" {
+		t.Fatalf("downloaded file = %q, want %q", string(content), "payload")
 	}
 }

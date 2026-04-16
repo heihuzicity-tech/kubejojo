@@ -29,6 +29,7 @@ const (
 	maxDownloadSize      = 256 * 1024 * 1024
 	restartDelay         = 500 * time.Millisecond
 	updateOperationTTL   = 30 * time.Minute
+	gitHubAPIRequestTTL  = 30 * time.Second
 	defaultUserAgent     = "kubejojo-update-client"
 )
 
@@ -148,7 +149,6 @@ func (e *githubAPIError) Error() string {
 
 func NewUpdateService(info buildinfo.Info, cfg config.UpdateConfig, embeddedFrontend bool) *UpdateService {
 	client := &http.Client{
-		Timeout: 30 * time.Second,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) > 10 {
 				return fmt.Errorf("too many redirects while downloading release asset")
@@ -509,7 +509,10 @@ func (s *UpdateService) doGitHubJSONRequest(ctx context.Context, requestURL stri
 		return nil, err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
+	requestCtx, cancel := context.WithTimeout(ctx, gitHubAPIRequestTTL)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(requestCtx, http.MethodGet, requestURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("build release request: %w", err)
 	}
