@@ -61,7 +61,7 @@ export function LoginPage() {
               Single Cluster Console
             </div>
             <Typography.Title level={1} className="!mb-4 !mt-4 !text-white">
-              K8s Admin
+              kubejojo
             </Typography.Title>
             <Typography.Paragraph className="!mb-5 text-sm leading-7 text-slate-300">
               面向单集群 Kubernetes 运维场景，提供统一的资源导航与控制台入口。

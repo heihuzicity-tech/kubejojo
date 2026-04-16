@@ -1,4 +1,4 @@
-module github.com/zhangya/k8s-admin/server
+module github.com/heihuzicity-tech/kubejojo/server
 
 go 1.25.1
 

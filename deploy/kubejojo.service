@@ -1,0 +1,34 @@
+[Unit]
+Description=kubejojo - Kubernetes Single Cluster Console
+Documentation=https://github.com/heihuzicity-tech/kubejojo
+After=network.target
+
+[Service]
+Type=simple
+User=kubejojo
+Group=kubejojo
+WorkingDirectory=/opt/kubejojo
+ExecStart=/opt/kubejojo/kubejojo
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=kubejojo
+
+# Future online update flow relies on the binary being writable in place.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/kubejojo
+
+# Adjust these values for your target environment.
+Environment=HTTP_ADDR=:8080
+Environment=KUBEJOJO_KUBECONFIG=/opt/kubejojo/config/kubeconfig
+# Environment=KUBEJOJO_UPDATE_ENABLED=true
+# Environment=KUBEJOJO_UPDATE_REPOSITORY=heihuzicity-tech/kubejojo
+# Environment=KUBEJOJO_UPDATE_ALLOWED_SUBJECTS=system:serviceaccount:kube-system:kubejojo-dev
+# Environment=KUBEJOJO_UPDATE_GITHUB_TOKEN=
+
+[Install]
+WantedBy=multi-user.target

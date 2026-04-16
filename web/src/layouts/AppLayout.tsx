@@ -32,7 +32,7 @@ function NavigationPanel({
         <div className="flex items-center gap-3">
           <BrandLogo size={42} />
           <Typography.Title level={4} className="!mb-0">
-            K8s Admin
+            kubejojo
           </Typography.Title>
         </div>
       </div>
@@ -252,7 +252,7 @@ export function AppLayout({ children }: PropsWithChildren) {
               ) : null}
               <div className="min-w-0">
                 <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-                  {activeItem?.sectionLabel ?? 'K8s Admin'}
+                  {activeItem?.sectionLabel ?? 'kubejojo'}
                 </div>
                 <div className="mt-1 flex min-w-0 items-center gap-2">
                   <Typography.Title level={4} className="!mb-0 truncate">

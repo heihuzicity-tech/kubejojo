@@ -19,7 +19,7 @@ export function BrandLogo({
     >
       <img
         src={brandLogo}
-        alt="K8s Admin logo"
+        alt="kubejojo logo"
         className="h-full w-full object-cover"
         loading="eager"
       />

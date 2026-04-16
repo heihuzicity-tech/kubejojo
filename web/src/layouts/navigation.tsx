@@ -5,6 +5,7 @@ import {
   AppstoreOutlined,
   BranchesOutlined,
   ClusterOutlined,
+  CloudSyncOutlined,
   DatabaseOutlined,
   DeploymentUnitOutlined,
   SafetyCertificateOutlined,
@@ -289,6 +290,20 @@ export const navigationSections: NavigationSection[] = [
         label: 'LimitRanges',
         path: '/resources/limitranges',
         description: '默认资源限制与请求范围查看',
+        implemented: true,
+      },
+    ],
+  },
+  {
+    key: 'system',
+    label: '系统',
+    icon: <CloudSyncOutlined />,
+    items: [
+      {
+        key: 'system-updates',
+        label: 'Updates',
+        path: '/system/updates',
+        description: '应用版本、发布构建与在线更新控制台',
         implemented: true,
       },
     ],

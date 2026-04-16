@@ -17,11 +17,13 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/zhangya/k8s-admin/server/internal/jsonx"
-	"github.com/zhangya/k8s-admin/server/internal/kube"
-	"github.com/zhangya/k8s-admin/server/internal/ptyx"
-	"github.com/zhangya/k8s-admin/server/internal/response"
-	"github.com/zhangya/k8s-admin/server/internal/service"
+	"github.com/heihuzicity-tech/kubejojo/server/internal/buildinfo"
+	"github.com/heihuzicity-tech/kubejojo/server/internal/jsonx"
+	"github.com/heihuzicity-tech/kubejojo/server/internal/kube"
+	"github.com/heihuzicity-tech/kubejojo/server/internal/ptyx"
+	"github.com/heihuzicity-tech/kubejojo/server/internal/response"
+	"github.com/heihuzicity-tech/kubejojo/server/internal/service"
+	"github.com/heihuzicity-tech/kubejojo/server/internal/web"
 )
 
 const clusterServiceContextKey = "clusterService"
@@ -74,20 +76,34 @@ func (w *websocketTextWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-func newRouter(clusterFactory *kube.Factory) *gin.Engine {
+func newRouter(
+	clusterFactory *kube.Factory,
+	updateService *service.UpdateService,
+	info buildinfo.Info,
+) *gin.Engine {
 	router := gin.New()
 	router.Use(gin.Logger(), gin.Recovery())
 	router.SetTrustedProxies(nil)
 
 	router.GET("/healthz", func(c *gin.Context) {
 		c.JSON(http.StatusOK, response.Success(gin.H{
-			"service": "k8s-admin",
+			"service": "kubejojo",
 			"status":  "ok",
 		}))
 	})
 
 	api := router.Group("/api/v1")
 	{
+		api.GET("/system/build-info", func(c *gin.Context) {
+			c.JSON(http.StatusOK, response.Success(gin.H{
+				"version":          info.Version,
+				"commit":           info.Commit,
+				"date":             info.Date,
+				"buildType":        info.BuildType,
+				"embeddedFrontend": web.HasEmbeddedFrontend(),
+			}))
+		})
+
 		api.POST("/auth/login", func(c *gin.Context) {
 			var req loginRequest
 			if err := c.ShouldBindJSON(&req); err != nil {
@@ -253,6 +269,50 @@ func newRouter(clusterFactory *kube.Factory) *gin.Engine {
 		{
 			authorized.GET("/auth/me", func(c *gin.Context) {
 				c.JSON(http.StatusOK, response.Success(mustClusterService(c).GetAuthMe(c.Request.Context())))
+			})
+
+			authorized.GET("/system/update-status", func(c *gin.Context) {
+				actor := mustClusterService(c).GetAuthMe(c.Request.Context()).Name
+				status, err := updateService.CheckForActor(c.Request.Context(), actor, c.Query("force") == "true")
+				if err != nil {
+					respondWithClusterError(c, "SYSTEM_UPDATE_STATUS_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(status))
+			})
+
+			authorized.POST("/system/update", func(c *gin.Context) {
+				actor := mustClusterService(c).GetAuthMe(c.Request.Context()).Name
+				result, err := updateService.PerformUpdate(c.Request.Context(), actor)
+				if err != nil {
+					respondWithClusterError(c, "SYSTEM_UPDATE_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(result))
+			})
+
+			authorized.POST("/system/rollback", func(c *gin.Context) {
+				actor := mustClusterService(c).GetAuthMe(c.Request.Context()).Name
+				result, err := updateService.Rollback(actor)
+				if err != nil {
+					respondWithClusterError(c, "SYSTEM_ROLLBACK_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(result))
+			})
+
+			authorized.POST("/system/restart", func(c *gin.Context) {
+				actor := mustClusterService(c).GetAuthMe(c.Request.Context()).Name
+				result, err := updateService.Restart(actor)
+				if err != nil {
+					respondWithClusterError(c, "SYSTEM_RESTART_FAILED", err)
+					return
+				}
+
+				c.JSON(http.StatusOK, response.Success(result))
 			})
 
 			authorized.POST("/manifests", func(c *gin.Context) {
@@ -1960,6 +2020,10 @@ func newRouter(clusterFactory *kube.Factory) *gin.Engine {
 		}
 	}
 
+	if info.IsRelease() {
+		web.RegisterReleaseRoutes(router)
+	}
+
 	return router
 }
 
@@ -2094,12 +2158,15 @@ func registerClusterDeleteRoute(
 
 func respondWithClusterError(c *gin.Context, code string, err error) {
 	var validationErr service.ValidationError
+	var permissionErr service.PermissionError
 
 	switch {
 	case apierrors.IsUnauthorized(err):
 		c.JSON(http.StatusUnauthorized, response.Failure(code, "Bearer Token 无效或已过期"))
 	case apierrors.IsForbidden(err):
 		c.JSON(http.StatusForbidden, response.Failure(code, "当前 Token 权限不足，无法访问所需资源"))
+	case errors.As(err, &permissionErr):
+		c.JSON(http.StatusForbidden, response.Failure(code, permissionErr.Error()))
 	case errors.As(err, &validationErr):
 		c.JSON(http.StatusBadRequest, response.Failure(code, validationErr.Error()))
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):

@@ -2,7 +2,7 @@ apiVersion: v1
 kind: Namespace
 metadata:
   labels:
-    app.kubernetes.io/part-of: k8s-admin-demo
+    app.kubernetes.io/part-of: kubejojo-demo
   name: demo-network
 ---
 apiVersion: apps/v1
@@ -10,7 +10,7 @@ kind: Deployment
 metadata:
   labels:
     app.kubernetes.io/name: policy-web
-    app.kubernetes.io/part-of: k8s-admin-demo
+    app.kubernetes.io/part-of: kubejojo-demo
   name: policy-web
   namespace: demo-network
 spec:
@@ -23,7 +23,7 @@ spec:
       labels:
         app: policy-web
         app.kubernetes.io/name: policy-web
-        app.kubernetes.io/part-of: k8s-admin-demo
+        app.kubernetes.io/part-of: kubejojo-demo
     spec:
       containers:
         - image: nginx:1.27-alpine
@@ -38,7 +38,7 @@ kind: Service
 metadata:
   labels:
     app.kubernetes.io/name: policy-web
-    app.kubernetes.io/part-of: k8s-admin-demo
+    app.kubernetes.io/part-of: kubejojo-demo
   name: policy-web
   namespace: demo-network
 spec:
@@ -54,7 +54,7 @@ kind: Pod
 metadata:
   labels:
     app.kubernetes.io/name: policy-client
-    app.kubernetes.io/part-of: k8s-admin-demo
+    app.kubernetes.io/part-of: kubejojo-demo
     role: client
   name: policy-client
   namespace: demo-network
@@ -73,7 +73,7 @@ kind: Pod
 metadata:
   labels:
     app.kubernetes.io/name: policy-blocked
-    app.kubernetes.io/part-of: k8s-admin-demo
+    app.kubernetes.io/part-of: kubejojo-demo
     role: blocked
   name: policy-blocked
   namespace: demo-network
@@ -92,7 +92,7 @@ kind: NetworkPolicy
 metadata:
   labels:
     app.kubernetes.io/name: policy-web-default-deny
-    app.kubernetes.io/part-of: k8s-admin-demo
+    app.kubernetes.io/part-of: kubejojo-demo
   name: policy-web-default-deny
   namespace: demo-network
 spec:
@@ -108,7 +108,7 @@ kind: NetworkPolicy
 metadata:
   labels:
     app.kubernetes.io/name: policy-web-allow-client
-    app.kubernetes.io/part-of: k8s-admin-demo
+    app.kubernetes.io/part-of: kubejojo-demo
   name: policy-web-allow-client
   namespace: demo-network
 spec:
@@ -131,7 +131,7 @@ kind: NetworkPolicy
 metadata:
   labels:
     app.kubernetes.io/name: policy-client-egress-web
-    app.kubernetes.io/part-of: k8s-admin-demo
+    app.kubernetes.io/part-of: kubejojo-demo
   name: policy-client-egress-web
   namespace: demo-network
 spec:

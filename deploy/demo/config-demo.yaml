@@ -2,7 +2,7 @@ apiVersion: v1
 kind: Namespace
 metadata:
   labels:
-    app.kubernetes.io/part-of: k8s-admin-demo
+    app.kubernetes.io/part-of: kubejojo-demo
   name: demo-config
 ---
 apiVersion: v1
@@ -10,11 +10,11 @@ kind: ConfigMap
 metadata:
   labels:
     app.kubernetes.io/name: demo-app-config
-    app.kubernetes.io/part-of: k8s-admin-demo
+    app.kubernetes.io/part-of: kubejojo-demo
   name: demo-app-config
   namespace: demo-config
 data:
-  APP_NAME: k8s-admin
+  APP_NAME: kubejojo
   LOG_LEVEL: info
   PROFILE: demo
 binaryData:
@@ -25,7 +25,7 @@ kind: Secret
 metadata:
   labels:
     app.kubernetes.io/name: demo-app-secret
-    app.kubernetes.io/part-of: k8s-admin-demo
+    app.kubernetes.io/part-of: kubejojo-demo
   name: demo-app-secret
   namespace: demo-config
 type: Opaque
@@ -38,7 +38,7 @@ kind: Secret
 metadata:
   labels:
     app.kubernetes.io/name: demo-registry-auth
-    app.kubernetes.io/part-of: k8s-admin-demo
+    app.kubernetes.io/part-of: kubejojo-demo
   name: demo-registry-auth
   namespace: demo-config
 type: kubernetes.io/dockerconfigjson
@@ -59,7 +59,7 @@ kind: Deployment
 metadata:
   labels:
     app.kubernetes.io/name: demo-config-consumer
-    app.kubernetes.io/part-of: k8s-admin-demo
+    app.kubernetes.io/part-of: kubejojo-demo
   name: demo-config-consumer
   namespace: demo-config
 spec:
@@ -72,7 +72,7 @@ spec:
       labels:
         app: demo-config-consumer
         app.kubernetes.io/name: demo-config-consumer
-        app.kubernetes.io/part-of: k8s-admin-demo
+        app.kubernetes.io/part-of: kubejojo-demo
     spec:
       imagePullSecrets:
         - name: demo-registry-auth
