@@ -56,14 +56,7 @@ export function VersionBadge({ version = '' }: VersionBadgeProps) {
         pill: 'bg-amber-100 text-amber-700',
         label: '待升级',
       }
-    : backupAvailable
-      ? {
-          button: 'border-sky-200 bg-sky-50 text-sky-700 hover:border-sky-300 hover:bg-sky-100',
-          dot: 'bg-sky-500',
-          pill: 'bg-sky-100 text-sky-700',
-          label: '可回滚',
-        }
-      : isInteractive
+    : isInteractive
         ? {
             button: 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:border-emerald-300 hover:bg-emerald-100',
             dot: 'bg-emerald-500',
@@ -139,14 +132,14 @@ export function VersionBadge({ version = '' }: VersionBadgeProps) {
         <div className="border-b border-slate-100 bg-[linear-gradient(135deg,rgba(248,250,252,0.95),rgba(255,255,255,0.98))] px-4 py-4">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-400">
-                Version Pulse
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                版本状态
               </p>
               <p className="mt-2 text-2xl font-semibold text-slate-950">
                 {currentVersion ? `v${currentVersion}` : '--'}
               </p>
               <p className="mt-1 text-xs text-slate-500">
-                {hasUpdate ? `最新发布 v${latestVersion}` : '更新与回滚都在独立页面执行'}
+                {hasUpdate ? `最新发布 v${latestVersion}` : '更新和回滚都在独立页面执行'}
               </p>
             </div>
 
@@ -174,7 +167,7 @@ export function VersionBadge({ version = '' }: VersionBadgeProps) {
           <div className="grid grid-cols-2 gap-3">
             <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
               <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">
-                Running
+                当前版本
               </p>
               <p className="mt-2 text-lg font-semibold text-slate-950">
                 {currentVersion ? `v${currentVersion}` : '--'}
@@ -183,7 +176,7 @@ export function VersionBadge({ version = '' }: VersionBadgeProps) {
 
             <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
               <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">
-                State
+                当前状态
               </p>
               <div className="mt-2 flex items-center gap-2 text-slate-950">
                 {hasUpdate ? (
@@ -224,7 +217,7 @@ export function VersionBadge({ version = '' }: VersionBadgeProps) {
             }}
             className="flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-slate-800"
           >
-            进入版本操作台
+            进入更新管理
             <ArrowRightOutlined />
           </button>
 

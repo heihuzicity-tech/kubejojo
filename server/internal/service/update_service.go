@@ -130,6 +130,19 @@ type githubAPIError struct {
 	RequestURL       string
 }
 
+type cancelOnCloseReadCloser struct {
+	io.ReadCloser
+	cancel context.CancelFunc
+}
+
+func (r *cancelOnCloseReadCloser) Close() error {
+	err := r.ReadCloser.Close()
+	if r.cancel != nil {
+		r.cancel()
+	}
+	return err
+}
+
 func (e *githubAPIError) Error() string {
 	if e == nil {
 		return ""
@@ -510,10 +523,10 @@ func (s *UpdateService) doGitHubJSONRequest(ctx context.Context, requestURL stri
 	}
 
 	requestCtx, cancel := context.WithTimeout(ctx, gitHubAPIRequestTTL)
-	defer cancel()
 
 	req, err := http.NewRequestWithContext(requestCtx, http.MethodGet, requestURL, nil)
 	if err != nil {
+		cancel()
 		return nil, fmt.Errorf("build release request: %w", err)
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
@@ -524,11 +537,13 @@ func (s *UpdateService) doGitHubJSONRequest(ctx context.Context, requestURL stri
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
+		cancel()
 		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		resp.Body.Close()
+		cancel()
 
 		var githubErr githubErrorResponse
 		if err := json.Unmarshal(body, &githubErr); err == nil && strings.TrimSpace(githubErr.Message) != "" {
@@ -550,6 +565,11 @@ func (s *UpdateService) doGitHubJSONRequest(ctx context.Context, requestURL stri
 			Message:    trimmedBody,
 			RequestURL: requestURL,
 		}
+	}
+
+	resp.Body = &cancelOnCloseReadCloser{
+		ReadCloser: resp.Body,
+		cancel:     cancel,
 	}
 
 	return resp, nil
@@ -821,7 +841,7 @@ func (s *UpdateService) decoratePermissions(status *UpdateStatus, actor string) 
 	copied.Authorized = authorized
 	copied.CanRestart = s.info.IsRelease() && authorized && runtime.GOOS == "linux"
 	copied.CanRollback = s.info.IsRelease() && authorized && copied.BackupAvailable
-	copied.CanInstall = s.info.IsRelease() && s.cfg.Enabled && authorized
+	copied.CanInstall = s.info.IsRelease() && s.cfg.Enabled && authorized && copied.HasUpdate
 
 	switch {
 	case !s.info.IsRelease():
@@ -832,10 +852,16 @@ func (s *UpdateService) decoratePermissions(status *UpdateStatus, actor string) 
 		copied.Message = "Online update is disabled by server configuration."
 	case !authorized:
 		copied.Message = authMessage
+	case copied.Warning != "":
+		copied.Message = "Version check completed with warnings."
+	case copied.HasUpdate:
+		copied.Message = "A newer release is available."
 	case runtime.GOOS != "linux":
 		copied.Message = "Update is available, but automatic restart currently requires a Linux host managed by systemd."
+	case copied.BackupAvailable:
+		copied.Message = "Current version is up to date. A local backup is available for rollback."
 	default:
-		copied.Message = "System update is ready."
+		copied.Message = "Current version is up to date."
 	}
 
 	return &copied
