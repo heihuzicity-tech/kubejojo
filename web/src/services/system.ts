@@ -25,8 +25,13 @@ export type UpdateReleaseInfo = {
 
 export type UpdateStatus = {
   currentVersion: string;
+  runningVersion: string;
+  installedVersion: string;
+  backupVersion?: string;
   latestVersion: string;
   hasUpdate: boolean;
+  pendingRestart: boolean;
+  primaryState: 'restart_required' | 'update_available' | 'up_to_date' | string;
   cached: boolean;
   warning?: string;
   buildType: string;

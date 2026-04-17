@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -30,6 +31,7 @@ const (
 	restartDelay        = 500 * time.Millisecond
 	updateOperationTTL  = 30 * time.Minute
 	gitHubAPIRequestTTL = 30 * time.Second
+	binaryProbeTTL      = 5 * time.Second
 	defaultUserAgent    = "kubejojo-update-client"
 )
 
@@ -57,8 +59,13 @@ type UpdateReleaseInfo struct {
 
 type UpdateStatus struct {
 	CurrentVersion   string             `json:"currentVersion"`
+	RunningVersion   string             `json:"runningVersion"`
+	InstalledVersion string             `json:"installedVersion"`
+	BackupVersion    string             `json:"backupVersion,omitempty"`
 	LatestVersion    string             `json:"latestVersion"`
 	HasUpdate        bool               `json:"hasUpdate"`
+	PendingRestart   bool               `json:"pendingRestart"`
+	PrimaryState     string             `json:"primaryState"`
 	Cached           bool               `json:"cached"`
 	Warning          string             `json:"warning,omitempty"`
 	BuildType        string             `json:"buildType"`
@@ -82,13 +89,15 @@ type UpdateActionResult struct {
 }
 
 type UpdateService struct {
-	httpClient       *http.Client
-	info             buildinfo.Info
-	cfg              config.UpdateConfig
-	embeddedFrontend bool
-	cacheMu          sync.Mutex
-	cacheValue       *UpdateStatus
-	cacheExpiresAt   time.Time
+	httpClient           *http.Client
+	info                 buildinfo.Info
+	cfg                  config.UpdateConfig
+	embeddedFrontend     bool
+	managedBinaryPath    string
+	managedBinaryWarning string
+	cacheMu              sync.Mutex
+	cacheValue           *UpdateStatus
+	cacheExpiresAt       time.Time
 }
 
 type githubRelease struct {
@@ -171,11 +180,15 @@ func NewUpdateService(info buildinfo.Info, cfg config.UpdateConfig, embeddedFron
 		},
 	}
 
+	managedBinaryPath, managedBinaryWarning := resolveManagedBinaryPath(cfg.TargetPath)
+
 	return &UpdateService{
-		httpClient:       client,
-		info:             info,
-		cfg:              cfg,
-		embeddedFrontend: embeddedFrontend,
+		httpClient:           client,
+		info:                 info,
+		cfg:                  cfg,
+		embeddedFrontend:     embeddedFrontend,
+		managedBinaryPath:    managedBinaryPath,
+		managedBinaryWarning: managedBinaryWarning,
 	}
 }
 
@@ -207,6 +220,9 @@ func (s *UpdateService) PerformUpdate(ctx context.Context, actor string) (*Updat
 	if !status.HasUpdate {
 		return nil, newValidationError("current version is already up to date")
 	}
+	if status.PendingRestart {
+		return nil, newValidationError("restart the service before installing another version")
+	}
 	if status.ReleaseInfo == nil {
 		return nil, newValidationError("latest release metadata is unavailable")
 	}
@@ -235,16 +251,12 @@ func (s *UpdateService) PerformUpdate(ctx context.Context, actor string) (*Updat
 		return nil, newValidationError("checksums.txt is missing from the release assets")
 	}
 
-	exePath, err := os.Executable()
+	managedBinaryPath, err := s.requireManagedBinaryPath()
 	if err != nil {
-		return nil, fmt.Errorf("resolve executable path: %w", err)
-	}
-	exePath, err = filepath.EvalSymlinks(exePath)
-	if err != nil {
-		return nil, fmt.Errorf("resolve executable symlink: %w", err)
+		return nil, err
 	}
 
-	exeDir := filepath.Dir(exePath)
+	exeDir := filepath.Dir(managedBinaryPath)
 	tempDir, err := os.MkdirTemp(exeDir, ".kubejojo-update-*")
 	if err != nil {
 		return nil, fmt.Errorf("create update temp dir: %w", err)
@@ -267,22 +279,24 @@ func (s *UpdateService) PerformUpdate(ctx context.Context, actor string) (*Updat
 		return nil, fmt.Errorf("chmod new binary: %w", err)
 	}
 
-	backupPath := exePath + ".backup"
-	_ = os.Remove(backupPath)
+	backupPath := managedBinaryPath + ".backup"
+	if err := removeFileIfExists(backupPath); err != nil {
+		return nil, fmt.Errorf("remove previous backup binary: %w", err)
+	}
 
-	if err := os.Rename(exePath, backupPath); err != nil {
+	if err := os.Rename(managedBinaryPath, backupPath); err != nil {
 		return nil, fmt.Errorf("backup current binary: %w", err)
 	}
 
-	if err := os.Rename(newBinaryPath, exePath); err != nil {
-		_ = os.Rename(backupPath, exePath)
+	if err := os.Rename(newBinaryPath, managedBinaryPath); err != nil {
+		_ = os.Rename(backupPath, managedBinaryPath)
 		return nil, fmt.Errorf("replace executable: %w", err)
 	}
 
 	s.invalidateCache()
 
 	return &UpdateActionResult{
-		Message:     "Update completed. Restart the service to activate the new version.",
+		Message:     fmt.Sprintf("Update completed. Version %s is installed and waiting for restart.", status.LatestVersion),
 		NeedRestart: true,
 	}, nil
 }
@@ -292,39 +306,50 @@ func (s *UpdateService) Rollback(actor string) (*UpdateActionResult, error) {
 		return nil, err
 	}
 
-	exePath, err := os.Executable()
+	managedBinaryPath, err := s.requireManagedBinaryPath()
 	if err != nil {
-		return nil, fmt.Errorf("resolve executable path: %w", err)
+		return nil, err
 	}
-	exePath, err = filepath.EvalSymlinks(exePath)
+
+	installedVersion, err := s.readOptionalBinaryVersion(managedBinaryPath)
 	if err != nil {
-		return nil, fmt.Errorf("resolve executable symlink: %w", err)
+		return nil, fmt.Errorf("read installed binary version: %w", err)
 	}
 
-	backupPath := exePath + ".backup"
-	if _, err := os.Stat(backupPath); err != nil {
-		if os.IsNotExist(err) {
-			return nil, newValidationError("no backup binary is available for rollback")
-		}
-		return nil, fmt.Errorf("stat backup binary: %w", err)
+	backupPath := managedBinaryPath + ".backup"
+	backupVersion, err := s.readOptionalBinaryVersion(backupPath)
+	if err != nil {
+		return nil, fmt.Errorf("read backup binary version: %w", err)
+	}
+	if backupVersion == "" {
+		return nil, newValidationError("no backup binary is available for rollback")
+	}
+	if compareVersions(backupVersion, installedVersion) == 0 {
+		return nil, newValidationError("backup binary matches the installed version and cannot be used for rollback")
 	}
 
-	tempPath := exePath + ".rollback-current"
-	_ = os.Remove(tempPath)
+	tempPath := managedBinaryPath + ".rollback-current"
+	if err := removeFileIfExists(tempPath); err != nil {
+		return nil, fmt.Errorf("remove stale rollback temp file: %w", err)
+	}
 
-	if err := os.Rename(exePath, tempPath); err != nil {
+	if err := os.Rename(managedBinaryPath, tempPath); err != nil {
 		return nil, fmt.Errorf("move current binary before rollback: %w", err)
 	}
-	if err := os.Rename(backupPath, exePath); err != nil {
-		_ = os.Rename(tempPath, exePath)
+	if err := os.Rename(backupPath, managedBinaryPath); err != nil {
+		_ = os.Rename(tempPath, managedBinaryPath)
 		return nil, fmt.Errorf("restore backup binary: %w", err)
 	}
-	_ = os.Remove(tempPath)
+	if err := os.Rename(tempPath, backupPath); err != nil {
+		_ = os.Rename(managedBinaryPath, backupPath)
+		_ = os.Rename(tempPath, managedBinaryPath)
+		return nil, fmt.Errorf("persist previous installed binary as rollback backup: %w", err)
+	}
 
 	s.invalidateCache()
 
 	return &UpdateActionResult{
-		Message:     "Rollback completed. Restart the service to switch back to the previous version.",
+		Message:     fmt.Sprintf("Rollback completed. Version %s is installed and waiting for restart.", backupVersion),
 		NeedRestart: true,
 	}, nil
 }
@@ -360,17 +385,39 @@ func (s *UpdateService) checkUpdate(ctx context.Context, force bool) (*UpdateSta
 
 	status := &UpdateStatus{
 		CurrentVersion:   s.info.Version,
+		RunningVersion:   s.info.Version,
+		InstalledVersion: s.info.Version,
 		LatestVersion:    s.info.Version,
 		BuildType:        s.info.BuildType,
 		Repository:       s.cfg.Repository,
 		UpdateEnabled:    s.cfg.Enabled,
 		EmbeddedFrontend: s.embeddedFrontend,
-		BackupAvailable:  s.backupAvailable(),
 	}
+
+	warnings := make([]string, 0, 3)
+	if s.managedBinaryWarning != "" {
+		warnings = append(warnings, s.managedBinaryWarning)
+	}
+	if installedVersion, err := s.readOptionalBinaryVersion(s.managedBinaryPath); err != nil {
+		warnings = append(warnings, fmt.Sprintf("read installed binary version: %v", err))
+	} else if strings.TrimSpace(installedVersion) != "" {
+		status.InstalledVersion = installedVersion
+	}
+	if backupVersion, err := s.readOptionalBinaryVersion(s.managedBinaryPath + ".backup"); err != nil {
+		warnings = append(warnings, fmt.Sprintf("read backup binary version: %v", err))
+	} else {
+		status.BackupVersion = backupVersion
+	}
+	status.PendingRestart = compareVersions(status.RunningVersion, status.InstalledVersion) != 0
+	status.BackupAvailable = status.BackupVersion != "" &&
+		compareVersions(status.BackupVersion, status.InstalledVersion) != 0
+	status.PrimaryState = derivePrimaryState(status.PendingRestart, false)
 
 	release, err := s.fetchLatestRelease(ctx)
 	if err != nil {
-		status.Warning = err.Error()
+		warnings = append(warnings, err.Error())
+		status.Warning = joinWarnings(warnings)
+		status.LatestVersion = status.InstalledVersion
 		status.Message = s.baseMessage()
 		s.setCached(status)
 		return status, nil
@@ -378,17 +425,19 @@ func (s *UpdateService) checkUpdate(ctx context.Context, force bool) (*UpdateSta
 
 	latestVersion := strings.TrimPrefix(strings.TrimSpace(release.TagName), "v")
 	if latestVersion == "" {
-		latestVersion = status.CurrentVersion
+		latestVersion = status.InstalledVersion
 	}
 
 	status.LatestVersion = latestVersion
-	status.HasUpdate = compareVersions(status.CurrentVersion, latestVersion) < 0
+	status.HasUpdate = compareVersions(status.InstalledVersion, latestVersion) < 0
+	status.PrimaryState = derivePrimaryState(status.PendingRestart, status.HasUpdate)
 	status.ReleaseInfo = &UpdateReleaseInfo{
 		Name:        release.Name,
 		Body:        release.Body,
 		PublishedAt: release.PublishedAt,
 		HTMLURL:     release.HTMLURL,
 	}
+	status.Warning = joinWarnings(warnings)
 	status.Message = s.baseMessage()
 
 	s.setCached(status)
@@ -815,6 +864,132 @@ func validateUpdateURL(value *url.URL) error {
 	return nil
 }
 
+func resolveManagedBinaryPath(targetPath string) (string, string) {
+	trimmed := strings.TrimSpace(targetPath)
+	if trimmed == "" {
+		exePath, err := os.Executable()
+		if err != nil {
+			return "", fmt.Sprintf("resolve managed binary path: %v", err)
+		}
+		trimmed = exePath
+	}
+
+	if !filepath.IsAbs(trimmed) {
+		absolutePath, err := filepath.Abs(trimmed)
+		if err != nil {
+			return "", fmt.Sprintf("normalize managed binary path %q: %v", trimmed, err)
+		}
+		trimmed = absolutePath
+	}
+
+	resolvedPath := trimmed
+	if _, err := os.Stat(trimmed); err == nil {
+		evaluatedPath, err := filepath.EvalSymlinks(trimmed)
+		if err != nil {
+			return "", fmt.Sprintf("resolve managed binary symlink %q: %v", trimmed, err)
+		}
+		resolvedPath = evaluatedPath
+	}
+
+	return normalizeManagedBinaryPath(resolvedPath), ""
+}
+
+func normalizeManagedBinaryPath(path string) string {
+	normalized := filepath.Clean(strings.TrimSpace(path))
+	for {
+		updated := strings.TrimSuffix(normalized, ".backup")
+		if updated != normalized {
+			normalized = updated
+			continue
+		}
+
+		updated = strings.TrimSuffix(normalized, ".rollback-current")
+		if updated != normalized {
+			normalized = updated
+			continue
+		}
+
+		return normalized
+	}
+}
+
+func removeFileIfExists(path string) error {
+	err := os.Remove(path)
+	if err == nil || os.IsNotExist(err) {
+		return nil
+	}
+	return err
+}
+
+func derivePrimaryState(pendingRestart bool, hasUpdate bool) string {
+	switch {
+	case pendingRestart:
+		return "restart_required"
+	case hasUpdate:
+		return "update_available"
+	default:
+		return "up_to_date"
+	}
+}
+
+func joinWarnings(items []string) string {
+	filtered := make([]string, 0, len(items))
+	for _, item := range items {
+		trimmed := strings.TrimSpace(item)
+		if trimmed != "" {
+			filtered = append(filtered, trimmed)
+		}
+	}
+	return strings.Join(filtered, "; ")
+}
+
+func (s *UpdateService) requireManagedBinaryPath() (string, error) {
+	path := strings.TrimSpace(s.managedBinaryPath)
+	if path == "" {
+		return "", newValidationError("managed binary path is unavailable")
+	}
+	return path, nil
+}
+
+func (s *UpdateService) readOptionalBinaryVersion(path string) (string, error) {
+	trimmedPath := strings.TrimSpace(path)
+	if trimmedPath == "" {
+		return "", nil
+	}
+
+	if _, err := os.Stat(trimmedPath); err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+		return "", err
+	}
+
+	probeCtx, cancel := context.WithTimeout(context.Background(), binaryProbeTTL)
+	defer cancel()
+
+	cmd := exec.CommandContext(probeCtx, trimmedPath, "-version")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("probe %s: %w", trimmedPath, err)
+	}
+
+	return parseVersionOutput(output)
+}
+
+func parseVersionOutput(output []byte) (string, error) {
+	fields := strings.Fields(strings.TrimSpace(string(output)))
+	if len(fields) < 2 || !strings.EqualFold(fields[0], "kubejojo") {
+		return "", fmt.Errorf("unexpected version output: %q", strings.TrimSpace(string(output)))
+	}
+
+	version := strings.TrimPrefix(strings.TrimSpace(fields[1]), "v")
+	if version == "" {
+		return "", fmt.Errorf("empty version in output: %q", strings.TrimSpace(string(output)))
+	}
+
+	return version, nil
+}
+
 func (s *UpdateService) decoratePermissions(status *UpdateStatus, actor string) *UpdateStatus {
 	copied := *status
 	copied.CurrentActor = actor
@@ -822,9 +997,9 @@ func (s *UpdateService) decoratePermissions(status *UpdateStatus, actor string) 
 
 	authorized, authMessage := s.actorAuthorization(actor)
 	copied.Authorized = authorized
-	copied.CanRestart = s.info.IsRelease() && authorized && runtime.GOOS == "linux"
+	copied.CanRestart = s.info.IsRelease() && authorized && runtime.GOOS == "linux" && copied.PendingRestart
 	copied.CanRollback = s.info.IsRelease() && authorized && copied.BackupAvailable
-	copied.CanInstall = s.info.IsRelease() && s.cfg.Enabled && authorized && copied.HasUpdate
+	copied.CanInstall = s.info.IsRelease() && s.cfg.Enabled && authorized && copied.HasUpdate && !copied.PendingRestart
 
 	switch {
 	case !s.info.IsRelease():
@@ -835,12 +1010,14 @@ func (s *UpdateService) decoratePermissions(status *UpdateStatus, actor string) 
 		copied.Message = "Online update is disabled by server configuration."
 	case !authorized:
 		copied.Message = authMessage
+	case copied.PendingRestart && runtime.GOOS != "linux":
+		copied.Message = "An installed version is waiting for activation, but automatic restart requires a Linux host managed by systemd."
+	case copied.PendingRestart:
+		copied.Message = "An installed version is waiting for restart."
 	case copied.Warning != "":
 		copied.Message = "Version check completed with warnings."
 	case copied.HasUpdate:
 		copied.Message = "A newer release is available."
-	case runtime.GOOS != "linux":
-		copied.Message = "Update is available, but automatic restart currently requires a Linux host managed by systemd."
 	case copied.BackupAvailable:
 		copied.Message = "Current version is up to date. A local backup is available for rollback."
 	default:
@@ -916,19 +1093,6 @@ func (s *UpdateService) invalidateCache() {
 
 func (s *UpdateService) expectedArchiveName(version string) string {
 	return fmt.Sprintf("kubejojo_%s_%s_%s.tar.gz", version, runtime.GOOS, runtime.GOARCH)
-}
-
-func (s *UpdateService) backupAvailable() bool {
-	exePath, err := os.Executable()
-	if err != nil {
-		return false
-	}
-	exePath, err = filepath.EvalSymlinks(exePath)
-	if err != nil {
-		return false
-	}
-	_, err = os.Stat(exePath + ".backup")
-	return err == nil
 }
 
 func (s *UpdateService) baseMessage() string {

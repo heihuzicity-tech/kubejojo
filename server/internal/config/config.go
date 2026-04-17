@@ -13,11 +13,12 @@ type Config struct {
 }
 
 type UpdateConfig struct {
-	Enabled         bool
+	Enabled          bool
 	AllowPrereleases bool
-	Repository      string
-	AllowedSubjects []string
-	GitHubToken     string
+	Repository       string
+	AllowedSubjects  []string
+	GitHubToken      string
+	TargetPath       string
 }
 
 func Load() Config {
@@ -30,6 +31,7 @@ func Load() Config {
 			Repository:       getEnv("KUBEJOJO_UPDATE_REPOSITORY", "heihuzicity-tech/kubejojo"),
 			AllowedSubjects:  splitCSVEnv("KUBEJOJO_UPDATE_ALLOWED_SUBJECTS"),
 			GitHubToken:      getEnv("KUBEJOJO_UPDATE_GITHUB_TOKEN", ""),
+			TargetPath:       getEnv("KUBEJOJO_UPDATE_TARGET_PATH", ""),
 		},
 	}
 }
