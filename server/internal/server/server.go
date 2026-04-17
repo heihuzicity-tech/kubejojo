@@ -23,6 +23,7 @@ func Run(info buildinfo.Info) error {
 	}
 
 	updateService := service.NewUpdateService(info, cfg.Update, web.HasEmbeddedFrontend())
-	router := newRouter(clusterFactory, updateService, info)
+	systemLockService := service.NewSystemOperationLockService()
+	router := newRouter(clusterFactory, updateService, systemLockService, info)
 	return router.Run(cfg.HTTPAddr)
 }

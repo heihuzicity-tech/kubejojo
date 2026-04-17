@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"golang.org/x/net/websocket"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -79,6 +80,7 @@ func (w *websocketTextWriter) Write(p []byte) (int, error) {
 func newRouter(
 	clusterFactory *kube.Factory,
 	updateService *service.UpdateService,
+	systemLockService *service.SystemOperationLockService,
 	info buildinfo.Info,
 ) *gin.Engine {
 	router := gin.New()
@@ -283,6 +285,13 @@ func newRouter(
 			})
 
 			authorized.POST("/system/update", func(c *gin.Context) {
+				lock, err := acquireSystemLock(systemLockService, buildSystemOperationID("update"))
+				if err != nil {
+					respondWithClusterError(c, "SYSTEM_UPDATE_FAILED", err)
+					return
+				}
+				defer systemLockService.Release(lock)
+
 				actor := mustClusterService(c).GetAuthMe(c.Request.Context()).Name
 				result, err := updateService.PerformUpdate(c.Request.Context(), actor)
 				if err != nil {
@@ -294,6 +303,13 @@ func newRouter(
 			})
 
 			authorized.POST("/system/rollback", func(c *gin.Context) {
+				lock, err := acquireSystemLock(systemLockService, buildSystemOperationID("rollback"))
+				if err != nil {
+					respondWithClusterError(c, "SYSTEM_ROLLBACK_FAILED", err)
+					return
+				}
+				defer systemLockService.Release(lock)
+
 				actor := mustClusterService(c).GetAuthMe(c.Request.Context()).Name
 				result, err := updateService.Rollback(actor)
 				if err != nil {
@@ -305,6 +321,13 @@ func newRouter(
 			})
 
 			authorized.POST("/system/restart", func(c *gin.Context) {
+				lock, err := acquireSystemLock(systemLockService, buildSystemOperationID("restart"))
+				if err != nil {
+					respondWithClusterError(c, "SYSTEM_RESTART_FAILED", err)
+					return
+				}
+				defer systemLockService.Release(lock)
+
 				actor := mustClusterService(c).GetAuthMe(c.Request.Context()).Name
 				result, err := updateService.Restart(actor)
 				if err != nil {
@@ -2159,12 +2182,15 @@ func registerClusterDeleteRoute(
 func respondWithClusterError(c *gin.Context, code string, err error) {
 	var validationErr service.ValidationError
 	var permissionErr service.PermissionError
+	var busyErr service.SystemOperationBusyError
 
 	switch {
 	case apierrors.IsUnauthorized(err):
 		c.JSON(http.StatusUnauthorized, response.Failure(code, "Bearer Token 无效或已过期"))
 	case apierrors.IsForbidden(err):
 		c.JSON(http.StatusForbidden, response.Failure(code, "当前 Token 权限不足，无法访问所需资源"))
+	case errors.As(err, &busyErr):
+		c.JSON(http.StatusConflict, response.Failure(code, busyErr.Error()))
 	case errors.As(err, &permissionErr):
 		c.JSON(http.StatusForbidden, response.Failure(code, permissionErr.Error()))
 	case errors.As(err, &validationErr):
@@ -2174,4 +2200,19 @@ func respondWithClusterError(c *gin.Context, code string, err error) {
 	default:
 		c.JSON(http.StatusInternalServerError, response.Failure(code, err.Error()))
 	}
+}
+
+func acquireSystemLock(
+	lockService *service.SystemOperationLockService,
+	operationID string,
+) (*service.SystemOperationLock, error) {
+	if lockService == nil {
+		return nil, errors.New("system operation lock service is unavailable")
+	}
+
+	return lockService.Acquire(operationID)
+}
+
+func buildSystemOperationID(operation string) string {
+	return "sysop-" + operation + "-" + strconv.FormatInt(time.Now().UnixNano(), 36)
 }

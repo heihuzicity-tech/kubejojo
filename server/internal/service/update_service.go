@@ -25,12 +25,12 @@ import (
 )
 
 const (
-	updateCacheTTL       = 20 * time.Minute
-	maxDownloadSize      = 256 * 1024 * 1024
-	restartDelay         = 500 * time.Millisecond
-	updateOperationTTL   = 30 * time.Minute
-	gitHubAPIRequestTTL  = 30 * time.Second
-	defaultUserAgent     = "kubejojo-update-client"
+	updateCacheTTL      = 20 * time.Minute
+	maxDownloadSize     = 256 * 1024 * 1024
+	restartDelay        = 500 * time.Millisecond
+	updateOperationTTL  = 30 * time.Minute
+	gitHubAPIRequestTTL = 30 * time.Second
+	defaultUserAgent    = "kubejojo-update-client"
 )
 
 var allowedUpdateHosts = map[string]struct{}{
@@ -86,8 +86,6 @@ type UpdateService struct {
 	info             buildinfo.Info
 	cfg              config.UpdateConfig
 	embeddedFrontend bool
-	opMu             sync.Mutex
-	busy             bool
 	cacheMu          sync.Mutex
 	cacheValue       *UpdateStatus
 	cacheExpiresAt   time.Time
@@ -199,12 +197,7 @@ func (s *UpdateService) PerformUpdate(ctx context.Context, actor string) (*Updat
 		return nil, err
 	}
 
-	if err := s.acquireOperation(); err != nil {
-		return nil, err
-	}
-	defer s.releaseOperation()
-
-	updateCtx, cancel := context.WithTimeout(context.Background(), updateOperationTTL)
+	updateCtx, cancel := context.WithTimeout(ctx, updateOperationTTL)
 	defer cancel()
 
 	status, err := s.checkUpdate(updateCtx, true)
@@ -299,11 +292,6 @@ func (s *UpdateService) Rollback(actor string) (*UpdateActionResult, error) {
 		return nil, err
 	}
 
-	if err := s.acquireOperation(); err != nil {
-		return nil, err
-	}
-	defer s.releaseOperation()
-
 	exePath, err := os.Executable()
 	if err != nil {
 		return nil, fmt.Errorf("resolve executable path: %w", err)
@@ -349,13 +337,8 @@ func (s *UpdateService) Restart(actor string) (*UpdateActionResult, error) {
 		return nil, newValidationError("automatic restart is only supported on Linux hosts managed by systemd")
 	}
 
-	if err := s.acquireOperation(); err != nil {
-		return nil, err
-	}
-
 	go func() {
 		time.Sleep(restartDelay)
-		s.releaseOperation()
 		if runtime.GOOS == "linux" {
 			os.Exit(0)
 		}
@@ -903,22 +886,6 @@ func (s *UpdateService) ensureActorCanOperate(actor string) error {
 		return PermissionError{message: message}
 	}
 	return nil
-}
-
-func (s *UpdateService) acquireOperation() error {
-	s.opMu.Lock()
-	defer s.opMu.Unlock()
-	if s.busy {
-		return newValidationError("another system operation is already in progress")
-	}
-	s.busy = true
-	return nil
-}
-
-func (s *UpdateService) releaseOperation() {
-	s.opMu.Lock()
-	s.busy = false
-	s.opMu.Unlock()
 }
 
 func (s *UpdateService) getCached() *UpdateStatus {

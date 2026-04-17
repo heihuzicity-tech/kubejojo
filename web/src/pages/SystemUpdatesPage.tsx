@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 
 import {
   CloudDownloadOutlined,
@@ -47,6 +47,12 @@ type ActionRowProps = {
 type PrimaryState = {
   label: string;
   meta: string;
+};
+
+type ActionAlert = {
+  type: 'success' | 'error' | 'info' | 'warning';
+  message: string;
+  description: string;
 };
 
 async function waitForHealthz() {
@@ -258,9 +264,15 @@ function getPrimaryState(
 }
 
 export function SystemUpdatesPage() {
-  const { message, modal } = App.useApp();
+  const { message } = App.useApp();
   const queryClient = useQueryClient();
   const sessionMode = useAppStore((state) => state.sessionMode);
+  const [updateError, setUpdateError] = useState('');
+  const [rollbackError, setRollbackError] = useState('');
+  const [restartError, setRestartError] = useState('');
+  const [updateSuccess, setUpdateSuccess] = useState(false);
+  const [rollbackSuccess, setRollbackSuccess] = useState(false);
+  const [needRestart, setNeedRestart] = useState(false);
 
   const buildInfoQuery = useQuery({
     queryKey: ['system-build-info'],
@@ -272,6 +284,15 @@ export function SystemUpdatesPage() {
     queryFn: () => getUpdateStatus(false),
     enabled: sessionMode === 'token',
   });
+
+  const clearActionState = () => {
+    setUpdateError('');
+    setRollbackError('');
+    setRestartError('');
+    setUpdateSuccess(false);
+    setRollbackSuccess(false);
+    setNeedRestart(false);
+  };
 
   const refreshStatus = async (force = false) => {
     const tasks: Array<Promise<unknown>> = [buildInfoQuery.refetch()];
@@ -289,29 +310,54 @@ export function SystemUpdatesPage() {
   };
 
   const updateMutation = useMutation({
-    mutationFn: performSystemUpdate,
+    mutationFn: async () => {
+      setUpdateError('');
+      setRollbackError('');
+      setRestartError('');
+      setUpdateSuccess(false);
+      setRollbackSuccess(false);
+      setNeedRestart(false);
+      return performSystemUpdate();
+    },
     onSuccess: async (result) => {
-      void message.success(result.message);
+      setUpdateSuccess(true);
+      setNeedRestart(Boolean(result.needRestart));
       await refreshStatus(true);
     },
     onError: (error) => {
-      void message.error(getActionErrorMessage(error, '安装更新失败，请稍后重试。'));
+      setUpdateSuccess(false);
+      setNeedRestart(false);
+      setUpdateError(getActionErrorMessage(error, '安装更新失败，请稍后重试。'));
     },
   });
 
   const rollbackMutation = useMutation({
-    mutationFn: rollbackSystemUpdate,
+    mutationFn: async () => {
+      setUpdateError('');
+      setRollbackError('');
+      setRestartError('');
+      setUpdateSuccess(false);
+      setRollbackSuccess(false);
+      setNeedRestart(false);
+      return rollbackSystemUpdate();
+    },
     onSuccess: async (result) => {
-      void message.success(result.message);
+      setRollbackSuccess(true);
+      setNeedRestart(Boolean(result.needRestart));
       await refreshStatus(true);
     },
     onError: (error) => {
-      void message.error(getActionErrorMessage(error, '回滚失败，请稍后重试。'));
+      setRollbackSuccess(false);
+      setNeedRestart(false);
+      setRollbackError(getActionErrorMessage(error, '回滚失败，请稍后重试。'));
     },
   });
 
   const restartMutation = useMutation({
-    mutationFn: restartSystemService,
+    mutationFn: async () => {
+      setRestartError('');
+      return restartSystemService();
+    },
     onSuccess: async (result) => {
       void message.success(result.message);
       const hide = message.loading('正在等待服务重启...', 0);
@@ -321,13 +367,16 @@ export function SystemUpdatesPage() {
         window.location.reload();
       } catch (error) {
         hide();
-        void message.error(
-          error instanceof Error ? error.message : '服务已触发重启，请稍后手动刷新页面。',
-        );
+        const errorMessage =
+          error instanceof Error ? error.message : '服务已触发重启，请稍后手动刷新页面。';
+        setRestartError(errorMessage);
+        void message.error(errorMessage);
       }
     },
     onError: (error) => {
-      void message.error(getActionErrorMessage(error, '重启失败，请稍后重试。'));
+      const errorMessage = getActionErrorMessage(error, '重启失败，请稍后重试。');
+      setRestartError(errorMessage);
+      void message.error(errorMessage);
     },
   });
 
@@ -352,39 +401,56 @@ export function SystemUpdatesPage() {
   const releaseLink = updateStatus?.releaseInfo?.htmlUrl;
   const statusAlert = getStatusAlert(sessionMode, updateStatus, statusError);
   const primaryState = getPrimaryState(sessionMode, updateStatus, statusError);
-
-  const openUpdateConfirm = (status: UpdateStatus) => {
-    modal.confirm({
-      title: '确认安装新版本',
-      content: `当前运行版本为 v${status.currentVersion}，将安装到 v${status.latestVersion}。安装完成后不会立即生效，仍需要手动重启服务。`,
-      okText: '确认安装',
-      cancelText: '取消',
-      onOk: async () => updateMutation.mutateAsync(),
-    });
-  };
-
-  const openRollbackConfirm = () => {
-    modal.confirm({
-      title: '确认回滚到上一个备份版本',
-      content: '当前二进制会与 .backup 备份版本交换，回滚完成后仍需要手动重启服务才能生效。',
-      okText: '确认回滚',
-      cancelText: '取消',
-      okButtonProps: {
-        danger: true,
-      },
-      onOk: async () => rollbackMutation.mutateAsync(),
-    });
-  };
-
-  const openRestartConfirm = () => {
-    modal.confirm({
-      title: '确认重启服务',
-      content: '服务会主动退出并依赖 systemd 自动拉起，页面会在健康检查恢复后自动刷新。',
-      okText: '立即重启',
-      cancelText: '取消',
-      onOk: async () => restartMutation.mutateAsync(),
-    });
-  };
+  const actionAlert: ActionAlert | null = updateMutation.isPending
+    ? {
+        type: 'info',
+        message: '正在安装更新',
+        description: '正在下载并替换发布包，耗时取决于网络速度，请勿重复点击或刷新页面。',
+      }
+    : rollbackMutation.isPending
+      ? {
+          type: 'info',
+          message: '正在回滚版本',
+          description: '正在切换本地备份版本，完成后仍需要手动重启服务才能生效。',
+        }
+      : restartMutation.isPending
+        ? {
+            type: 'info',
+            message: '正在重启服务',
+            description: '服务会短暂中断，页面会在健康检查恢复后自动刷新。',
+          }
+        : updateError
+          ? {
+              type: 'error',
+              message: '安装更新失败',
+              description: updateError,
+            }
+          : rollbackError
+            ? {
+                type: 'error',
+                message: '回滚失败',
+                description: rollbackError,
+              }
+            : restartError
+              ? {
+                  type: 'error',
+                  message: '重启失败',
+                  description: restartError,
+                }
+              : updateSuccess && needRestart
+                ? {
+                    type: 'success',
+                    message: '更新完成',
+                    description: '新版本已经写入本地二进制，请执行一次服务重启使其生效。',
+                  }
+                : rollbackSuccess && needRestart
+                  ? {
+                      type: 'success',
+                      message: '回滚完成',
+                      description: '备份版本已经恢复，请执行一次服务重启使其重新接管服务。',
+                    }
+                  : null;
+  const visibleAlert = actionAlert ?? statusAlert;
 
   return (
     <div className="space-y-5">
@@ -403,6 +469,7 @@ export function SystemUpdatesPage() {
           loading={loading}
           disabled={busy}
           onClick={() => {
+            clearActionState();
             void refreshStatus(true);
           }}
         >
@@ -442,9 +509,9 @@ export function SystemUpdatesPage() {
 
           <Alert
             showIcon
-            type={statusAlert.type}
-            message={statusAlert.message}
-            description={statusAlert.description}
+            type={visibleAlert.type}
+            message={visibleAlert.message}
+            description={visibleAlert.description}
           />
 
           <div className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
@@ -459,7 +526,9 @@ export function SystemUpdatesPage() {
                 status={
                   <>
                     <Tag color={updateStatus?.canInstall ? 'gold' : 'default'}>
-                      {sessionMode === 'demo'
+                      {updateMutation.isPending
+                        ? '安装进行中'
+                        : sessionMode === 'demo'
                         ? '演示模式不可执行'
                         : updateStatus?.canInstall
                           ? `可安装到 v${latestVersion}`
@@ -481,12 +550,14 @@ export function SystemUpdatesPage() {
                     disabled={!updateStatus?.canInstall || !canManage || busy}
                     loading={updateMutation.isPending}
                     onClick={() => {
-                      if (updateStatus) {
-                        openUpdateConfirm(updateStatus);
-                      }
+                      void updateMutation.mutateAsync();
                     }}
                   >
-                    {sessionMode === 'demo'
+                    {updateMutation.isPending
+                      ? '正在安装'
+                      : updateSuccess && needRestart
+                        ? '安装已完成'
+                      : sessionMode === 'demo'
                       ? '需要真实 Token'
                       : updateStatus?.canInstall
                         ? '安装更新'
@@ -502,7 +573,9 @@ export function SystemUpdatesPage() {
                 status={
                   <>
                     <Tag color={updateStatus?.canRestart ? 'blue' : 'default'}>
-                      {sessionMode === 'demo'
+                      {restartMutation.isPending
+                        ? '正在重启'
+                        : sessionMode === 'demo'
                         ? '演示模式不可执行'
                         : updateStatus?.canRestart
                           ? '允许立即重启'
@@ -518,9 +591,17 @@ export function SystemUpdatesPage() {
                     icon={<SafetyCertificateOutlined />}
                     disabled={!updateStatus?.canRestart || !canManage || busy}
                     loading={restartMutation.isPending}
-                    onClick={openRestartConfirm}
+                    onClick={() => {
+                      void restartMutation.mutateAsync();
+                    }}
                   >
-                    {sessionMode === 'demo' ? '需要真实 Token' : '重启服务'}
+                    {restartMutation.isPending
+                      ? '正在重启'
+                      : sessionMode === 'demo'
+                        ? '需要真实 Token'
+                        : needRestart
+                          ? '立即重启'
+                          : '重启服务'}
                   </Button>
                 }
               />
@@ -532,7 +613,9 @@ export function SystemUpdatesPage() {
                 status={
                   <>
                     <Tag color={updateStatus?.canRollback ? 'red' : 'default'}>
-                      {sessionMode === 'demo'
+                      {rollbackMutation.isPending
+                        ? '回滚进行中'
+                        : sessionMode === 'demo'
                         ? '演示模式不可执行'
                         : updateStatus?.canRollback
                           ? '存在本地备份'
@@ -549,9 +632,17 @@ export function SystemUpdatesPage() {
                     icon={<RollbackOutlined />}
                     disabled={!updateStatus?.canRollback || !canManage || busy}
                     loading={rollbackMutation.isPending}
-                    onClick={openRollbackConfirm}
+                    onClick={() => {
+                      void rollbackMutation.mutateAsync();
+                    }}
                   >
-                    {sessionMode === 'demo' ? '需要真实 Token' : '回滚版本'}
+                    {rollbackMutation.isPending
+                      ? '正在回滚'
+                      : rollbackSuccess && needRestart
+                        ? '回滚已完成'
+                        : sessionMode === 'demo'
+                          ? '需要真实 Token'
+                          : '回滚版本'}
                   </Button>
                 }
               />
