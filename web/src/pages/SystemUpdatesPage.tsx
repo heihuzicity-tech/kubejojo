@@ -2,12 +2,16 @@ import { useState, type ReactNode } from 'react';
 
 import {
   CloudDownloadOutlined,
+  CheckCircleFilled,
+  CloseCircleFilled,
+  ExclamationCircleFilled,
+  InfoCircleFilled,
   LinkOutlined,
   ReloadOutlined,
   RollbackOutlined,
   SafetyCertificateOutlined,
 } from '@ant-design/icons';
-import { App, Alert, Button, Descriptions, Skeleton, Tag, Typography } from 'antd';
+import { App, Button, Skeleton, Tag, Typography } from 'antd';
 import { AxiosError } from 'axios';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
@@ -26,6 +30,12 @@ type PanelProps = {
   description?: string;
   extra?: ReactNode;
   children: ReactNode;
+};
+
+type InfoItemProps = {
+  label: string;
+  value: ReactNode;
+  span?: 'full' | 'normal';
 };
 
 type ActionRowProps = {
@@ -93,6 +103,19 @@ function formatTimestamp(value?: string) {
   }).format(parsed);
 }
 
+function normalizeReleaseBody(value?: string) {
+  const trimmed = value?.trim() || '';
+  if (!trimmed) {
+    return '';
+  }
+
+  if (/^\*\*Full Changelog\*\*:\s*https?:\/\/\S+$/i.test(trimmed)) {
+    return '';
+  }
+
+  return trimmed;
+}
+
 function Panel({ title, description, extra, children }: PanelProps) {
   return (
     <section className="rounded-[20px] border border-slate-200 bg-white p-5 shadow-[0_10px_28px_rgba(15,23,42,0.05)]">
@@ -114,6 +137,20 @@ function Panel({ title, description, extra, children }: PanelProps) {
   );
 }
 
+function InfoItem({ label, value, span = 'normal' }: InfoItemProps) {
+  return (
+    <div
+      className={[
+        'border-b border-slate-100 py-3 last:border-b-0 sm:last:border-b sm:pb-3',
+        span === 'full' ? 'sm:col-span-2' : '',
+      ].join(' ')}
+    >
+      <div className="text-xs font-medium text-slate-500">{label}</div>
+      <div className="mt-1 text-sm font-semibold leading-6 text-slate-950">{value}</div>
+    </div>
+  );
+}
+
 function ActionRow({ title, description, status, action }: ActionRowProps) {
   return (
     <div className="flex flex-col gap-4 border-b border-slate-100 py-4 first:pt-0 last:border-b-0 last:pb-0 lg:flex-row lg:items-center lg:justify-between">
@@ -123,6 +160,40 @@ function ActionRow({ title, description, status, action }: ActionRowProps) {
         <div className="mt-3 flex flex-wrap gap-2">{status}</div>
       </div>
       <div className="w-full lg:w-[220px]">{action}</div>
+    </div>
+  );
+}
+
+function StatusNotice({ state }: { state: AlertState }) {
+  const toneClass =
+    state.type === 'success'
+      ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+      : state.type === 'error'
+        ? 'border-rose-200 bg-rose-50 text-rose-900'
+        : state.type === 'warning'
+          ? 'border-amber-200 bg-amber-50 text-amber-900'
+          : 'border-sky-200 bg-sky-50 text-sky-900';
+
+  const icon =
+    state.type === 'success' ? (
+      <CheckCircleFilled className="text-emerald-500" />
+    ) : state.type === 'error' ? (
+      <CloseCircleFilled className="text-rose-500" />
+    ) : state.type === 'warning' ? (
+      <ExclamationCircleFilled className="text-amber-500" />
+    ) : (
+      <InfoCircleFilled className="text-sky-500" />
+    );
+
+  return (
+    <div className={`mb-5 rounded-[18px] border px-4 py-3 ${toneClass}`}>
+      <div className="flex items-start gap-3">
+        <div className="pt-0.5 text-lg">{icon}</div>
+        <div className="min-w-0">
+          <div className="text-sm font-semibold">{state.message}</div>
+          <div className="mt-1 text-sm leading-6 opacity-90">{state.description}</div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -296,7 +367,7 @@ export function SystemUpdatesPage() {
       ? `kubejojo v${latestVersion}`
       : '当前没有新的发布说明');
   const releasePublishedAt = formatTimestamp(updateStatus?.releaseInfo?.publishedAt);
-  const releaseBody = updateStatus?.releaseInfo?.body?.trim() || '暂无可展示的发布说明。';
+  const releaseBody = normalizeReleaseBody(updateStatus?.releaseInfo?.body);
   const releaseLink = updateStatus?.releaseInfo?.htmlUrl;
   const canManage = sessionMode === 'token' && !statusError;
   const primaryAlert = getPrimaryAlert(sessionMode, updateStatus, statusError);
@@ -337,91 +408,22 @@ export function SystemUpdatesPage() {
                   description: restartError,
                 }
               : null;
+  const activeStatus = actionAlert ?? primaryAlert;
 
   return (
     <div className="space-y-5">
-      <section className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <Typography.Title level={3} className="!mb-1">
-            更新管理
-          </Typography.Title>
-          <Typography.Paragraph className="!mb-0 !text-slate-500">
-            参考 sub2api 的单状态处理方式，页面只展示一个主状态；回滚作为备用操作单独保留。
-          </Typography.Paragraph>
-        </div>
-
-        <Button
-          icon={<ReloadOutlined />}
-          loading={loading}
-          disabled={busy}
-          onClick={() => {
-            clearErrors();
-            void refreshStatus(true);
-          }}
-        >
-          刷新状态
-        </Button>
-      </section>
-
       {loading ? (
         <section className="rounded-[20px] border border-slate-200 bg-white p-5 shadow-[0_10px_28px_rgba(15,23,42,0.05)]">
           <Skeleton active paragraph={{ rows: 8 }} />
         </section>
       ) : (
-        <>
-          <Alert
-            showIcon
-            type={(actionAlert ?? primaryAlert).type}
-            message={(actionAlert ?? primaryAlert).message}
-            description={(actionAlert ?? primaryAlert).description}
-          />
-
-          <div className="grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
-            <Panel
-              title="版本状态"
-              description="运行版本、已安装版本和最新发布是分开的，页面状态以服务端返回为准。"
-            >
-              <Descriptions column={1} size="small" colon={false}>
-                <Descriptions.Item label="当前主状态">
-                  <Typography.Text strong>
-                    {updateStatus?.primaryState === 'restart_required'
-                      ? '已安装，等待重启'
-                      : updateStatus?.primaryState === 'update_available'
-                        ? '可安装更新'
-                        : sessionMode === 'demo'
-                          ? '只读演示'
-                          : '已是最新版本'}
-                  </Typography.Text>
-                </Descriptions.Item>
-                <Descriptions.Item label="当前运行版本">
-                  <Typography.Text strong>v{runningVersion}</Typography.Text>
-                </Descriptions.Item>
-                <Descriptions.Item label="当前已安装版本">
-                  <Typography.Text>v{installedVersion}</Typography.Text>
-                </Descriptions.Item>
-                <Descriptions.Item label="最新发布版本">
-                  <Typography.Text>v{latestVersion}</Typography.Text>
-                </Descriptions.Item>
-                <Descriptions.Item label="回滚备份版本">
-                  <Typography.Text>{backupVersion ? `v${backupVersion}` : '无'}</Typography.Text>
-                </Descriptions.Item>
-                <Descriptions.Item label="当前主体">
-                  <Typography.Text>{actor}</Typography.Text>
-                </Descriptions.Item>
-                <Descriptions.Item label="更新仓库">
-                  <Typography.Text code>{repository}</Typography.Text>
-                </Descriptions.Item>
-                <Descriptions.Item label="构建类型">
-                  <Typography.Text>{buildType}</Typography.Text>
-                </Descriptions.Item>
-              </Descriptions>
-            </Panel>
-
-            <Panel
-              title="发布说明"
-              description="这里只展示最新发布的摘要；真正的安装状态以本机已安装版本为准。"
-              extra={
-                releaseLink ? (
+        <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr] xl:items-start">
+          <Panel
+            title="版本状态"
+            description="运行版本、已安装版本和最新发布由服务端统一判断。"
+            extra={
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                {releaseLink ? (
                   <a
                     href={releaseLink}
                     target="_blank"
@@ -431,151 +433,197 @@ export function SystemUpdatesPage() {
                     GitHub
                     <LinkOutlined />
                   </a>
-                ) : null
-              }
-            >
-              <div className="rounded-[18px] border border-slate-200 bg-slate-50 p-4">
-                <div className="text-sm font-semibold text-slate-950">{releaseName}</div>
-                <div className="mt-1 text-xs text-slate-500">发布时间：{releasePublishedAt}</div>
-                <pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap break-words font-sans text-sm leading-6 text-slate-600">
-                  {releaseBody}
-                </pre>
+                ) : null}
+                <Button
+                  icon={<ReloadOutlined />}
+                  loading={loading}
+                  disabled={busy}
+                  onClick={() => {
+                    clearErrors();
+                    void refreshStatus(true);
+                  }}
+                >
+                  刷新状态
+                </Button>
               </div>
+            }
+          >
+            <>
+              <StatusNotice state={activeStatus} />
+
+              <div className="grid gap-x-6 sm:grid-cols-2">
+                  <InfoItem
+                    label="当前主状态"
+                    value={
+                      updateStatus?.primaryState === 'restart_required'
+                        ? '已安装，等待重启'
+                        : updateStatus?.primaryState === 'update_available'
+                          ? '可安装更新'
+                          : sessionMode === 'demo'
+                            ? '只读演示'
+                            : '已是最新版本'
+                    }
+                  />
+                  <InfoItem label="当前运行版本" value={`v${runningVersion}`} />
+                  <InfoItem label="当前已安装版本" value={`v${installedVersion}`} />
+                  <InfoItem label="最新发布版本" value={`v${latestVersion}`} />
+                  <InfoItem label="回滚备份版本" value={backupVersion ? `v${backupVersion}` : '无'} />
+                  <InfoItem label="构建类型" value={buildType} />
+                  <InfoItem label="最新发布" value={releaseName} span="full" />
+                  <InfoItem label="发布时间" value={releasePublishedAt} />
+                  <InfoItem label="当前主体" value={actor} span="full" />
+                  <InfoItem
+                    label="更新仓库"
+                    value={<Typography.Text code>{repository}</Typography.Text>}
+                    span="full"
+                  />
+                </div>
+
+                {releaseBody ? (
+                  <div className="mt-5 rounded-[18px] border border-slate-200 bg-slate-50 p-4">
+                    <div className="text-sm font-semibold text-slate-950">更新摘要</div>
+                    <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-words font-sans text-sm leading-6 text-slate-600">
+                      {releaseBody}
+                    </pre>
+                  </div>
+                ) : null}
+              </>
+            </Panel>
+
+            <Panel
+              title="可执行操作"
+              description="安装和回滚都只是替换磁盘中的受管二进制，真正切换版本要靠重启。"
+            >
+              <ActionRow
+                title="安装最新发布"
+                description="仅在“可安装更新”状态下开放；如果已经安装完成但还没重启，这里会明确停用。"
+                status={
+                  <>
+                    <Tag color={updateStatus?.canInstall ? 'gold' : 'default'}>
+                      {sessionMode === 'demo'
+                        ? '演示模式不可执行'
+                        : updateMutation.isPending
+                          ? '安装进行中'
+                          : updateStatus?.primaryState === 'restart_required'
+                            ? '等待重启后再处理'
+                            : updateStatus?.canInstall
+                              ? `可安装到 v${latestVersion}`
+                              : '当前无需安装'}
+                    </Tag>
+                    <span className="text-xs text-slate-500">
+                      以“已安装版本”和“最新发布版本”的差异来判断是否可安装
+                    </span>
+                  </>
+                }
+                action={
+                  <Button
+                    type="primary"
+                    size="large"
+                    block
+                    icon={<CloudDownloadOutlined />}
+                    disabled={!updateStatus?.canInstall || !canManage || busy}
+                    loading={updateMutation.isPending}
+                    onClick={() => {
+                      void updateMutation.mutateAsync();
+                    }}
+                  >
+                    {updateMutation.isPending
+                      ? '正在安装'
+                      : sessionMode === 'demo'
+                        ? '需要真实 Token'
+                        : updateStatus?.primaryState === 'restart_required'
+                          ? '等待重启'
+                          : updateStatus?.canInstall
+                            ? '安装更新'
+                            : '已是最新版本'}
+                  </Button>
+                }
+              />
+
+              <ActionRow
+                title="重启服务并切换版本"
+                description="只有当服务端判定存在“已安装但未生效”的版本差异时，才允许执行重启。"
+                status={
+                  <>
+                    <Tag color={updateStatus?.canRestart ? 'blue' : 'default'}>
+                      {sessionMode === 'demo'
+                        ? '演示模式不可执行'
+                        : restartMutation.isPending
+                          ? '正在重启'
+                          : updateStatus?.canRestart
+                            ? `重启后切换到 v${installedVersion}`
+                            : '当前无需重启'}
+                    </Tag>
+                    <span className="text-xs text-slate-500">
+                      只有运行版本和已安装版本不一致时才开放
+                    </span>
+                  </>
+                }
+                action={
+                  <Button
+                    size="large"
+                    block
+                    icon={<SafetyCertificateOutlined />}
+                    disabled={!updateStatus?.canRestart || !canManage || busy}
+                    loading={restartMutation.isPending}
+                    onClick={() => {
+                      void restartMutation.mutateAsync();
+                    }}
+                  >
+                    {restartMutation.isPending
+                      ? '正在重启'
+                      : sessionMode === 'demo'
+                        ? '需要真实 Token'
+                        : updateStatus?.canRestart
+                          ? '立即重启'
+                          : '无需重启'}
+                  </Button>
+                }
+              />
+
+              <ActionRow
+                title="回滚到备份版本"
+                description="回滚只依赖本地备份链。它不是主状态，只是一个备用操作入口。"
+                status={
+                  <>
+                    <Tag color={updateStatus?.canRollback ? 'red' : 'default'}>
+                      {sessionMode === 'demo'
+                        ? '演示模式不可执行'
+                        : rollbackMutation.isPending
+                          ? '回滚进行中'
+                          : updateStatus?.canRollback
+                            ? `可回滚到 v${backupVersion}`
+                            : '当前没有可用备份'}
+                    </Tag>
+                    <span className="text-xs text-slate-500">
+                      备份版本与已安装版本相同的残留文件不会再被当作可回滚版本
+                    </span>
+                  </>
+                }
+                action={
+                  <Button
+                    danger
+                    size="large"
+                    block
+                    icon={<RollbackOutlined />}
+                    disabled={!updateStatus?.canRollback || !canManage || busy}
+                    loading={rollbackMutation.isPending}
+                    onClick={() => {
+                      void rollbackMutation.mutateAsync();
+                    }}
+                  >
+                    {rollbackMutation.isPending
+                      ? '正在回滚'
+                      : sessionMode === 'demo'
+                        ? '需要真实 Token'
+                        : updateStatus?.canRollback
+                          ? '回滚版本'
+                          : '无可回滚版本'}
+                  </Button>
+                }
+              />
             </Panel>
           </div>
-
-          <Panel
-            title="可执行操作"
-            description="安装和回滚都只是替换磁盘中的受管二进制，真正切换版本要靠重启。"
-          >
-            <ActionRow
-              title="安装最新发布"
-              description="仅在“可安装更新”状态下开放；如果已经安装完成但还没重启，这里会明确停用。"
-              status={
-                <>
-                  <Tag color={updateStatus?.canInstall ? 'gold' : 'default'}>
-                    {sessionMode === 'demo'
-                      ? '演示模式不可执行'
-                      : updateMutation.isPending
-                        ? '安装进行中'
-                        : updateStatus?.primaryState === 'restart_required'
-                          ? '等待重启后再处理'
-                          : updateStatus?.canInstall
-                            ? `可安装到 v${latestVersion}`
-                            : '当前无需安装'}
-                  </Tag>
-                  <span className="text-xs text-slate-500">
-                    以“已安装版本”和“最新发布版本”的差异来判断是否可安装
-                  </span>
-                </>
-              }
-              action={
-                <Button
-                  type="primary"
-                  size="large"
-                  block
-                  icon={<CloudDownloadOutlined />}
-                  disabled={!updateStatus?.canInstall || !canManage || busy}
-                  loading={updateMutation.isPending}
-                  onClick={() => {
-                    void updateMutation.mutateAsync();
-                  }}
-                >
-                  {updateMutation.isPending
-                    ? '正在安装'
-                    : sessionMode === 'demo'
-                      ? '需要真实 Token'
-                      : updateStatus?.primaryState === 'restart_required'
-                        ? '等待重启'
-                        : updateStatus?.canInstall
-                          ? '安装更新'
-                          : '已是最新版本'}
-                </Button>
-              }
-            />
-
-            <ActionRow
-              title="重启服务并切换版本"
-              description="只有当服务端判定存在“已安装但未生效”的版本差异时，才允许执行重启。"
-              status={
-                <>
-                  <Tag color={updateStatus?.canRestart ? 'blue' : 'default'}>
-                    {sessionMode === 'demo'
-                      ? '演示模式不可执行'
-                      : restartMutation.isPending
-                        ? '正在重启'
-                        : updateStatus?.canRestart
-                          ? `重启后切换到 v${installedVersion}`
-                          : '当前无需重启'}
-                  </Tag>
-                  <span className="text-xs text-slate-500">
-                    只有运行版本和已安装版本不一致时才开放
-                  </span>
-                </>
-              }
-              action={
-                <Button
-                  size="large"
-                  block
-                  icon={<SafetyCertificateOutlined />}
-                  disabled={!updateStatus?.canRestart || !canManage || busy}
-                  loading={restartMutation.isPending}
-                  onClick={() => {
-                    void restartMutation.mutateAsync();
-                  }}
-                >
-                  {restartMutation.isPending
-                    ? '正在重启'
-                    : sessionMode === 'demo'
-                      ? '需要真实 Token'
-                      : updateStatus?.canRestart
-                        ? '立即重启'
-                        : '无需重启'}
-                </Button>
-              }
-            />
-
-            <ActionRow
-              title="回滚到备份版本"
-              description="回滚只依赖本地备份链。它不是主状态，只是一个备用操作入口。"
-              status={
-                <>
-                  <Tag color={updateStatus?.canRollback ? 'red' : 'default'}>
-                    {sessionMode === 'demo'
-                      ? '演示模式不可执行'
-                      : rollbackMutation.isPending
-                        ? '回滚进行中'
-                        : updateStatus?.canRollback
-                          ? `可回滚到 v${backupVersion}`
-                          : '当前没有可用备份'}
-                  </Tag>
-                  <span className="text-xs text-slate-500">备份版本与已安装版本相同的残留文件不会再被当作可回滚版本</span>
-                </>
-              }
-              action={
-                <Button
-                  danger
-                  size="large"
-                  block
-                  icon={<RollbackOutlined />}
-                  disabled={!updateStatus?.canRollback || !canManage || busy}
-                  loading={rollbackMutation.isPending}
-                  onClick={() => {
-                    void rollbackMutation.mutateAsync();
-                  }}
-                >
-                  {rollbackMutation.isPending
-                    ? '正在回滚'
-                    : sessionMode === 'demo'
-                      ? '需要真实 Token'
-                      : updateStatus?.canRollback
-                        ? '回滚版本'
-                        : '无可回滚版本'}
-                </Button>
-              }
-            />
-          </Panel>
-        </>
       )}
     </div>
   );
