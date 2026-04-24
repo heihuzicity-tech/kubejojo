@@ -29,7 +29,6 @@ Environment=KUBEJOJO_KUBECONFIG=/opt/kubejojo/config/kubeconfig
 # Environment=KUBEJOJO_UPDATE_ALLOW_PRERELEASES=true
 # Environment=KUBEJOJO_UPDATE_REPOSITORY=heihuzicity-tech/kubejojo
 # Environment=KUBEJOJO_UPDATE_ALLOWED_SUBJECTS=system:serviceaccount:kube-system:kubejojo-dev
-# Environment=KUBEJOJO_UPDATE_GITHUB_TOKEN=
 Environment=KUBEJOJO_UPDATE_TARGET_PATH=/opt/kubejojo/kubejojo
 
 [Install]
