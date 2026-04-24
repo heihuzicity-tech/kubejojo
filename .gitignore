@@ -42,3 +42,4 @@ temp/
 # Local tooling artifacts
 .playwright-mcp/
 overview-layout.png
+server/kubejojo
