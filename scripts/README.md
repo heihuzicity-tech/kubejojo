@@ -15,6 +15,6 @@
 ```bash
 ./scripts/build-release.sh
 GOOS=linux GOARCH=arm64 ./scripts/build-release.sh
-VERSION=0.1.0 GOOS=linux GOARCH=amd64 ./scripts/build-release.sh
+VERSION=0.1.1 GOOS=linux GOARCH=amd64 ./scripts/build-release.sh
 NPM_INSTALL_MODE=ci GOOS=linux GOARCH=amd64 ./scripts/build-release.sh
 ```

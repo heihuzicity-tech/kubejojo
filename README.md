@@ -99,7 +99,7 @@ GOOS=linux GOARCH=arm64 ./scripts/build-release.sh
 常见可选参数：
 
 ```bash
-VERSION=0.1.0 GOOS=linux GOARCH=amd64 ./scripts/build-release.sh
+VERSION=0.1.1 GOOS=linux GOARCH=amd64 ./scripts/build-release.sh
 NPM_INSTALL_MODE=ci GOOS=linux GOARCH=amd64 ./scripts/build-release.sh
 SKIP_NPM_INSTALL=1 ./scripts/build-release.sh
 ```
@@ -170,8 +170,8 @@ KUBEJOJO_UPDATE_TARGET_PATH=<optional-installed-binary-path>
 推荐发布方式：
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.1.1
+git push origin v0.1.1
 ```
 
 ## 文档
