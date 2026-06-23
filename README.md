@@ -25,7 +25,7 @@
 
 Topology 页面把工作负载、网络和存储资源放到同一个关系视图里，用异常标记帮助快速定位风险点。
 
-![资源拓扑](docs/assets/readme/topology.jpg)
+![资源拓扑动图演示](docs/assets/readme/topology-demo.gif)
 
 ### 工作负载与详情
 
@@ -38,6 +38,8 @@ Topology 页面把工作负载、网络和存储资源放到同一个关系视�
 ### Pod 排障
 
 Pod 详情页把日志、状态、事件和终端放在同一条排障路径里，避免在多个工具之间来回切换。
+
+![Pod 排障动图演示](docs/assets/readme/pod-debug-demo.gif)
 
 | 日志查看 | 交互式终端 |
 | --- | --- |
